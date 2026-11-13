@@ -1,41 +1,50 @@
 ---
 name: cloud-alm-explore
-description: How to find your way around an SAP Cloud ALM tenant with the cloud-alm MCP tools — where requirements, user stories, features, test cases, processes and documents live, how they link, and which tool answers which question. Use when asked anything about a Cloud ALM project.
+description: Answer questions about an SAP Cloud ALM project with the cloud-alm MCP tools — status, requirements, user stories, defects, features and transports, test cases and results, documents, processes, gaps. Use whenever a question is about Cloud ALM content.
 ---
 
 # Exploring SAP Cloud ALM
 
-Draft. Uses the `cloud-alm` MCP server's `calm_*` tools (read-only).
+The `cloud-alm` MCP server answers most questions in one or two calls.
+Pick the tool by the question, not by the object:
 
-## How a project is laid out
+| Question | Call |
+| --- | --- |
+| "What is in the project / where do we stand?" | `calm_overview` |
+| "Which … are there?", "anything about X?" | `calm_find` (words, `types`, `status`, `tag`) |
+| "What does 3-17 say?", "steps of 8-1-2" | `calm_get` with all the ids at once |
+| "What is linked to / delivers / tests X?" | `calm_trace` |
+| "What is missing, untested, failing?" | `calm_gaps` (narrow with `checks`) |
+| "How many … per …?" across the tenant | `calm_analytics` with `groupBy` |
+| "Is a service down?", "which systems?" | `calm_landscape` |
 
-- A **project** has timeboxes (phases, sprints) and teams. Almost everything
-  else hangs off a project id: start with `calm_list_projects`.
-- A project's **scope** selects **solution processes** (e.g. "Lead to
-  Cash"): `calm_list_scopes`, `calm_list_processes`.
+## How Cloud ALM is laid out
+
+- A **project** moves through phases (Discover, Prepare, Explore, Realize,
+  Deploy, Run); its **scope** selects **solution processes** (e.g. Lead
+  to Cash).
 - **Tasks** are one list with a type: requirement, user story, defect,
-  roadmap task, project task, risk… `calm_search_tasks` filters by type,
-  status and words in the title. User stories sit under a requirement.
-- **Features** deliver requirements and user stories, and carry the
-  transport ids that move the change into the SAP system:
-  `calm_list_features`, `calm_get_feature`.
+  project task, roadmap task (from the project template), risk. A user
+  story or project task sits under a requirement.
+- A **feature** delivers requirements and user stories and carries the
+  **transports** that move the change into the SAP system.
 - **Test cases** (manual with activities and steps, or automated) cover
-  requirements and processes; **test plans** group them for a test run.
-- **Documents** (solution designs, specs) attach to processes, tasks and
-  test cases.
-- The **landscape** lists the systems and cloud services; the
-  **cross-library** documents applications, developments (custom code),
-  interfaces and configurations.
-- **Analytics** returns aggregated counts (rows per combination of
-  dimensions, not records): use it for "how many open defects per
-  priority", not to list items.
+  requirements and user stories; **test plans** run them, and each run has
+  a result (passed, failed, in progress).
+- **Documents** (solution designs, specs) attach to tasks, test cases and
+  processes.
 
 ## Working rules
 
-- Lists show ids in `[brackets]`: pass them to the `get` tools.
-- Lists page with `limit` and `offset`; the answer says the next offset.
-- Start broad (projects → scope → processes → tasks by type), then drill
-  into single items. Do not fetch every item one by one when a list or
-  analytics answers the question.
-- A tool that answers `forbidden` means the key lacks that area's scope;
-  say so and carry on with the other tools.
+- Ids: use the display ids the tools print (`3-17`, `6-1`, `8-1-2`). Put
+  them in your answer so the user can find the item in Cloud ALM.
+- Read several items in one `calm_get`; do not loop one by one.
+- `calm_find` matches titles and tags, not descriptions: try synonyms with
+  `|` (`export | letter of credit`).
+- Analytics are refreshed daily and are tenant-wide; items created today
+  may be missing there. Counts from `calm_overview` are live.
+- Coverage and gaps count **direct links** only; say so when a requirement
+  is covered only through its user stories.
+- "Not readable with this key" means the key lacks a scope: say which part
+  is missing and answer from the rest.
+- With several projects, pass `projectId` (from `calm_overview`).
