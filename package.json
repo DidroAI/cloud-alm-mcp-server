@@ -1,8 +1,27 @@
 {
   "name": "cloud-alm-mcp-server",
   "version": "0.1.0",
-  "private": true,
-  "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics, read-only by default",
+  "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics, read-only",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "sap",
+    "sap-cloud-alm",
+    "cloud-alm",
+    "alm",
+    "agent",
+    "claude",
+    "codex"
+  ],
+  "homepage": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/DidroAI/cloud-alm-mcp-server/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DidroAI/cloud-alm-mcp-server.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,27 +29,34 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
-    "cloud-alm-mcp-server": "./dist/cli.js"
+    "cloud-alm-mcp-server": "dist/cli.js"
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "bun run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "bun test test",
     "start": "node dist/cli.js",
     "start:http": "node dist/cli.js http",
-    "check:live": "bun scripts/live-check.ts"
+    "check:live": "bun scripts/live-check.ts",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
   },
-  "keywords": ["mcp", "model-context-protocol", "cloud-alm", "alm", "agent"],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/DidroAI/cloud-alm-mcp-server.git"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

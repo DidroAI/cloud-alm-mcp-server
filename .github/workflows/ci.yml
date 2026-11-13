@@ -11,6 +11,11 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    name: check (Node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -18,7 +23,7 @@ jobs:
           bun-version: 1.4.4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
@@ -30,3 +35,12 @@ jobs:
           sleep 1
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3333/mcp -H 'content-type: application/json' -d '{}')
           test "$code" = "401"
+      # The packed tarball installs and its command runs on plain Node.
+      - name: Pack and run the installed command
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/try" && cd "$RUNNER_TEMP/try"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/cloud-alm-mcp-server-*.tgz
+          npx --no-install cloud-alm-mcp-server --version
+          if CALM_CONFIG_DIR="$RUNNER_TEMP/empty" npx --no-install cloud-alm-mcp-server doctor; then exit 1; fi
