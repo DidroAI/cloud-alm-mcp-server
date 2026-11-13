@@ -30,6 +30,7 @@ import {
   link,
   tag,
 } from "./views/write.js";
+import { forgetSnapshots } from "./views/snapshot.js";
 import {
   analytics,
   FIND_TYPES,
@@ -244,10 +245,20 @@ export function createServer(
     title: string,
     description: string,
     inputSchema: Shape,
-    run: (args: z.infer<z.ZodObject<Shape>>) => Promise<string>,
+    write: (args: z.infer<z.ZodObject<Shape>>) => Promise<string>,
   ) => {
     if (allowed && !allowed.has(name)) return;
     const isWrite = (WRITE_TOOL_NAMES as readonly string[]).includes(name);
+    // After a write, cached reads of the project are stale: drop them.
+    const run = isWrite
+      ? async (args: z.infer<z.ZodObject<Shape>>) => {
+          try {
+            return await write(args);
+          } finally {
+            if ((args as { dryRun?: boolean }).dryRun !== true) forgetSnapshots(calm);
+          }
+        }
+      : write;
     const config = {
       title,
       description,
