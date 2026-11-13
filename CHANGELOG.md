@@ -20,6 +20,7 @@ All notable changes to this package. The format follows
   it the stdio server uses the key saved by `init`.
 - Package ready for npm: `bin`, `files` (no tests, no source maps),
   `exports`, `engines`, `prepublishOnly` (typecheck, test, build).
+- MIT licence.
 - CI on Node 22 and 24, with a check of the packed command; a release
   workflow (tag `v*` → `npm publish --provenance`) that stays inert until
   an `NPM_TOKEN` secret exists.

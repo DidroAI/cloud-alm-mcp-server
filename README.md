@@ -9,7 +9,7 @@ status events.
 **Read-only today.** Every tool is annotated `readOnlyHint` and the client
 sends GET requests only, to `*.alm.cloud.sap` hosts only.
 
-> Status: private, in development. Not published yet; no licence chosen.
+> Status: in development, not on npm yet. MIT licence.
 
 ## Quick start
 
@@ -273,3 +273,7 @@ Node 22 and 24. Releases: bump `version` in `package.json`, add a
 `CHANGELOG.md` entry, tag `vX.Y.Z` and push the tag; the release workflow
 checks again and runs `npm publish --provenance`. It publishes nothing
 until the repository has an `NPM_TOKEN` secret.
+
+## Licence
+
+MIT: see [LICENSE](LICENSE). Use it, change it, ship it.

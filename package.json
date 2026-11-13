@@ -2,6 +2,8 @@
   "name": "cloud-alm-mcp-server",
   "version": "0.1.0",
   "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics, read-only",
+  "license": "MIT",
+  "author": "Didro",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -39,7 +41,8 @@
     "dist",
     "!dist/**/*.map",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22"
