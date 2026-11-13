@@ -42,7 +42,7 @@ const jwt = (scope: string[]) =>
 const ALL_READ = [
   "projects", "tasks", "features", "documents", "testcases", "testplans",
   "processmanagement", "processhierarchy", "landscape", "lib", "analytics",
-  "analytics.providers", "bsm",
+  "analytics.providers", "tests", "bsm",
 ].map((a) => `calm-api!b2.calm-api.${a}.read`);
 
 type FakeOptions = { tokenStatus?: number; scope?: string[]; projectsStatus?: number };
