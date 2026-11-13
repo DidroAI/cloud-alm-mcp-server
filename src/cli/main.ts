@@ -9,7 +9,8 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
-import { type Check, keyChecks, nodeCheck } from "./checks.js";
+import { type ServerOptions, serverOptionsFromEnv } from "../server.js";
+import { type Check, keyChecks, nodeCheck, settingsCheck } from "./checks.js";
 import { clientSnippets, PACKAGE_NAME } from "./clients.js";
 import {
   CONFIG_DIR_ENV,
@@ -155,7 +156,11 @@ async function init(io: Io, args: string[]): Promise<number> {
   }
 
   if (!flags.skipCheck) {
-    const checks = await keyChecks(key, fetchOption(io));
+    let settings: ServerOptions = {};
+    try {
+      settings = serverOptionsFromEnv(io.env);
+    } catch {}
+    const checks = await keyChecks(key, { ...fetchOption(io), settings });
     printChecks(io, checks);
     if (checks.some((c) => c.name === "Token" && c.status === "fail")) {
       io.err("\nNot saved: the key did not give a token.");
@@ -208,7 +213,16 @@ async function doctor(io: Io): Promise<number> {
       ? permissionCheck(source.path, platform)
       : { name: "Key", status: "ok", detail: source.label },
   );
-  checks.push(...(await keyChecks(key, fetchOption(io))));
+  let settings: ServerOptions;
+  try {
+    settings = serverOptionsFromEnv(io.env);
+  } catch (error) {
+    checks.push({ name: "Mode", status: "fail", detail: (error as Error).message });
+    printChecks(io, checks);
+    return 1;
+  }
+  checks.push(settingsCheck(settings));
+  checks.push(...(await keyChecks(key, { ...fetchOption(io), settings })));
   printChecks(io, checks);
   io.out(failed(checks) ? "\nSetup has problems." : "\nReady.");
   return failed(checks) ? 1 : 0;

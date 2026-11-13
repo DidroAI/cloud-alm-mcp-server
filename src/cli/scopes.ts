@@ -1,38 +1,54 @@
 /**
- * Which `calm-api.*` scopes a token carries, against what each area of
- * Cloud ALM the server reads needs. Areas, not tool names: the tool set
- * changes, the areas and their scopes do not.
+ * Which `calm-api.*` scopes a token carries, against what each tool of the
+ * server needs: `core` scopes make the tool work at all, `extra` scopes fill
+ * in parts of its answer (a part the key cannot read is named as such).
+ * A test checks every tool of `src/server.ts` has an entry here.
  */
 
-export type Area = { name: string; scopes: string[] };
+export type ToolScopes = { core: string[]; extra: string[]; write?: boolean };
 
-export const AREAS: Area[] = [
-  { name: "Projects", scopes: ["calm-api.projects.read"] },
-  {
-    name: "Tasks (requirements, user stories, defects)",
-    scopes: ["calm-api.tasks.read"],
+const s = (...names: string[]) => names.map((n) => `calm-api.${n}`);
+
+export const TOOL_SCOPES: Record<string, ToolScopes> = {
+  calm_overview: {
+    core: s("projects.read", "tasks.read"),
+    extra: s("features.read", "documents.read", "testcases.read", "testplans.read", "processmanagement.read", "analytics.read", "tests.read"),
   },
-  { name: "Features", scopes: ["calm-api.features.read"] },
-  { name: "Documents", scopes: ["calm-api.documents.read"] },
-  { name: "Test cases", scopes: ["calm-api.testcases.read"] },
-  { name: "Test plans", scopes: ["calm-api.testplans.read"] },
-  {
-    name: "Project scopes and solution processes",
-    scopes: ["calm-api.processmanagement.read"],
+  calm_find: {
+    core: s("projects.read"),
+    extra: s("tasks.read", "features.read", "documents.read", "testcases.read", "testplans.read", "processmanagement.read", "lib.read"),
   },
-  { name: "Process hierarchy", scopes: ["calm-api.processhierarchy.read"] },
-  { name: "Landscape", scopes: ["calm-api.landscape.read"] },
-  { name: "Cross-library", scopes: ["calm-api.lib.read"] },
-  {
-    name: "Analytics (plus each dataset's area scope)",
-    scopes: ["calm-api.analytics.read", "calm-api.analytics.providers.read"],
+  calm_get: {
+    core: s("projects.read"),
+    extra: s("tasks.read", "features.read", "documents.read", "testcases.read", "testplans.read", "analytics.read", "tests.read"),
   },
-  {
-    name: "Test results (analytics Tests dataset)",
-    scopes: ["calm-api.analytics.read", "calm-api.tests.read"],
+  calm_trace: {
+    core: s("projects.read", "tasks.read"),
+    extra: s("features.read", "documents.read", "testcases.read", "processmanagement.read", "analytics.read", "tests.read"),
   },
-  { name: "Service status events", scopes: ["calm-api.bsm.read"] },
-];
+  calm_gaps: {
+    core: s("projects.read", "tasks.read"),
+    extra: s("features.read", "testcases.read", "processmanagement.read", "analytics.read", "tests.read"),
+  },
+  calm_analytics: {
+    core: s("analytics.read"),
+    // Each dataset also needs its area's scope.
+    extra: s("tasks.read", "defects.read", "requirements.read", "tests.read", "jobs.read", "exm.read", "metrics.read"),
+  },
+  calm_landscape: { core: s("landscape.read"), extra: s("bsm.read") },
+  calm_create_task: { core: s("projects.read", "tasks.read", "tasks.write"), extra: [], write: true },
+  calm_create_test_case: {
+    core: s("projects.read", "tasks.read", "testcases.read", "testcases.write"),
+    extra: [],
+    write: true,
+  },
+  calm_link: {
+    core: s("projects.read", "tasks.read", "testcases.read", "testcases.write", "tasks.write"),
+    extra: s("features.read"),
+    write: true,
+  },
+  calm_tag: { core: s("projects.read", "tasks.read", "tasks.write"), extra: [], write: true },
+};
 
 /**
  * The `scope` claim of a JWT access token, reduced to the `calm-api.*` part
@@ -63,19 +79,23 @@ export function tokenScopes(accessToken: string): string[] | undefined {
   return [...scopes].sort();
 }
 
-export type AreaCoverage = Area & { missing: string[] };
+export type ToolCoverage = {
+  tool: string;
+  status: "full" | "partial" | "none";
+  missing: string[];
+};
 
-/** Each area with the scopes the token lacks for it. */
-export function coverage(scopes: string[]): AreaCoverage[] {
+/** Each tool with the scopes the token lacks for it. */
+export function coverage(scopes: string[], tools: string[]): ToolCoverage[] {
   const have = new Set(scopes);
-  return AREAS.map((area) => ({
-    ...area,
-    missing: area.scopes.filter((s) => !have.has(s)),
-  }));
-}
-
-/** `calm-api.*` scopes the token has that no area above uses (extras). */
-export function otherScopes(scopes: string[]): string[] {
-  const known = new Set(AREAS.flatMap((a) => a.scopes));
-  return scopes.filter((s) => !known.has(s));
+  return tools.map((tool) => {
+    const need = TOOL_SCOPES[tool] ?? { core: [], extra: [] };
+    const core = need.core.filter((x) => !have.has(x));
+    const extra = need.extra.filter((x) => !have.has(x));
+    return {
+      tool,
+      status: core.length ? "none" : extra.length ? "partial" : "full",
+      missing: core.length ? core : extra,
+    };
+  });
 }

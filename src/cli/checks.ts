@@ -5,7 +5,8 @@ import {
   type Grant,
   type ServiceKey,
 } from "../calm/index.js";
-import { coverage, otherScopes, tokenScopes } from "./scopes.js";
+import { type ServerOptions, TOOL_NAMES, WRITE_TOOL_NAMES } from "../server.js";
+import { coverage, tokenScopes } from "./scopes.js";
 
 export type Status = "ok" | "warn" | "fail";
 export type Check = { name: string; status: Status; detail: string; lines?: string[] };
@@ -28,7 +29,32 @@ export function nodeCheck(version = process.versions.node): Check {
       };
 }
 
-export type KeyCheckOptions = { fetch?: typeof fetch; now?: () => number };
+export type KeyCheckOptions = {
+  fetch?: typeof fetch;
+  now?: () => number;
+  /** The server settings from the environment (CALM_WRITE, CALM_TOOLS, CALM_PROJECT). */
+  settings?: ServerOptions;
+};
+
+/** The tools the server will offer with these settings. */
+export function offeredTools(settings: ServerOptions = {}): string[] {
+  const all: string[] = [
+    ...TOOL_NAMES,
+    ...(settings.writeMode && settings.writeMode !== "off" ? WRITE_TOOL_NAMES : []),
+  ];
+  return settings.tools ? all.filter((t) => settings.tools?.includes(t)) : all;
+}
+
+/** What the environment asks of the server, as one line. */
+export function settingsCheck(settings: ServerOptions): Check {
+  const write = settings.writeMode ?? "off";
+  const parts = [
+    `write ${write === "off" ? "off (CALM_WRITE=on to offer write tools)" : write}`,
+    settings.tools ? `tools limited to ${settings.tools.length} (CALM_TOOLS)` : "all tools",
+    settings.defaultProject ? `default project ${settings.defaultProject}` : "no default project",
+  ];
+  return { name: "Mode", status: "ok", detail: parts.join("; ") };
+}
 
 /**
  * Prove a key works: get a token, read its scopes, make one read. The
@@ -58,6 +84,7 @@ export async function keyChecks(
   });
 
   const scopes = tokenScopes(grant.accessToken);
+  const tools = offeredTools(options.settings);
   if (!scopes)
     checks.push({
       name: "Scopes",
@@ -65,24 +92,22 @@ export async function keyChecks(
       detail: "the token does not list its scopes; cannot check them",
     });
   else {
-    const areas = coverage(scopes);
-    const readable = areas.filter((a) => !a.missing.length).length;
-    const extra = otherScopes(scopes);
+    const rows = coverage(scopes, tools);
+    const usable = rows.filter((r) => r.status !== "none").length;
+    const full = rows.filter((r) => r.status === "full").length;
+    const mark = { full: "✓", partial: "~", none: "✗" } as const;
     checks.push({
       name: "Scopes",
-      status: readable === 0 ? "fail" : readable < areas.length ? "warn" : "ok",
+      status: usable === 0 ? "fail" : usable < rows.length ? "warn" : "ok",
       detail:
-        readable === 0
-          ? "the key has no calm-api read scope: it can read nothing"
-          : `${readable} of ${areas.length} areas readable`,
-      lines: [
-        ...areas.map((a) =>
-          a.missing.length
-            ? `  ✗ ${a.name}: missing ${a.missing.join(", ")}`
-            : `  ✓ ${a.name}`,
-        ),
-        ...(extra.length ? [`  also: ${extra.join(", ")}`] : []),
-      ],
+        usable === 0
+          ? "the key has none of the scopes the tools need: it can read nothing"
+          : `${usable} of ${rows.length} tools usable, ${full} with every part`,
+      lines: rows.map((r) =>
+        r.status === "full"
+          ? `  ${mark.full} ${r.tool}`
+          : `  ${mark[r.status]} ${r.tool}: ${r.status === "none" ? "needs" : "parts need"} ${r.missing.join(", ")}`,
+      ),
     });
   }
 
@@ -93,6 +118,19 @@ export async function keyChecks(
       status: "ok",
       detail: `projects answered (${projects.length})`,
     });
+    const wanted = options.settings?.defaultProject;
+    if (wanted && !projects.some((p) => p.id.toLowerCase() === wanted.toLowerCase()))
+      checks.push({
+        name: "Project",
+        status: "fail",
+        detail: `CALM_PROJECT ${wanted} is not a project this key can read`,
+      });
+    else if (!wanted && projects.length > 1)
+      checks.push({
+        name: "Project",
+        status: "ok",
+        detail: `${projects.length} projects: agents pass projectId, or set CALM_PROJECT to a default`,
+      });
   } catch (error) {
     const forbidden = error instanceof CloudAlmError && error.code === "forbidden";
     checks.push({

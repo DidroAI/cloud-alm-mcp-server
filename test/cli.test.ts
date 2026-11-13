@@ -19,7 +19,8 @@ import {
   savedKeyPath,
 } from "../src/cli/key.js";
 import { type Io, runCommand, version } from "../src/cli/main.js";
-import { coverage, otherScopes, tokenScopes } from "../src/cli/scopes.js";
+import { coverage, TOOL_SCOPES, tokenScopes } from "../src/cli/scopes.js";
+import { TOOL_NAMES, WRITE_TOOL_NAMES } from "../src/server.js";
 import { stdioServer } from "../src/stdio.js";
 import { BASE_URL, projects } from "./fixtures.js";
 
@@ -107,7 +108,8 @@ describe("init", () => {
     expect(statSync(saved).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(saved, "utf8"))).toEqual(KEY);
     const all = t.all();
-    expect(all).toContain("✓ Scopes  13 of 13 areas readable");
+    expect(all).toContain("✓ Scopes  7 of 7 tools usable, 6 with every part");
+    expect(all).toContain("~ calm_analytics: parts need calm-api.defects.read");
     expect(all).toMatch(/projects answered \(\d+\)/);
     expect(all).toContain(`claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=${saved} -- npx -y cloud-alm-mcp-server`);
     expect(all).toContain("[mcp_servers.cloud-alm]");
@@ -123,15 +125,15 @@ describe("init", () => {
     expect(existsSync(savedKeyPath(t.io.env))).toBe(true);
   });
 
-  test("lists the areas a key lacks scopes for", async () => {
-    const scope = ["x!b1.calm-api.projects.read", "x!b1.calm-api.tasks.personal.read", "uaa.resource"];
+  test("lists the tools a key lacks scopes for", async () => {
+    const scope = ["x!b1.calm-api.projects.read", "x!b1.calm-api.landscape.read", "uaa.resource"];
     const t = io({ fetch: fakeFetch({ scope }).fetcher });
     expect(await runCommand(t.io, ["init", keyFile()])).toBe(0);
     const all = t.all();
-    expect(all).toContain("! Scopes  1 of 13 areas readable");
-    expect(all).toContain("✓ Projects");
-    expect(all).toContain("✗ Features: missing calm-api.features.read");
-    expect(all).toContain("also: calm-api.tasks.personal.read");
+    expect(all).toContain("! Scopes  3 of 7 tools usable, 0 with every part");
+    expect(all).toContain("✗ calm_overview: needs calm-api.tasks.read");
+    expect(all).toContain("~ calm_find: parts need calm-api.tasks.read");
+    expect(all).toContain("~ calm_landscape: parts need calm-api.bsm.read");
   });
 
   test("a key the token endpoint refuses is not saved", async () => {
@@ -199,6 +201,24 @@ describe("doctor", () => {
     expect(all).toContain("✓ Token   issued, valid 60 min");
     expect(all).toContain("Ready.");
     expect(all).not.toContain(SECRET);
+  });
+
+  test("in write mode, checks the write tools' scopes and the default project", async () => {
+    const t = io({
+      fetch: fakeFetch().fetcher,
+      env: { CALM_SERVICE_KEY: KEY_TEXT, CALM_WRITE: "on", CALM_PROJECT: "99999999-0000-4000-8000-000000000000" },
+    });
+    expect(await runCommand(t.io, ["doctor"])).toBe(1);
+    const all = t.all();
+    expect(all).toContain("✓ Mode    write on; all tools; default project 99999999");
+    expect(all).toContain("✗ calm_create_task: needs calm-api.tasks.write");
+    expect(all).toContain("✗ Project CALM_PROJECT 99999999-0000-4000-8000-000000000000 is not a project");
+  });
+
+  test("a bad CALM_WRITE fails the doctor", async () => {
+    const t = io({ fetch: fakeFetch().fetcher, env: { CALM_SERVICE_KEY: KEY_TEXT, CALM_WRITE: "yes" } });
+    expect(await runCommand(t.io, ["doctor"])).toBe(1);
+    expect(t.all()).toContain("CALM_WRITE must be");
   });
 
   test("takes CALM_SERVICE_KEY as inline JSON", async () => {
@@ -302,10 +322,15 @@ describe("scopes", () => {
     expect(tokenScopes("opaque")).toBeUndefined();
   });
 
-  test("coverage names what each area lacks", () => {
-    const areas = coverage(["calm-api.analytics.read"]);
-    expect(areas.find((a) => a.name.startsWith("Analytics"))?.missing).toEqual(["calm-api.analytics.providers.read"]);
-    expect(otherScopes(["calm-api.analytics.read", "calm-api.jobs.read"])).toEqual(["calm-api.jobs.read"]);
+  test("every tool of the server has a scope entry", () => {
+    for (const name of [...TOOL_NAMES, ...WRITE_TOOL_NAMES]) expect(TOOL_SCOPES[name]).toBeDefined();
+    expect(Object.keys(TOOL_SCOPES).sort()).toEqual([...TOOL_NAMES, ...WRITE_TOOL_NAMES].sort());
+  });
+
+  test("coverage: core scopes decide usable, extra scopes decide complete", () => {
+    const [row] = coverage(["calm-api.landscape.read"], ["calm_landscape"]);
+    expect(row).toEqual({ tool: "calm_landscape", status: "partial", missing: ["calm-api.bsm.read"] });
+    expect(coverage([], ["calm_landscape"])[0]?.status).toBe("none");
   });
 });
 
