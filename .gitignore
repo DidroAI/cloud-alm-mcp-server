@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+# Service keys never belong in the repository.
+*service-key*.json
+*.key.json

@@ -1,0 +1,5 @@
+{
+  "name": "cloud-alm",
+  "description": "SAP Cloud ALM for agents: an MCP server (read-only) and skills to explore and review Cloud ALM projects",
+  "version": "0.1.0"
+}

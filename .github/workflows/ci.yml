@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
+      # The built server starts on plain Node and answers 401 without a token.
+      - name: Smoke test on Node
+        run: |
+          node dist/cli.js http &
+          sleep 1
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3333/mcp -H 'content-type: application/json' -d '{}')
+          test "$code" = "401"

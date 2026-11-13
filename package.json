@@ -1,0 +1,44 @@
+{
+  "name": "cloud-alm-mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics, read-only by default",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "cloud-alm-mcp-server": "./dist/cli.js"
+  },
+  "files": ["dist", "README.md"],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test",
+    "start": "node dist/cli.js",
+    "start:http": "node dist/cli.js http",
+    "check:live": "bun scripts/live-check.ts"
+  },
+  "keywords": ["mcp", "model-context-protocol", "cloud-alm", "alm", "agent"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DidroAI/cloud-alm-mcp-server.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}
