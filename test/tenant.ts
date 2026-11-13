@@ -15,33 +15,38 @@ export const DOC = "abababab-0000-4000-8000-000000000001";
 export const TC1 = "dddddddd-0000-4000-8000-000000000001";
 export const TC2 = "dddddddd-0000-4000-8000-000000000002";
 export const TC3 = "dddddddd-0000-4000-8000-000000000003";
+export const ATC = "dddddddd-0000-4000-8000-000000000004";
+export const PLAN = "eeeeeeee-0000-4000-8000-000000000001";
 export const PROCESS = "ERL-00000000000000000000000000000001";
 
-const task = (id: string, displayId: string, type: string, status: string, title: string, tags: string[] = []) => ({
+const task = (id: string, displayId: string, type: string, status: string, title: string, tags: string[] = [], priorityId = 20, subStatus: string | null = null) => ({
   id,
   projectId: PROJECT_ID,
   displayId,
   type,
   status,
+  subStatus,
   title,
-  priorityId: 20,
+  priorityId,
   tags,
   scopeName: "Order to Cash",
 });
 const tasks = [
-  task(REQ, "3-1", "CALMREQU", "CIPREQUOPEN", "Credit check on order release", ["Wave 1"]),
+  task(REQ, "3-1", "CALMREQU", "CIPREQUOPEN", "[demo] REQ-01 Credit check on order release", ["Wave 1"], 20, "CREATED"),
   task(US1, "3-2", "CALMUS", "CIPUSOPEN", "Release blocked orders from a worklist"),
-  task(US2, "3-3", "CALMUS", "CIPUSOPEN", "Credit exposure shown in the order"),
-  task(DEF, "3-4", "CALMDEF", "CIPDFCTOPEN", "Credit block not set for export orders"),
+  task(US2, "3-3", "CALMUS", "CIPUSOPEN", "Credit exposure shown in the order (see REQ-01)"),
+  task(DEF, "3-4", "CALMDEF", "CIPDFCTOPEN", "Credit block not set for export orders", [], 10, "DFC_NEW"),
 ];
 const odata = (value: unknown[]) => ({ "@context": "$metadata#X", value });
-const testCase = (uuid: string, displayId: string, title: string, prepared: boolean, taskIds: string[]) => ({
+const testCase = (uuid: string, displayId: string, title: string, prepared: boolean, taskIds: string[], tags: string[] = []) => ({
   uuid,
   displayId,
   title,
   isPrepared: prepared,
+  priorityCode: 30,
   projectId: PROJECT_ID,
   toTaskAssignments: taskIds.map((taskId, i) => ({ uuid: `17171717-0000-4000-8000-00000000000${i}`, taskId, parentTestCase_ID: uuid })),
+  toTagAssignments: tags.map((label, i) => ({ uuid: `18181818-0000-4000-8000-00000000000${i}`, label, groupLabel: null })),
 });
 
 export const TENANT: Record<string, unknown> = {
@@ -63,11 +68,15 @@ export const TENANT: Record<string, unknown> = {
   [`calm-tasks/v1/tasks/${US1}/relations`]: [{ id: "r3", type: "10", relationTaskId: REQ }],
   [`calm-tasks/v1/tasks/${US2}/relations`]: [{ id: "r4", type: "10", relationTaskId: REQ }],
   [`calm-tasks/v1/tasks/${DEF}/relations`]: [],
+  [`calm-tasks/v1/tasks/${DEF}`]: { ...tasks[3], description: "<p>Found in UAT cycle 1.</p>" },
+  [`calm-tasks/v1/tasks/${DEF}/comments`]: [],
+  [`calm-tasks/v1/tasks/${US2}`]: { ...tasks[2] },
+  [`calm-tasks/v1/tasks/${US2}/comments`]: [],
   "calm-tasks/v1/tasks/solutionProcessAssignments": [
     { relationId: "p1", taskId: REQ, projectId: PROJECT_ID, solutionProcessId: PROCESS },
   ],
   "calm-features/v1/Features": odata([
-    { uuid: FEATURE, displayId: "6-1", title: "Credit management", projectId: PROJECT_ID, statusCode: "IN_TESTING", priorityCode: 20,
+    { uuid: FEATURE, displayId: "6-1", title: "Credit management", projectId: PROJECT_ID, statusCode: "IN_TESTING", priorityCode: 20, tags: ["Wave 1"],
       toTaskAssignments: [{ uuid: REQ, parent_uuid: FEATURE, type: "CALMREQU" }, { uuid: US2, parent_uuid: FEATURE, type: "CALMUS" }] },
   ]),
   [`calm-features/v1/Features/${FEATURE}`]: {
@@ -83,7 +92,7 @@ export const TENANT: Record<string, unknown> = {
   ]),
   "calm-testmanagement/v1/ManualTestCases": odata([
     testCase(TC1, "8-1-1", "Order blocked by credit limit", true, [REQ]),
-    testCase(TC2, "8-1-2", "Release from the worklist", true, [US1]),
+    testCase(TC2, "8-1-2", "Release from the worklist", true, [US1], ["Wave 1"]),
     testCase(TC3, "8-1-3", "Old regression case", false, []),
   ]),
   [`calm-testmanagement/v1/ManualTestCases/${TC2}`]: {
@@ -95,10 +104,24 @@ export const TENANT: Record<string, unknown> = {
         toActions: [{ uuid: "s1", title: "Open the worklist", description: "As credit controller", expectedResult: "The order is listed", sequence: 1, isEvidenceRequired: true }] },
     ],
   },
-  "calm-testmanagement/v1/AutomatedTestCases": odata([]),
-  "calm-testmanagement-testplans/v1/TestPlans": odata([
-    { uuid: "eeeeeeee-0000-4000-8000-000000000001", displayId: "8-3-1", title: "UAT cycle 1", projectId: PROJECT_ID },
+  [`calm-testmanagement/v1/ManualTestCases/${TC1}`]: {
+    ...testCase(TC1, "8-1-1", "Order blocked by credit limit", true, [REQ]),
+    toActivities: [],
+  },
+  "calm-testmanagement/v1/AutomatedTestCases": odata([
+    { uuid: ATC, displayId: "8-2-1", title: "Order release smoke run", isPrepared: false, priorityCode: 40, projectId: PROJECT_ID, toTaskAssignments: [] },
   ]),
+  "calm-testmanagement-testplans/v1/TestPlans": odata([
+    { uuid: PLAN, displayId: "8-3-1", title: "UAT cycle 1", projectId: PROJECT_ID },
+  ]),
+  [`calm-testmanagement-testplans/v1/TestPlans/${PLAN}`]: {
+    uuid: PLAN, displayId: "8-3-1", title: "UAT cycle 1", projectId: PROJECT_ID, description: "First acceptance cycle.",
+    toTestCaseAssignments: [
+      { testCaseId: TC2, testCaseDisplayId: "8-1-2", testCaseTitle: "Release from the worklist", sequence: 1 },
+      { testCaseId: TC3, testCaseDisplayId: "8-1-3", testCaseTitle: "Old regression case", sequence: 2 },
+      { testCaseId: TC1, testCaseDisplayId: "8-1-1", testCaseTitle: "Order blocked by credit limit", sequence: 3 },
+    ],
+  },
   "calm-processmanagement/v1/solutionProcesses": odata([
     { solutionProcessId: PROCESS, solutionProcessVersionName: "Lead to Cash", isScoped: true, projectId: PROJECT_ID },
   ]),
@@ -109,31 +132,49 @@ export const TENANT: Record<string, unknown> = {
       { date: "2026-11-13", period: "C1D", projectGUID: PROJECT_ID, testcaseId: TC2, testPlan: "UAT cycle 1", status: "Passed", passedActions: 1, failedActions: 0, allActions: 1 },
     ],
   },
+  "calm-analytics/v1/odata/v4/analytics/Defects": {
+    value: [
+      { date: "2026-11-13", period: "C1D", project: PROJECT_ID, GUID: DEF, defectId: "3-4", statusText: "New", defectStatus: "DFC_NEW", priority: "Very High", testcaseId: TC1, testcaseName: "Order blocked by credit limit", testPlan: "UAT cycle 1", counter: 1 },
+    ],
+  },
   "calm-landscape/v1/landscapeObjects": [
     { lmsId: "l1", name: "acct-1", objectType: "CloudService", systemNumber: "100", role: "PROD", serviceType: "SAP Cloud ALM" },
   ],
   "bsm-service/v1/events": [
     { eventId: "e1", eventName: "EVB1", eventType: "Degradation", eventStatus: "Closed", eventStartTime: "2026-11-09T08:00:00Z", eventEndTime: "2026-11-09T09:00:00Z", systemNumber: "100" },
-    { eventId: "e2", eventName: "EVB2", eventType: "Maintenance", eventStatus: "Planned", eventStartTime: "2026-11-20T08:00:00Z", systemNumber: "100" },
+    { eventId: "e2", eventName: "EVB2", eventType: "Maintenance", eventStatus: "Planned", eventStartTime: "2026-11-20T08:00:00Z", systemNumber: "100",
+      eventDescription: "<p>Planned database upgrade; the service is read-only for 30 minutes.</p>" },
   ],
 };
 
 export type Seen = { url: URL; authorization: string | null };
 
-/** A fake `fetch` answering from `routes` by path (after `/api/`). */
-export function fakeCloudAlm(routes: Record<string, unknown> = TENANT) {
+/**
+ * A fake `fetch` answering from `routes` by path (after `/api/`). With
+ * `delayMs`, each answer waits that long, and `peak` records the most
+ * requests in flight at once.
+ */
+export function fakeCloudAlm(routes: Record<string, unknown> = TENANT, options: { delayMs?: number } = {}) {
   const seen: Seen[] = [];
+  const stats = { inFlight: 0, peak: 0 };
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const headers = new Headers(init?.headers);
     seen.push({ url, authorization: headers.get("authorization") });
     if (url.pathname.endsWith("/oauth/token"))
       return Response.json({ access_token: "key-token", expires_in: 3600 });
+    stats.inFlight++;
+    stats.peak = Math.max(stats.peak, stats.inFlight);
+    try {
+      if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
+    } finally {
+      stats.inFlight--;
+    }
     const body = routes[url.pathname.replace(/^\/api\//, "")];
     if (body === undefined)
       return Response.json({ message: "Not Found" }, { status: 404 });
     if (body instanceof Response) return body.clone();
     return Response.json(body);
   }) as typeof fetch;
-  return { fetch: fetcher, seen };
+  return { fetch: fetcher, seen, stats };
 }
