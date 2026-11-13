@@ -169,7 +169,7 @@ describe("tools", () => {
       defaultProject: PROJECT_ID,
       tools: ["calm_find", "calm_get"],
     });
-    expect(() => serverOptionsFromEnv({ CALM_TOOLS: "calm_delete" })).toThrow("unknown tools calm_delete");
+    expect(() => serverOptionsFromEnv({ CALM_TOOLS: "calm_drop" })).toThrow("unknown tools calm_drop");
     expect(() => serverOptionsFromEnv({ CALM_PROJECT: "x" })).toThrow("GUID");
   });
 

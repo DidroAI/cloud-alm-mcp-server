@@ -25,9 +25,11 @@ All notable changes to this package. The format follows
 - `doctor` checks scopes per tool, write mode, approval and the default project.
 
 - Write mode, off by default (`CALM_WRITE=on|dry-run`):
-  `calm_create_test_case`, `calm_link`, `calm_tag`, `calm_create_task`.
-  Create and link only, never delete; duplicates refused; every write tool
-  takes `dryRun`.
+  `calm_create_task`, `calm_create_test_case`, `calm_create_feature`,
+  `calm_create_document`, `calm_update`, `calm_delete`, `calm_comment`,
+  `calm_link` (link and unlink, also documents and requirements),
+  `calm_tag`. Duplicates refused; every write tool takes `dryRun` and
+  previews each change before → after; a 403 names the missing scope.
 - `CALM_TOOLS` (allow list) and `CALM_PROJECT` (default project).
 - Skills `cloud-alm-explore` and `cloud-alm-test-design`.
 - `cloud-alm-mcp-server init [file|-]`: checks a service key (shape, token,

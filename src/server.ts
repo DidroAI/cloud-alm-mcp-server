@@ -32,6 +32,14 @@ import {
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
 import {
+  comment,
+  createDocument,
+  createFeature,
+  DOCUMENT_TYPE_HELP,
+  remove,
+  update,
+} from "./views/edit.js";
+import {
   analytics,
   FIND_TYPES,
   find,
@@ -92,6 +100,9 @@ const WRITE = {
   openWorldHint: true,
 } as const;
 
+/** Write tools that can remove or overwrite what is there. */
+const DESTRUCTIVE = new Set(["calm_update", "calm_delete", "calm_link", "calm_tag"]);
+
 const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -147,8 +158,8 @@ export function createServer(
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
           ? options.approval && options.approval !== "off"
-            ? "Write tools are on, with the user's approval: a write answers with a preview the user approves (in a card, a dialog, or by saying yes in the chat when the answer asks for calm_confirm). Never call calm_confirm without the user's yes to that exact change."
-            : "Write tools are on: confirm with the user before writing."
+            ? "Write tools are on, with the user's approval: a write answers with a preview the user approves (in a card, a dialog, or by saying yes in the chat when the answer asks for calm_confirm). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all."
+            : "Write tools are on: confirm with the user before each write (show the dryRun preview); calm_delete cannot be undone, and features cannot be deleted at all."
           : options.writer && options.writeMode === "dry-run"
             ? "Write tools are in dry-run mode, set by the operator (CALM_WRITE=dry-run): they only preview, even with dryRun false. Tell the user what would be written."
             : "Read-only: no write tools."
@@ -264,7 +275,7 @@ export function createServer(
       description,
       // A zod v4 raw shape; the SDK's compat type does not name v4 shapes.
       inputSchema: inputSchema as never,
-      annotations: isWrite ? { ...WRITE, title } : { ...READ_ONLY, title },
+      annotations: isWrite ? { ...WRITE, destructiveHint: DESTRUCTIVE.has(name), title } : { ...READ_ONLY, title },
     };
     if (isWrite && approval !== "off") {
       const runAny = run as unknown as (args: Record<string, unknown>) => Promise<string>;
@@ -372,7 +383,7 @@ export function createServer(
     tool(
       "calm_create_test_case",
       "Create a manual test case",
-      "Create a manual test case with activities and steps, linked to the tasks it covers. Cannot be deleted or tagged through the API afterwards: check with the user first; refuses a duplicate title.",
+      "Create a manual test case with activities and steps, linked to the tasks it covers. Refuses a duplicate title. Test cases cannot be tagged through the API; deleting one needs the key's testcases.delete scope.",
       {
         title: z.string().min(1).max(250),
         covers: z.array(ref).max(20).optional().describe("Requirements or user stories it tests"),
@@ -385,15 +396,21 @@ export function createServer(
     );
     tool(
       "calm_link",
-      "Link a test case or feature to tasks",
-      "Link a manual test case (it tests them) or a feature (it delivers them) to requirements or user stories. Skips links that exist.",
-      { from: ref.describe("Test case or feature id"), tasks: z.array(ref).min(1).max(20), projectId, dryRun },
+      "Link or unlink items",
+      "Link items to tasks, or with unlink: true remove the links. from = a manual test case (tests the tasks), a feature (delivers them), a document (documents them), a requirement (its user stories or project tasks go under it), or a user story or project task (with tasks = its one requirement). Skips links that exist (or, unlinking, that do not).",
+      {
+        from: ref.describe("Test case, feature, document, requirement, user story or project task id"),
+        tasks: z.array(ref).min(1).max(20),
+        unlink: z.boolean().optional().describe("true: remove these links instead"),
+        projectId,
+        dryRun,
+      },
       (a) => link(calm, writer, defined(a) as never, w),
     );
     tool(
       "calm_tag",
       "Tag tasks",
-      "Add or remove tags on requirements, user stories, defects or tasks; other tags stay. (Test cases cannot be tagged through the API.)",
+      "Add or remove tags on requirements, user stories, defects or tasks; other tags stay. (Test cases and features cannot be tagged through the API.)",
       {
         tasks: z.array(ref).min(1).max(20),
         add: z.array(z.string().min(1).max(256)).max(20).optional(),
@@ -418,6 +435,96 @@ export function createServer(
         dryRun,
       },
       (a) => createTask(calm, writer, defined(a) as never, w),
+    );
+    const priority = z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).describe("10 very high, 20 high, 30 medium, 40 low");
+    const date = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/, "YYYY-MM-DD, or empty to clear");
+    tool(
+      "calm_update",
+      "Change items",
+      "Change 1–20 tasks, features or manual test cases (same changes for each). Tasks: title, description, status, priority, assignee, startDate, dueDate, timebox, obsolete. Features: title, description, status, priority. Manual test cases: title, prepared, priority, addActivity (appends an activity with steps). Only changed fields are sent; answers before → after per field. Documents cannot be changed after create.",
+      {
+        ids: z.array(ref).min(1).max(20),
+        title: z.string().min(1).max(250).optional().describe("One item at a time"),
+        description: z.string().min(1).max(8000).optional().describe("Plain text; blank lines separate paragraphs. Replaces the description"),
+        status: z
+          .string()
+          .min(1)
+          .max(40)
+          .optional()
+          .describe(
+            "Plain words. Tasks: open, in progress, blocked, in review, done, not relevant (as the type allows); requirements also to be approved, approved, in realization, approved for deployment, rejected; defects also retest. Features: in specification, not planned, in realization, in testing, successfully tested, deployed",
+          ),
+        priority: priority.optional(),
+        assignee: z.string().max(120).optional().describe("User id or e-mail of a project member; empty to unassign"),
+        startDate: date.optional(),
+        dueDate: date.optional(),
+        timebox: z.string().min(1).max(120).optional().describe("Phase or sprint of the project, by name or id"),
+        obsolete: z.boolean().optional(),
+        prepared: z.boolean().optional().describe("Test case is ready to run"),
+        addActivity: z
+          .object({ title: z.string().min(1).max(250), steps: z.array(step).min(1).max(50) })
+          .optional()
+          .describe("Test cases: append an activity with these steps"),
+        projectId,
+        dryRun,
+      },
+      (a) => update(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_delete",
+      "Delete items",
+      "Delete 1–20 tasks, manual test cases or documents; cannot be undone. soft: true marks tasks obsolete instead (SAP recommends it). force: true deletes a test case with its test runs and results. Features cannot be deleted through the API; approved requirements cannot be deleted. Test cases and documents need the key's testcases.delete / documents.delete scope.",
+      {
+        ids: z.array(ref).min(1).max(20),
+        soft: z.boolean().optional().describe("Tasks: mark obsolete instead of deleting"),
+        force: z.boolean().optional().describe("Test cases: also delete their test runs and results (testcases.force-delete scope)"),
+        projectId,
+        dryRun,
+      },
+      (a) => remove(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_comment",
+      "Comment on a task",
+      "Add a comment to a requirement, user story, defect or other task.",
+      {
+        task: ref,
+        text: z.string().min(1).max(8000).describe("Plain text; blank lines separate paragraphs"),
+        projectId,
+        dryRun,
+      },
+      (a) => comment(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_create_feature",
+      "Create a feature",
+      "Create a feature, optionally linked to the requirements or user stories it delivers. Features cannot be deleted through the API: check with the user first; refuses a duplicate title.",
+      {
+        title: z.string().min(1).max(600),
+        description: z.string().min(1).max(8000).optional().describe("Plain text; blank lines separate paragraphs"),
+        status: z.string().min(1).max(40).optional().describe("Default in specification"),
+        priority: priority.optional().describe("Default 30 medium"),
+        tasks: z.array(ref).max(20).optional().describe("Tasks it delivers"),
+        projectId,
+        dryRun,
+      },
+      (a) => createFeature(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_create_document",
+      "Create a document",
+      "Create a document with content, linked to tasks. Its title, content, status, priority and type cannot be changed through the API afterwards; refuses a duplicate title.",
+      {
+        title: z.string().min(1).max(250),
+        content: z.string().min(1).max(50000).describe("Plain text; blank lines separate paragraphs"),
+        type: z.string().min(1).max(60).optional().describe(`Code or name: ${DOCUMENT_TYPE_HELP}`),
+        status: z.enum(["in progress", "in review", "released"]).optional().describe("Default in progress"),
+        priority: priority.optional().describe("Default 30 medium"),
+        tasks: z.array(ref).max(20).optional().describe("Tasks it documents"),
+        projectId,
+        dryRun,
+      },
+      (a) => createDocument(calm, writer, defined(a) as never, w),
     );
   }
   if (approval !== "off") registerApproval();
@@ -516,6 +623,11 @@ export const WRITE_TOOL_NAMES = [
   "calm_link",
   "calm_tag",
   "calm_create_task",
+  "calm_update",
+  "calm_delete",
+  "calm_comment",
+  "calm_create_feature",
+  "calm_create_document",
 ] as const;
 
 /** Tool names, for documentation, tests and the allow list. */
