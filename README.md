@@ -6,8 +6,10 @@ requirements, user stories, defects, features, documents, test cases and
 test plans, processes, landscape, cross-library, analytics and service
 status events.
 
-**Read-only today.** Every tool is annotated `readOnlyHint` and the client
-sends GET requests only, to `*.alm.cloud.sap` hosts only.
+**Read-only by default.** The read tools are annotated `readOnlyHint` and
+the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
+Writing (create test cases and tasks, link, tag; never delete) is opt-in
+with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
 
 > Status: private, in development. Not published yet; no licence chosen.
 
@@ -82,35 +84,57 @@ with access to the whole tenant. SAP cannot limit a key to one project.
 
 ## Tools
 
-List tools show ids in `[brackets]`; pass them to the get tools. Lists page
-with `limit` (1–200, default 50) and `offset`, and say which offset gives
-the next page.
+Seven read tools, each answering a question in one call. Items are named by
+their short **display ids** (`3-17` task, `6-1` feature, `7-1` document,
+`8-1-2` test case, `8-3-1` test plan), which every tool accepts; GUIDs work
+too. Answers are compact text written for a model's context.
 
-| Tool | What it reads | Scope (`calm-api.` …) |
-| --- | --- | --- |
-| `calm_list_projects` | projects | `projects.read` |
-| `calm_get_project` | one project, its timeboxes and teams | `projects.read` |
-| `calm_search_tasks` | tasks by project, type (requirement, user story, defect, roadmap task…), status, words in the title | `tasks.read` |
-| `calm_get_task` | one task with description, references, comments, tags, and links: requirement, test cases, features, solution processes | `tasks.read` (+ `testcases.read` for its test cases) |
-| `calm_list_features` / `calm_get_feature` | features; one with its transport ids | `features.read` |
-| `calm_list_documents` / `calm_get_document` | documents; one with its content as text | `documents.read` |
-| `calm_list_test_cases` | manual or automated test cases | `testcases.read` |
-| `calm_get_test_case` | one manual test case with activities and steps, the tasks it covers, its tags | `testcases.read` |
-| `calm_test_coverage` | requirements and user stories of a project with and without a linked test case; test cases linked to no task | `tasks.read`, `testcases.read` |
-| `calm_list_test_plans` / `calm_get_test_plan` | test plans; one with its test cases | `testplans.read` |
-| `calm_list_scopes` | project scopes | `processmanagement.read` |
-| `calm_list_processes` | solution processes and whether each is in scope | `processmanagement.read` |
-| `calm_list_process_hierarchy` | process hierarchy nodes | `processhierarchy.read` |
-| `calm_list_landscape` | systems, cloud and business services | `landscape.read` |
-| `calm_list_library` | applications, developments, interfaces or configurations | `lib.read` |
-| `calm_list_analytics_providers` | analytics providers and the scopes each needs | `analytics.providers.read` |
-| `calm_query_analytics` | aggregated rows of one dataset (Tasks, Defects, Tests, Jobs…) | `analytics.read` + the dataset's area scope |
-| `calm_list_status_events` | service outages, maintenance, communications | `bsm.read` |
+| Tool | Answers |
+| --- | --- |
+| `calm_overview` | Start here: the project, its current phase, counts of requirements, user stories, defects, features, test cases and documents by status, latest test results, tags in use, gaps |
+| `calm_find` | Search or list items across types (tasks, features, documents, test cases, test plans, processes, library) by words in titles and tags (`a b \| c`), type, status, tag |
+| `calm_get` | Full content of 1–10 items at once: description, test steps and latest result, document text, feature transports, every link named |
+| `calm_trace` | An item's links both ways: requirement → user stories → features (status, transports), test cases (with results), documents, solution process |
+| `calm_gaps` | What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared |
+| `calm_analytics` | Analytics datasets (tasks, defects, test runs, jobs, exceptions, integration messages…), counted with `groupBy` |
+| `calm_landscape` | Systems and cloud services, and SAP service status events, open ones first |
 
-A tool whose scope the key lacks answers a tool error
-`Cloud ALM forbidden: …`; the other tools keep working. Errors are short
-text with a code (`unauthorized`, `forbidden`, `not_found`,
-`rate_limited`, `unavailable`, `bad_request`) and never carry a token.
+With write mode on (below), four more:
+
+| Tool | Does |
+| --- | --- |
+| `calm_create_test_case` | Creates a manual test case with activities and steps, linked to the requirements or user stories it covers; refuses a duplicate title |
+| `calm_link` | Links a test case (tests) or feature (delivers) to tasks; skips existing links |
+| `calm_tag` | Adds or removes tags on tasks, keeping the others, and reports tags Cloud ALM silently dropped |
+| `calm_create_task` | Creates a requirement, user story (optionally under a requirement), defect or project task |
+
+Every write tool takes `dryRun: true` to answer with what it would send.
+Writes are never retried and nothing is ever deleted. What the Cloud ALM
+API cannot do, the tools do not offer: test cases cannot be deleted, tagged
+or given a solution process through the API, and automated test cases
+cannot be changed.
+
+A read the key has no scope for is named in the answer ("not readable with
+this key"); the rest still answers. Errors are short text with a code
+(`unauthorized`, `forbidden`, `not_found`, `rate_limited`, `unavailable`,
+`bad_request`) and never carry a token.
+
+### Modes and governance
+
+| Variable | Effect |
+| --- | --- |
+| `CALM_WRITE` | `off` (default): read tools only. `dry-run`: write tools are offered but only preview. `on`: write tools write. The key also needs the write scopes. |
+| `CALM_TOOLS` | Comma-separated tool names to offer, e.g. `calm_overview,calm_find,calm_get`. Default: all (of the current mode). |
+| `CALM_PROJECT` | Project GUID used when a call names none. Without it, a tenant with one project uses that one; with several, tools ask for `projectId`. |
+
+In HTTP mode the same variables apply to every request; the bearer token
+decides what Cloud ALM allows.
+
+Scopes (`calm-api.` …): `projects.read`, `tasks.read`, `features.read`,
+`documents.read`, `testcases.read`, `testplans.read`,
+`processmanagement.read`, `landscape.read`, `lib.read`, `analytics.read`
+with `tests.read` (test results), `bsm.read`; for writing `tasks.write` and
+`testcases.write` (feature links are written through the Tasks API).
 
 ## Two ways to run it
 
@@ -195,7 +219,7 @@ Every failure is a `CloudAlmError` with a `code` and a short `reason`:
 | Code | When |
 | --- | --- |
 | `unauthorized` | no usable token, expired token, 401, key refused by the token endpoint |
-| `forbidden` | 403: the key lacks the scope for this read |
+| `forbidden` | 403: the key lacks the scope for this call |
 | `not_found` | 404 (also a wrong path) |
 | `rate_limited` | 429 after two short retries (Cloud ALM allows about 500 requests per 5 s per tenant) |
 | `unavailable` | 5xx, network error, timeout (30 s per operation), non-JSON or oversized answer |
@@ -206,10 +230,15 @@ opaque strings are redacted.
 
 ## Safety
 
-GET only, to the grant's `baseUrl` only, which must be `https://` on a
-`*.alm.cloud.sap` host (`hostPattern` option to change it for a test
-double). No redirects followed. At most 40 requests and 30 seconds per
-operation; answers above 8 MB are refused.
+The reader (`CloudAlm`) sends GET only, to the grant's `baseUrl` only,
+which must be `https://` on a `*.alm.cloud.sap` host (`hostPattern` option
+to change it for a test double). No redirects followed. At most 40 requests
+and 30 seconds per operation; answers above 8 MB are refused.
+
+The writer (`CloudAlmWriter`), used only in write mode, posts to a fixed
+list of create and link endpoints (manual test cases, test case task
+assignments, tasks, task tags, feature assignments), never retries, and has
+no delete.
 
 ## Develop
 
