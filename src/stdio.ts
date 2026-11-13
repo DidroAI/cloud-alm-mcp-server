@@ -6,7 +6,7 @@ import {
   parseServiceKey,
   serviceKeyGrants,
 } from "./calm/index.js";
-import { createServer } from "./server.js";
+import { createServer, serverOptionsFromEnv } from "./server.js";
 
 /** Env var naming the path of the developer's own service key (JSON). */
 export const SERVICE_KEY_ENV = "CALM_SERVICE_KEY";
@@ -50,5 +50,5 @@ export function stdioServer(
     throw new Error(
       `Set ${SERVICE_KEY_ENV} to the path of your Cloud ALM API service key (JSON).`,
     );
-  return createServer(readerFromKeyFile(path));
+  return createServer(readerFromKeyFile(path), serverOptionsFromEnv(env));
 }

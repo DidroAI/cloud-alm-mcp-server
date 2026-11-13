@@ -5,7 +5,7 @@ import {
   type CloudAlmOptions,
 } from "./calm/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { createServer } from "./server.js";
+import { createServer, type ServerOptions, serverOptionsFromEnv } from "./server.js";
 
 export type HttpOptions = {
   /**
@@ -17,6 +17,8 @@ export type HttpOptions = {
   reader?: CloudAlmOptions;
   /** Largest accepted request body. Default 256 KB. */
   maxBodyBytes?: number;
+  /** Tool options (default project, allowed tools). Default: from the environment. */
+  server?: ServerOptions;
 };
 
 /** Header a caller may use to name the Cloud ALM API root per request. */
@@ -46,6 +48,7 @@ function refuse(
  */
 export function createHttpHandler(options: HttpOptions = {}) {
   const maxBody = options.maxBodyBytes ?? 256 * 1024;
+  const serverOptions = options.server ?? serverOptionsFromEnv();
   return async (request: Request): Promise<Response> => {
     if (request.method !== "POST")
       return refuse(
@@ -79,7 +82,7 @@ export function createHttpHandler(options: HttpOptions = {}) {
       { accessToken: match[1], baseUrl },
       options.reader ?? {},
     );
-    const server = createServer(calm);
+    const server = createServer(calm, serverOptions);
     // No session id generator: stateless, one server per request.
     const transport = new WebStandardStreamableHTTPServerTransport({
       enableJsonResponse: true,

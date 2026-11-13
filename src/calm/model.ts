@@ -26,6 +26,8 @@ export type Project = {
   /** e.g. `ONTRK` (on track). */
   operationalStatus: string | null;
   programId: string | null;
+  /** The timebox (phase) the project is in. */
+  phaseId: string | null;
 };
 
 export type Timebox = {

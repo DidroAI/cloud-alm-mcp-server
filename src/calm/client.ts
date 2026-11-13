@@ -65,7 +65,7 @@ const MAX_COMMENTS = 20;
 const MAX_COVERAGE_ROWS = 500;
 
 /** Service paths. Casing differs per service, as Cloud ALM serves them. */
-const PATHS = {
+export const PATHS = {
   projects: "calm-projects/v1/projects",
   tasks: "calm-tasks/v1/tasks",
   features: "calm-features/v1/Features",
@@ -199,16 +199,17 @@ export function taskTypeCode(type: string): TaskTypeCode {
 
 // ---- Normalisers: Cloud ALM rows to this library's shapes ----
 
-const project = (row: Row): Project => ({
+export const project = (row: Row): Project => ({
   id: str(row.id) ?? "",
   name: str(row.name),
   status: str(row.status),
   purpose: str(row.purpose),
   operationalStatus: str(row.operationalStatus),
   programId: str(row.programId),
+  phaseId: str(row.phaseId),
 });
 
-const taskSummary = (row: Row): TaskSummary => {
+export const taskSummary = (row: Row): TaskSummary => {
   const type = str(row.type);
   return {
     id: str(row.id) ?? "",
@@ -235,7 +236,7 @@ const comment = (row: Row): TaskComment => ({
   text: plainText(row.content ?? row.text ?? row.comment, 2000),
 });
 
-const feature = (row: Row): Feature => ({
+export const feature = (row: Row): Feature => ({
   id: str(row.uuid) ?? "",
   displayId: str(row.displayId),
   title: str(row.title),
@@ -248,7 +249,7 @@ const feature = (row: Row): Feature => ({
   tags: strings(row.tags),
 });
 
-const documentSummary = (row: Row): DocumentSummary => ({
+export const documentSummary = (row: Row): DocumentSummary => ({
   id: str(row.uuid) ?? "",
   displayId: str(row.displayId),
   title: str(row.title),
@@ -262,7 +263,7 @@ const documentSummary = (row: Row): DocumentSummary => ({
 const DOCUMENT_FIELDS =
   "uuid,displayId,title,projectId,documentTypeCode,statusCode,isTemplate,version,modifiedAt";
 
-const testCase = (row: Row, kind: TestCaseKind): TestCase => ({
+export const testCase = (row: Row, kind: TestCaseKind): TestCase => ({
   id: str(row.uuid) ?? "",
   displayId: str(row.displayId),
   title: str(row.title),
@@ -275,14 +276,14 @@ const testCase = (row: Row, kind: TestCaseKind): TestCase => ({
   modifiedAt: str(row.modifiedAt),
 });
 
-const linkedTestCase = (row: Row, kind: TestCaseKind): LinkedTestCase => ({
+export const linkedTestCase = (row: Row, kind: TestCaseKind): LinkedTestCase => ({
   id: str(row.uuid) ?? "",
   displayId: str(row.displayId),
   title: str(row.title),
   kind,
 });
 
-const typeName = (type: string | null) =>
+export const typeName = (type: string | null) =>
   type ? (TASK_TYPES[type as TaskTypeCode] ?? null) : null;
 
 /** OData filter for test cases linked to one task. */
@@ -366,7 +367,7 @@ const bySequence = (a: Row, b: Row) =>
   (num(a.sequence) ?? Number.MAX_SAFE_INTEGER) -
   (num(b.sequence) ?? Number.MAX_SAFE_INTEGER);
 
-const testPlan = (row: Row): TestPlan => ({
+export const testPlan = (row: Row): TestPlan => ({
   id: str(row.uuid) ?? "",
   displayId: str(row.displayId),
   title: str(row.title),
@@ -384,7 +385,7 @@ const scope = (row: Row): Scope => ({
   description: plainText(row.description, 500),
 });
 
-const solutionProcess = (row: Row): SolutionProcess => ({
+export const solutionProcess = (row: Row): SolutionProcess => ({
   id: str(row.solutionProcessId) ?? "",
   versionId: str(row.solutionProcessVersionId),
   name: str(row.solutionProcessVersionName),
@@ -482,6 +483,15 @@ export class CloudAlm {
 
   private run<T>(operation: (session: Session) => Promise<T>): Promise<T> {
     return withSession(this.grant, this.options, operation);
+  }
+
+  /**
+   * Several GETs in one operation (one request budget, one deadline), for
+   * views built on this client (`views.ts`). Paths come from `PATHS`.
+   * @internal
+   */
+  operation<T>(read: (session: Session) => Promise<T>): Promise<T> {
+    return this.run(read);
   }
 
   // ---- Projects ----

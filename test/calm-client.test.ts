@@ -61,6 +61,7 @@ describe("projects", () => {
         purpose: "IMPLEMENTATION",
         operationalStatus: "ONTRK",
         programId: null,
+        phaseId: "12121212-0000-4000-8000-000000000001",
       },
     ]);
     const detail = await calm.getProject(PROJECT_ID.toUpperCase());
