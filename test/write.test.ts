@@ -222,6 +222,8 @@ describe("calm_update", () => {
     expect(writes[1]?.body).toEqual({ description: "<p>Line one</p><p>Line two</p>", status: "CIPDFCTDONE" });
     expect(r.text).toContain('3-3 user story "Credit exposure shown in the order":\n  description: "" → "Line one Line two"\n  status: open → done');
     expect(r.text).toContain("3-4 defect");
+    expect(r.text).toContain("status: open → done");
+    expect(r.text).not.toContain("asked for");
   });
 
   test("a requirement's approval states set subStatus and approvalState", async () => {

@@ -229,6 +229,8 @@ export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
       if (body.statusCode === "APPROVED_FOR_DEPLOYMENT")
         return Response.json({ code: "400", message: "Status code 'APPROVED_FOR_DEPLOYMENT' can't be set via API." }, { status: 400 });
       Object.assign(row, body);
+      // Cloud ALM derives a defect's sub-status from its status.
+      if (body.status && !body.subStatus && row.type === "CALMDEF") row.subStatus = `DFC_${String(body.status).slice(7)}`;
       if (row["@etag"]) row["@etag"] = `W/"${Number(String(row["@etag"]).slice(3, -1)) + 1}"`;
       return Response.json(row);
     }

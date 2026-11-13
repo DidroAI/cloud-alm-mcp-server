@@ -292,7 +292,7 @@ async function linkPlan(
       };
     }
     case "task":
-      return requirementPlan(calm, writer, source.task, tasks, unlink);
+      return requirementPlan(calm, writer, await snap.tasks(), source.task, tasks, unlink);
   }
 }
 
@@ -302,6 +302,7 @@ const UNDER_REQUIREMENT = ["CALMUS", "CALMTASK"];
 async function requirementPlan(
   calm: CloudAlm,
   writer: CloudAlmWriter,
+  all: TaskSummary[],
   from: TaskSummary,
   tasks: TaskSummary[],
   unlink: boolean,
@@ -339,7 +340,7 @@ async function requirementPlan(
         relationIds.set(c.id, str(current?.id) ?? "");
       } else skipped.push(c.displayId ?? c.id);
     } else if (unlink) skipped.push(c.displayId ?? c.id);
-    else if (currentReq) conflicts.push(`${c.displayId} is under another requirement (${currentReq})`);
+    else if (currentReq) conflicts.push(`${c.displayId} is under requirement ${all.find((t) => t.id.toLowerCase() === currentReq.toLowerCase())?.displayId ?? currentReq}`);
     else todo.push(c);
   }
   if (conflicts.length)

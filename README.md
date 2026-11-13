@@ -150,9 +150,11 @@ names the scope the key lacks. Writes are never retried.
 What Cloud ALM's API itself does not allow (no scope changes it):
 
 - Features cannot be deleted, and their status moves only along Cloud
-  ALM's path (in realization → in testing → successfully tested, back to in
-  realization); "ready for production" cannot be set through the API, so
-  "deployed" is not reachable from it either.
+  ALM's path (in specification ↔ not planned; in specification → in
+  realization → in testing → successfully tested, back to in realization;
+  once in realization, never back to in specification or not planned).
+  "Ready for production" cannot be set through the API, so "deployed" is
+  not reachable through it either.
 - A feature description holding images cannot be changed through the API.
 - A document's title, content, status, priority and type cannot change
   after create; only its links can.

@@ -113,10 +113,25 @@ function taskStatus(type: string, wanted: string): StatusChange {
   return { status: `${table.prefix}${suffix}` };
 }
 
+/** Sub-statuses that say more than the status; others are left out. */
+const SUB_STATUS: Record<string, string> = {
+  TO_BE_APPROVED: "to be approved",
+  IN_PLANNING: "in planning",
+  IN_REALIZATION: "in realization",
+  APPROVED_FOR_DEPLOYMENT: "approved for deployment",
+  DFC_RETEST_REQ: "retest required",
+  DFC_POSTPONE: "postponed",
+};
+const READY_4_APPR = "ready for approval";
+
 const taskStatusText = (row: Row) => {
   const status = statusLabel(str(row.status));
-  const extra = [codeText(row.subStatus), row.approvalState ? `approval ${codeText(row.approvalState)}` : null]
-    .filter((x) => x && x !== status && !(x === "created" && status === "open"))
+  const approval = str(row.approvalState);
+  const extra = [
+    SUB_STATUS[str(row.subStatus) ?? ""],
+    approval ? `approval ${approval === "READY_4_APPR" ? READY_4_APPR : codeText(approval)}` : null,
+  ]
+    .filter(Boolean)
     .join(", ");
   return extra ? `${status} (${extra})` : status;
 };
@@ -191,7 +206,13 @@ const FIELDS: Record<Item["kind"], Field[]> = {
 const KIND_NAME: Record<Item["kind"], string> = { task: "task", feature: "feature", testCase: "manual test case", document: "document" };
 
 /** One field's part of the PATCH body, and how to show it from a row. */
-type Part = { field: string; body: Record<string, unknown>; show: (row: Row) => string };
+type Part = {
+  field: string;
+  body: Record<string, unknown>;
+  show: (row: Row) => string;
+  /** Whether a read-back row holds what was sent; default: every body key equal. */
+  stored?: (row: Row) => boolean;
+};
 type Planned = {
   item: Item;
   path: string;
@@ -248,6 +269,7 @@ async function planTask(calm: CloudAlm, snap: Snapshot, item: Item & { kind: "ta
       field: "description",
       body: { description: textToHtml(input.description) },
       show: (r) => `"${short(plainText(r.description) ?? "", 80)}"`,
+      stored: (r) => plainText(r.description) === plainText(textToHtml(input.description ?? "")),
     });
   if (input.status !== undefined) {
     const change = taskStatus(type, input.status);
@@ -301,7 +323,13 @@ async function planFeature(calm: CloudAlm, item: Item & { kind: "feature" }, inp
         "bad_request",
         `${f.displayId}'s description holds images; Cloud ALM cannot save a new description for it through the API (it answers 500). Change it in the Cloud ALM UI`,
       );
-    parts.push({ field: "description", body: { description: textToHtml(input.description) }, show: (r) => `"${short(plainText(r.description) ?? "", 80)}"` });
+    const html = textToHtml(input.description);
+    parts.push({
+      field: "description",
+      body: { description: html },
+      show: (r) => `"${short(plainText(r.description) ?? "", 80)}"`,
+      stored: (r) => plainText(r.description) === plainText(html),
+    });
   }
   if (input.status !== undefined) {
     const code = featureCode(input.status);
@@ -398,7 +426,13 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
       continue;
     }
     const body = Object.assign({}, ...todo.map((part) => part.body)) as Record<string, unknown>;
-    const plannedRow: Row = { ...p.before, ...body, ...("assigneeId" in body ? { assigneeName: null } : {}) };
+    // Fields Cloud ALM derives (assignee name, a status's sub-status) are unknown until read back.
+    const plannedRow: Row = {
+      ...p.before,
+      ...body,
+      ...("assigneeId" in body ? { assigneeName: null } : {}),
+      ...("status" in body && !("subStatus" in body) ? { subStatus: null } : {}),
+    };
     if (isDry) {
       lines.push(`${head}:`);
       for (const part of todo) lines.push(`  ${lineOf(part, p.before, plannedRow)}`);
@@ -409,7 +443,11 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
     try {
       const out: string[] = [];
       if (todo.length) {
-        await needing(p.scope, () => writer.patch(p.path, body, p.ifMatch ? { ifMatch: p.ifMatch } : {}));
+        await needing(p.scope, () => writer.patch(p.path, body, p.ifMatch ? { ifMatch: p.ifMatch } : {})).catch((error) => {
+          if (error instanceof CloudAlmError && error.code === "bad_request" && "assigneeId" in body && /processor/i.test(error.reason))
+            throw new CloudAlmError("bad_request", `${error.reason} The assignee must be the user id of a member of the project team`, error.status);
+          throw error;
+        });
         const after = await afterWrite("reading it back", () =>
           readRow(calm, p.path, p.item.kind === "testCase" ? { $expand: "toActivities" } : undefined),
         );
@@ -418,7 +456,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
             out.push(`  ${lineOf(part, p.before, plannedRow)} (sent; ${after})`);
             continue;
           }
-          const kept = part.show(after) !== part.show(plannedRow);
+          const kept = !(part.stored ? part.stored(after) : Object.entries(part.body).every(([k, v]) => (after[k] ?? null) === v));
           out.push(`  ${lineOf(part, p.before, after)}${kept ? ` (asked for ${part.show(plannedRow)}; Cloud ALM stored this)` : ""}`);
         }
       }
@@ -590,7 +628,7 @@ export async function comment(
   if (!task) throw new CloudAlmError("not_found", `${input.task} not found`);
   const text = input.text.trim();
   if (!text) throw new CloudAlmError("bad_request", "the comment is empty");
-  if (dry(o, input.dryRun)) return `${dryNote(o)} Would add to ${label(task)} the comment:\n${short(text, 2000)}`;
+  if (dry(o, input.dryRun)) return `${dryNote(o)} Would add to ${label(task)} the comment:\n${text.length > 4000 ? `${text.slice(0, 3999)}…` : text}`;
   const created = (await needing("tasks.write", () =>
     writer.post(`${PATHS.tasks}/${task.id}/comments`, { text: textToHtml(text) }),
   )) as { id?: string } | null;
