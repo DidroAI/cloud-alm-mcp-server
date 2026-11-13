@@ -117,7 +117,7 @@ describe("tools", () => {
     expect(text).toContain("Test cases linked to no task: 1");
     expect(text).toContain("Test cases not prepared: 1");
     expect(text).toContain(
-      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed 1/2 in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1',
+      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed 1/2 in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "Credit check on order release"',
     );
   });
 

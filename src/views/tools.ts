@@ -570,7 +570,7 @@ export async function gaps(
       lines.push("", "Test cases whose latest run failed: unknown — test results need the key's analytics and test scopes (calm-api.analytics.read, calm-api.tests.read).");
     else section(
       "Test cases whose latest run failed",
-      failed.sort(byDisplayId).map((t) => `${testCaseLine(t, results.get(t.id))}${t.taskIds.length ? ` — covers ${t.taskIds.map((id) => byId.get(id)?.displayId ?? id).join(", ")}` : ""}`),
+      failed.sort(byDisplayId).map((t) => `${testCaseLine(t, results.get(t.id))}${t.taskIds.length ? ` — covers ${t.taskIds.map((id) => { const k = byId.get(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; }).join(", ")}` : ""}`),
     );
   }
   if (checks.has("no_process"))
