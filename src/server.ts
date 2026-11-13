@@ -3,8 +3,24 @@ import {
   type CloudAlm,
   CloudAlmError,
 } from "./calm/index.js";
+import {
+  getUiCapability,
+  RESOURCE_MIME_TYPE,
+  registerAppResource,
+  registerAppTool,
+} from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  APPROVAL_MODES,
+  ApprovalError,
+  type ApprovalMode,
+  CARD_URI,
+  cardHtml,
+  META_KEY,
+  propose,
+  take,
+} from "./approval.js";
 import { z } from "zod";
 import type { CloudAlmWriter } from "./calm/writer.js";
 import {
@@ -92,7 +108,26 @@ export type ServerOptions = ViewOptions & {
   writeMode?: "off" | "on" | "dry-run";
   /** The writer write tools use; created from the same credentials. */
   writer?: CloudAlmWriter;
+  /**
+   * Human approval of writes (mode "on"): off (default here; the
+   * environment defaults to prefer), prefer or required. See approval.ts.
+   */
+  approval?: ApprovalMode;
+  /**
+   * How to reach the user: "detect" from the client's capabilities (stdio),
+   * or "card" (stateless HTTP, where capabilities are not known per call
+   * and dialogs cannot be sent).
+   */
+  approvalChannel?: "detect" | "card";
+  /** Who may approve a pending write: a hash of the caller's token, or "local". */
+  approvalSubject?: string;
 };
+
+/** Tools of the approval flow; offered with approval on, outside CALM_TOOLS. */
+export const APPROVAL_TOOL_NAMES = ["calm_approve", "calm_confirm"] as const;
+
+/** A dry run's answer without its "nothing sent" lead, for the user. */
+const previewText = (text: string) => text.replace(/^Dry run[^\n]*?nothing sent\.\s*/, "").trim();
 
 const INSTRUCTIONS =
   "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts. calm_find lists, calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, documents, process), calm_gaps lists what is missing.";
@@ -110,7 +145,9 @@ export function createServer(
     {
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
-          ? "Write tools are on: confirm with the user before creating; nothing can be deleted through the API."
+          ? options.approval && options.approval !== "off"
+            ? "Write tools are on, with the user's approval: a write answers with a preview the user approves (in a card, a dialog, or by saying yes in the chat when the answer asks for calm_confirm). Never call calm_confirm without the user's yes to that exact change."
+            : "Write tools are on: confirm with the user before writing."
           : options.writer && options.writeMode === "dry-run"
             ? "Write tools are in dry-run mode, set by the operator (CALM_WRITE=dry-run): they only preview, even with dryRun false. Tell the user what would be written."
             : "Read-only: no write tools."
@@ -118,6 +155,90 @@ export function createServer(
     },
   );
   const allowed = options.tools ? new Set(options.tools) : null;
+  const writeMode = options.writeMode ?? "off";
+  const approval: ApprovalMode =
+    options.writer && writeMode === "on" ? (options.approval ?? "off") : "off";
+  const subject = options.approvalSubject ?? "local";
+  /** Write tools by name, so an approval can run the stored call. */
+  const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
+
+  type Extra = { requestId: string | number; signal: AbortSignal };
+  const gated = async (
+    name: string,
+    title: string,
+    args: Record<string, unknown>,
+    run: (args: Record<string, unknown>) => Promise<string>,
+    extra: Extra,
+  ): Promise<CallToolResult> => {
+    const preview = await answer(() => run({ ...args, dryRun: true }));
+    if (preview.isError) return preview;
+    const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
+    const caps = server.server.getClientCapabilities();
+    const ui =
+      options.approvalChannel === "card" ||
+      Boolean(getUiCapability(caps as never)?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
+    if (ui) {
+      const p = propose({ tool: name, args, preview: text, subject, channel: "card" });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `An approval card is shown to the user. Nothing is written until they approve it there; do not call ${name} again for this change. Preview:\n${text}`,
+          },
+        ],
+        _meta: { [META_KEY]: { ...p, title, tool: name, preview: text } },
+      };
+    }
+    if (caps?.elicitation) {
+      const result = await server.server
+        .elicitInput(
+          {
+            mode: "form",
+            message: `Cloud ALM: ${title}\n\n${text}`,
+            requestedSchema: {
+              type: "object",
+              properties: {
+                approve: { type: "boolean", title: "Approve this change", default: true },
+              },
+              required: ["approve"],
+            },
+          },
+          { relatedRequestId: extra.requestId, signal: extra.signal, timeout: 5 * 60_000 },
+        )
+        .catch(() => ({ action: "cancel" as const, content: undefined }));
+      if (result.action === "accept" && result.content?.approve === true)
+        return answer(() => run({ ...args, dryRun: false }));
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Not written: the user ${result.action === "accept" ? "did not approve" : result.action === "decline" ? "declined" : "did not answer"}.`,
+          },
+        ],
+      };
+    }
+    if (approval === "prefer") {
+      const p = propose({ tool: name, args, preview: text, subject, channel: "chat" });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Approval needed, nothing written yet. Show the user this change and ask them to approve it; only if they say yes, call calm_confirm with id "${p.id}" (valid 10 minutes).\n${text}`,
+          },
+        ],
+      };
+    }
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "Not written: the operator requires approval (CALM_APPROVAL=required), and this client can show neither an approval card nor a confirm dialog.",
+        },
+      ],
+    };
+  };
+
   const tool = <Shape extends z.ZodRawShape>(
     name: (typeof TOOL_NAMES)[number] | (typeof WRITE_TOOL_NAMES)[number],
     title: string,
@@ -126,17 +247,29 @@ export function createServer(
     run: (args: z.infer<z.ZodObject<Shape>>) => Promise<string>,
   ) => {
     if (allowed && !allowed.has(name)) return;
+    const isWrite = (WRITE_TOOL_NAMES as readonly string[]).includes(name);
+    const config = {
+      title,
+      description,
+      // A zod v4 raw shape; the SDK's compat type does not name v4 shapes.
+      inputSchema: inputSchema as never,
+      annotations: isWrite ? { ...WRITE, title } : { ...READ_ONLY, title },
+    };
+    if (isWrite && approval !== "off") {
+      const runAny = run as unknown as (args: Record<string, unknown>) => Promise<string>;
+      writes.set(name, { title, run: runAny });
+      registerAppTool(
+        server,
+        name,
+        { ...config, _meta: { ui: { resourceUri: CARD_URI } } },
+        ((args: Record<string, unknown>, extra: Extra) =>
+          args.dryRun === true ? answer(() => runAny(args)) : gated(name, title, args, runAny, extra)) as never,
+      );
+      return;
+    }
     server.registerTool(
       name,
-      {
-        title,
-        description,
-        // A zod v4 raw shape; the SDK's compat type does not name v4 shapes.
-        inputSchema: inputSchema as never,
-        annotations: (WRITE_TOOL_NAMES as readonly string[]).includes(name)
-          ? { ...WRITE, title }
-          : { ...READ_ONLY, title },
-      },
+      config,
       // The SDK has validated `args` against `inputSchema`.
       ((args: z.infer<z.ZodObject<Shape>>) => answer(() => run(args))) as never,
     );
@@ -216,7 +349,6 @@ export function createServer(
   );
 
   const writer = options.writer;
-  const writeMode = options.writeMode ?? "off";
   if (writer && writeMode !== "off") {
     const w = { ...options, writeMode } as const;
     const dryRun = z.boolean().optional().describe("true: answer with what would be sent, send nothing");
@@ -277,7 +409,59 @@ export function createServer(
       (a) => createTask(calm, writer, defined(a) as never, w),
     );
   }
+  if (approval !== "off") registerApproval();
   return server;
+
+  /** The card resource and the tools that carry the user's decision. */
+  function registerApproval() {
+    registerAppResource(
+      server,
+      "Cloud ALM approval",
+      CARD_URI,
+      { description: "Approve or reject a change to SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
+      async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: cardHtml() }] }),
+    );
+    const decide = async (id: string, nonce: string | undefined, approve: boolean): Promise<CallToolResult> => {
+      try {
+        const p = take(id, subject, nonce);
+        if (!approve) return { content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
+        const write = writes.get(p.tool);
+        if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
+        return answer(() => write.run({ ...p.args, dryRun: false }));
+      } catch (error) {
+        if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
+        throw error;
+      }
+    };
+    registerAppTool(
+      server,
+      "calm_approve",
+      {
+        title: "Approve (approval card only)",
+        description: "Called by the approval card when the user clicks Approve or Reject. The assistant never calls it.",
+        inputSchema: {
+          id: z.string().regex(/^[0-9a-f]{12}$/),
+          nonce: z.string().min(16).max(64),
+          decision: z.enum(["approve", "reject"]),
+        } as never,
+        annotations: { ...WRITE, title: "Approve" },
+        _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
+      },
+      ((a: { id: string; nonce: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
+    );
+    if (approval === "prefer")
+      server.registerTool(
+        "calm_confirm",
+        {
+          title: "Confirm a change the user approved in the chat",
+          description:
+            "Runs a change a write tool proposed, after the user said yes in the chat. Only call it when the user approved that exact change.",
+          inputSchema: { id: z.string().regex(/^[0-9a-f]{12}$/) } as never,
+          annotations: { ...WRITE, title: "Confirm" },
+        },
+        ((a: { id: string }) => decide(a.id, undefined, true)) as never,
+      );
+  }
 }
 
 /**
@@ -299,6 +483,12 @@ export function serverOptionsFromEnv(
     if (!["off", "on", "dry-run"].includes(write)) throw new Error("CALM_WRITE must be off, on or dry-run.");
     options.writeMode = write as "off" | "on" | "dry-run";
   }
+  const approval = env.CALM_APPROVAL?.trim().toLowerCase();
+  if (approval) {
+    if (!(APPROVAL_MODES as string[]).includes(approval))
+      throw new Error("CALM_APPROVAL must be off, prefer or required.");
+    options.approval = approval as ApprovalMode;
+  } else if (options.writeMode === "on") options.approval = "prefer";
   const tools = env.CALM_TOOLS?.split(",").map((t) => t.trim()).filter(Boolean);
   if (tools?.length) {
     const known = [...TOOL_NAMES, ...WRITE_TOOL_NAMES] as readonly string[];

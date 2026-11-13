@@ -149,10 +149,30 @@ this key"); the rest still answers. Errors are short text with a code
 | --- | --- |
 | `CALM_WRITE` | `off` (default): read tools only. `dry-run`: write tools are offered but only preview. `on`: write tools write. The key also needs the write scopes. |
 | `CALM_TOOLS` | Comma-separated tool names to offer, e.g. `calm_overview,calm_find,calm_get`. Default: all (of the current mode). |
+| `CALM_APPROVAL` | With `CALM_WRITE=on`: `prefer` (default) asks the user to approve each write, `required` refuses writes where the client cannot ask, `off` writes at once. |
 | `CALM_PROJECT` | Project GUID used when a call names none. Without it, a tenant with one project uses that one; with several, tools ask for `projectId`. |
 
 In HTTP mode the same variables apply to every request; the bearer token
 decides what Cloud ALM allows.
+
+### Approving writes
+
+With approval on, a write tool first runs as a dry run and the user sees
+exactly what will change; nothing is sent to Cloud ALM until they approve.
+How they are asked depends on the client:
+
+| Client can… | The user sees | Clients (Nov 2026) |
+| --- | --- | --- |
+| render MCP Apps | an approval card in the chat with Approve / Reject | Claude (web, Desktop), ChatGPT, Cursor, VS Code, Goose |
+| ask through elicitation | the client's own confirm dialog | Claude Code, Codex CLI, Cursor, VS Code |
+| neither | the agent shows the preview and asks; a yes runs `calm_confirm` (`prefer` only) | others |
+
+The card's button calls `calm_approve`, a tool visible to the card only,
+with a one-time token that is never in the text the model reads; an
+approval is single-use, expires after 10 minutes and, over HTTP, must come
+with the same bearer token as the request that proposed it. Over HTTP the
+server cannot open a dialog, so approvals go through the card. `dryRun:
+true` previews without asking.
 
 Scopes (`calm-api.` …): `projects.read`, `tasks.read`, `features.read`,
 `documents.read`, `testcases.read`, `testplans.read`,

@@ -210,7 +210,7 @@ describe("doctor", () => {
     });
     expect(await runCommand(t.io, ["doctor"])).toBe(1);
     const all = t.all();
-    expect(all).toContain("✓ Mode    write on; all tools; default project 99999999");
+    expect(all).toContain("✓ Mode    write on, approval prefer; all tools; default project 99999999");
     expect(all).toContain("✗ calm_create_task: needs calm-api.tasks.write");
     expect(all).toContain("✗ Project CALM_PROJECT 99999999-0000-4000-8000-000000000000 is not a project");
   });

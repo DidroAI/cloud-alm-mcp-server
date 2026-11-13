@@ -1,3 +1,4 @@
+import { subjectOf } from "./approval.js";
 import {
   apiRoot,
   CloudAlm,
@@ -88,6 +89,10 @@ export function createHttpHandler(options: HttpOptions = {}) {
     const server = createServer(calm, {
       ...serverOptions,
       ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
+      // Stateless: client capabilities are unknown per call and no dialog can
+      // be sent, so approvals go through the card; only the same token approves.
+      approvalChannel: "card",
+      approvalSubject: subjectOf(match[1]),
     });
     // No session id generator: stateless, one server per request.
     const transport = new WebStandardStreamableHTTPServerTransport({
