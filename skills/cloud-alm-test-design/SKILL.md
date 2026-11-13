@@ -41,9 +41,10 @@ Never invent business data the item does not imply; use placeholders like
 
 1. Call `calm_create_test_case` with `dryRun: true` and `covers` set to the
    item ids; show the user the plan.
-2. Create only after the user agrees. A test case **cannot be deleted,
-   tagged or given a process through the API**: a wrong one stays until
-   someone deletes it in the Cloud ALM UI.
+2. Create only after the user agrees. A test case **cannot be tagged or
+   given a process through the API**, and deleting one needs the key's
+   `testcases.delete` scope: fix a wrong one with `calm_update` (title,
+   prepared, priority, `addActivity`).
 3. The answer gives the new id and the steps stored; report both.
 
 To link an existing test case instead, use `calm_link` (`from` = test

@@ -1,22 +1,32 @@
 /**
- * Write tools, offered only when the operator turns writing on. Each one
- * reads first (to resolve ids and refuse duplicates), can run as a dry run,
- * and reads back what Cloud ALM stored. What the API cannot do is said up
- * front: test cases cannot be deleted or tagged through the API.
+ * Write tools that create and link, offered only when the operator turns
+ * writing on. Each one reads first (to resolve ids and refuse duplicates),
+ * can run as a dry run, and reads back what Cloud ALM stored. Changing and
+ * deleting live in `edit.ts`. What the API cannot do is said up front:
+ * test cases cannot be tagged through the API.
  */
 import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js";
 import { PATHS } from "../calm/client.js";
-import { rowOf } from "../calm/values.js";
+import { type Row, rowOf, rowsOf, str } from "../calm/values.js";
 import type { CloudAlmWriter } from "../calm/writer.js";
-import { escapeHtml } from "./html.js";
-import { resolveProject, Snapshot } from "./snapshot.js";
+import {
+  afterWrite as afterCreate,
+  dry,
+  dryNote,
+  type Item,
+  itemsByRef,
+  label,
+  needing,
+  readRow,
+  requireComplete,
+  snapshot,
+  tasksByRef,
+  textToHtml,
+  type WriteOptions,
+} from "./items.js";
 import { short, statusLabel, typeLabel } from "./text.js";
-import type { ViewOptions } from "./tools.js";
 
-export type WriteOptions = ViewOptions & {
-  /** "dry-run": every write tool answers with what it would send. */
-  writeMode?: "on" | "dry-run";
-};
+export type { WriteOptions } from "./items.js";
 
 type Step = { title: string; description: string; expected: string; evidence?: boolean };
 type Activity = { title: string; steps: Step[] };
@@ -29,34 +39,6 @@ const TASK_TYPES = {
 } as const;
 export type CreatableTaskType = keyof typeof TASK_TYPES;
 export const CREATABLE_TASK_TYPES = Object.keys(TASK_TYPES) as CreatableTaskType[];
-
-const textToHtml = (text: string) =>
-  text
-    .trim()
-    .split(/\n\s*\n/)
-    .map((p) => `<p>${escapeHtml(p.replace(/\s*\n\s*/g, " "))}</p>`)
-    .join("");
-
-async function snapshot(calm: CloudAlm, projectId: string | undefined, o: WriteOptions) {
-  const { project } = await resolveProject(calm, projectId, o.defaultProject);
-  return new Snapshot(calm, project);
-}
-
-/** Tasks by display id or GUID; unknown ones are an error naming them. */
-async function tasksByRef(snap: Snapshot, refs: string[]): Promise<TaskSummary[]> {
-  const tasks = await snap.tasks();
-  const found: TaskSummary[] = [];
-  const missing: string[] = [];
-  for (const raw of refs) {
-    const ref = raw.trim().replace(/^\[|\]$/g, "");
-    const t = tasks.find((x) => x.displayId === ref || x.id.toLowerCase() === ref.toLowerCase());
-    if (t) found.push(t);
-    else missing.push(ref);
-  }
-  if (missing.length)
-    throw new CloudAlmError("not_found", `tasks not found in ${snap.project.name ?? "the project"}: ${missing.join(", ")}`);
-  return found;
-}
 
 /** A tag Cloud ALM keeps: at most 256 characters, no markup or control characters. */
 function checkTag(t: string) {
@@ -75,29 +57,6 @@ async function allTags(calm: CloudAlm, taskId: string): Promise<string[]> {
     throw new CloudAlmError("unavailable", "Cloud ALM returned the task's tags in an unexpected shape; nothing written");
   return tags as string[];
 }
-
-/** Duplicate checks need the whole project: refuse when a list was cut. */
-function requireComplete(snap: Snapshot) {
-  if (snap.truncated)
-    throw new CloudAlmError("bad_request", "the project has more than 1000 items of a kind; this server cannot check for duplicates, so it does not create");
-}
-
-/** After a create succeeded, later failures must not read as "not created". */
-async function afterCreate<T>(what: string, step: () => Promise<T>): Promise<T | string> {
-  try {
-    return await step();
-  } catch (error) {
-    return `${what} failed (${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error"})`;
-  }
-}
-
-const dry = (o: WriteOptions, dryRun?: boolean) => o.writeMode === "dry-run" || dryRun === true;
-/** Why nothing was sent: the call's dryRun, or the server's mode. */
-const dryNote = (o: WriteOptions) =>
-  o.writeMode === "dry-run"
-    ? "Dry run (the server is in dry-run mode, CALM_WRITE=dry-run; only its operator can turn writing on), nothing sent."
-    : "Dry run, nothing sent.";
-const label = (t: TaskSummary) => `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 70)}"`;
 
 // ---------------------------------------------------------------------------
 
@@ -124,7 +83,7 @@ export async function createTestCase(
   if (existing)
     throw new CloudAlmError(
       "bad_request",
-      `a test case with this title exists: ${existing.displayId}. Test cases cannot be deleted through the API, so no duplicate is created.`,
+      `a test case with this title exists: ${existing.displayId}; no duplicate is created`,
     );
   const scopes = await calm.listScopes({ projectId: snap.project.id });
   const fromTask = covered.find((t) => t.scopeId);
@@ -156,7 +115,7 @@ export async function createTestCase(
   const steps = input.activities.reduce((n, a) => n + a.steps.length, 0);
   const plan = `test case "${body.title}" in scope "${scopeName}" with ${input.activities.length} activities and ${steps} steps${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
   if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\nNote: a created test case cannot be deleted or tagged through the API.`;
+    return `${dryNote(o)} Would create ${plan}.\nNote: test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope.`;
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
     uuid?: string;
     displayId?: string;
@@ -182,7 +141,7 @@ export async function createTestCase(
   return [
     `Created ${created?.displayId ?? (typeof back === "string" ? "" : back.displayId)} "${body.title}" [${id}]: ${stored}${linked.length ? `; linked to ${linked.join(", ")}` : ""}.`,
     failed.length ? `Links that failed: ${failed.join("; ")}` : "",
-    "It cannot be deleted or tagged through the API; change or delete it in the Cloud ALM UI.",
+    "Test cases cannot be tagged through the API. Change it with calm_update; deleting it needs calm-api.testcases.delete.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -190,46 +149,219 @@ export async function createTestCase(
 
 // ---------------------------------------------------------------------------
 
+/** What one `calm_link` call will do, before it does it. */
+type LinkPlan = {
+  /** "test case 8-1-2", "requirement 3-1"… */
+  name: string;
+  title: string | null;
+  todo: TaskSummary[];
+  /** Display ids already in the wanted state. */
+  skipped: string[];
+  notes: string[];
+  scope: string;
+  run: (t: TaskSummary) => Promise<void>;
+};
+
+const relationRows = (calm: CloudAlm, taskId: string, what: string) =>
+  calm.operation(async (s) => rowsOf(await s.get(`${PATHS.tasks}/${taskId}/${what}`)));
+const idOf = (rows: Row[], field: string, value: string) =>
+  str(rows.find((r) => String(r[field] ?? "").toLowerCase() === value.toLowerCase())?.id);
+
+/**
+ * Link (or with `unlink`, unlink) an item to tasks: a manual test case
+ * (tests them), a feature (delivers them), a document (documents them), or
+ * a requirement and its user stories or project tasks (relation type 10;
+ * `from` is either side).
+ */
 export async function link(
   calm: CloudAlm,
   writer: CloudAlmWriter,
-  input: { from: string; tasks: string[]; projectId?: string; dryRun?: boolean },
+  input: { from: string; tasks: string[]; unlink?: boolean; projectId?: string; dryRun?: boolean },
   o: WriteOptions,
 ) {
   const snap = await snapshot(calm, input.projectId, o);
+  const [source] = await itemsByRef(snap, [input.from]);
   const tasks = await tasksByRef(snap, input.tasks);
-  const ref = input.from.trim();
-  const testCase = (await snap.testCases()).find((t) => t.displayId === ref || t.id.toLowerCase() === ref.toLowerCase());
-  const snapFeatures = testCase ? undefined : await snap.features();
-  const feature = snapFeatures?.find((f) => f.displayId === ref || f.id.toLowerCase() === ref.toLowerCase());
-  if (!testCase && !feature)
-    throw new CloudAlmError("not_found", `${ref} is not a test case or feature of ${snap.project.name ?? "the project"}`);
-  if (testCase?.kind === "automated")
-    throw new CloudAlmError("bad_request", "automated test cases cannot be changed through the API");
-  const already = new Set(testCase ? testCase.taskIds : (feature?.taskIds ?? []));
-  const todo = tasks.filter((t) => !already.has(t.id));
-  const name = testCase ? `test case ${testCase.displayId}` : `feature ${feature?.displayId}`;
-  const skipped = tasks.filter((t) => already.has(t.id)).map((t) => t.displayId);
-  if (!todo.length) return `Nothing to do: ${name} is already linked to ${skipped.join(", ")}.`;
+  if (!source) throw new CloudAlmError("not_found", `${input.from} not found`);
+  const unlink = input.unlink === true;
+  const plan = await linkPlan(calm, writer, snap, source, tasks, unlink);
+  const verb = unlink ? "unlink" : "link";
+  const prep = unlink ? "from" : "to";
+  if (!plan.todo.length)
+    return `Nothing to do: ${plan.name} is ${unlink ? "not linked to" : "already linked to"} ${plan.skipped.join(", ")}.`;
+  const skippedNote = plan.skipped.length ? ` ${unlink ? "Not linked" : "Already linked"}: ${plan.skipped.join(", ")}.` : "";
+  const notes = plan.notes.length ? ` Note: ${plan.notes.join("; ")}.` : "";
   if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would link ${name} to ${todo.map(label).join("; ")}.`;
-  const others = feature
-    ? todo.flatMap((t) =>
-        (snapFeatures ?? [])
-          .filter((f) => f.id !== feature.id && f.taskIds.includes(t.id))
-          .map((f) => `${t.displayId} is also linked to feature ${f.displayId}`),
-      )
-    : [];
+    return `${dryNote(o)} Would ${verb} ${plan.name} "${short(plan.title, 70)}" ${prep} ${plan.todo.map(label).join("; ")}.${skippedNote}${notes}`;
   const done: string[] = [];
-  for (const t of todo) {
-    if (testCase)
-      await writer.post("calm-testmanagement/v1/TaskAssignments", { parentTestCase_ID: testCase.id, taskId: t.id });
-    else await writer.post(`calm-tasks/v1/tasks/${t.id}/featureAssignments`, { featureId: feature?.id });
-    done.push(t.displayId ?? t.id);
+  const failed: string[] = [];
+  for (const t of plan.todo) {
+    try {
+      await needing(plan.scope, () => plan.run(t));
+      done.push(t.displayId ?? t.id);
+    } catch (error) {
+      if (!done.length && !failed.length && plan.todo.length === 1) throw error;
+      failed.push(`${t.displayId}: ${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "failed"}`);
+    }
   }
-  return `Linked ${name} to ${done.join(", ")}.${skipped.length ? ` Already linked: ${skipped.join(", ")}.` : ""}${others.length ? ` Note: ${others.join("; ")}.` : ""}`;
+  if (!done.length) throw new CloudAlmError("bad_request", `nothing ${verb}ed: ${failed.join("; ")}`);
+  return `${unlink ? "Unlinked" : "Linked"} ${plan.name} ${prep} ${done.join(", ")}.${skippedNote}${notes}${failed.length ? ` Failed: ${failed.join("; ")}.` : ""}`;
 }
 
+async function linkPlan(
+  calm: CloudAlm,
+  writer: CloudAlmWriter,
+  snap: Awaited<ReturnType<typeof snapshot>>,
+  source: Item,
+  tasks: TaskSummary[],
+  unlink: boolean,
+): Promise<LinkPlan> {
+  const split = (linked: Set<string>) => ({
+    todo: tasks.filter((t) => linked.has(t.id) === unlink),
+    skipped: tasks.filter((t) => linked.has(t.id) !== unlink).map((t) => t.displayId ?? t.id),
+  });
+  switch (source.kind) {
+    case "testCase": {
+      const tc = source.testCase;
+      if (tc.kind === "automated")
+        throw new CloudAlmError("bad_request", "automated test cases cannot be changed through the API");
+      return {
+        name: `test case ${tc.displayId}`,
+        title: tc.title,
+        ...split(new Set(tc.taskIds)),
+        notes: [],
+        // Removing a link is a delete in Test Management.
+        scope: unlink ? "testcases.delete" : "testcases.write",
+        run: async (t) => {
+          if (!unlink) {
+            await writer.post("calm-testmanagement/v1/TaskAssignments", { parentTestCase_ID: tc.id, taskId: t.id });
+            return;
+          }
+          const row = await readRow(calm, `${PATHS.manualTestCases}/${tc.id}`, { $expand: "toTaskAssignments" });
+          const rows = Array.isArray(row.toTaskAssignments) ? (row.toTaskAssignments as Row[]) : [];
+          const id = str(rows.find((r) => r.taskId === t.id)?.uuid);
+          if (!id) throw new CloudAlmError("not_found", "the link is gone already");
+          await writer.delete(`calm-testmanagement/v1/TaskAssignments/${id}`);
+        },
+      };
+    }
+    case "feature": {
+      const f = source.feature;
+      const features = await snap.features();
+      const plan = split(new Set(f.taskIds));
+      return {
+        name: `feature ${f.displayId}`,
+        title: f.title,
+        ...plan,
+        notes: unlink
+          ? []
+          : plan.todo.flatMap((t) =>
+              features
+                .filter((x) => x.id !== f.id && x.taskIds.includes(t.id))
+                .map((x) => `${t.displayId} is also linked to feature ${x.displayId}`),
+            ),
+        scope: "tasks.write",
+        run: async (t) => {
+          if (!unlink) {
+            await writer.post(`${PATHS.tasks}/${t.id}/featureAssignments`, { featureId: f.id });
+            return;
+          }
+          const id = idOf(await relationRows(calm, t.id, "featureAssignments"), "featureId", f.id);
+          if (!id) throw new CloudAlmError("not_found", "the link is gone already");
+          await writer.delete(`${PATHS.tasks}/featureAssignments/${id}`);
+        },
+      };
+    }
+    case "document": {
+      const d = source.document;
+      return {
+        name: `document ${d.displayId}`,
+        title: d.title,
+        ...split(new Set(d.taskIds)),
+        notes: [],
+        scope: "tasks.write",
+        run: async (t) => {
+          if (!unlink) {
+            await writer.post(`${PATHS.tasks}/${t.id}/documentAssignments`, { documentId: d.id });
+            return;
+          }
+          const id = idOf(await relationRows(calm, t.id, "documentAssignments"), "documentId", d.id);
+          if (!id) throw new CloudAlmError("not_found", "the link is gone already");
+          await writer.delete(`${PATHS.tasks}/documentAssignments/${id}`);
+        },
+      };
+    }
+    case "task":
+      return requirementPlan(calm, writer, source.task, tasks, unlink);
+  }
+}
+
+const UNDER_REQUIREMENT = ["CALMUS", "CALMTASK"];
+
+/** A requirement and the user stories or project tasks under it (relation type 10). */
+async function requirementPlan(
+  calm: CloudAlm,
+  writer: CloudAlmWriter,
+  from: TaskSummary,
+  tasks: TaskSummary[],
+  unlink: boolean,
+): Promise<LinkPlan> {
+  let requirement: TaskSummary;
+  let children: TaskSummary[];
+  if (from.type === "CALMREQU") {
+    requirement = from;
+    children = tasks;
+  } else if (UNDER_REQUIREMENT.includes(from.type ?? "")) {
+    const [only, ...more] = tasks;
+    if (!only || more.length || only.type !== "CALMREQU")
+      throw new CloudAlmError("bad_request", `a ${typeLabel(from.type)} goes under one requirement: give that requirement in tasks`);
+    requirement = only;
+    children = [from];
+  } else
+    throw new CloudAlmError(
+      "bad_request",
+      `${from.displayId} is a ${typeLabel(from.type)}: link from a test case, feature, document, requirement, user story or project task`,
+    );
+  const wrong = children.filter((c) => !UNDER_REQUIREMENT.includes(c.type ?? ""));
+  if (wrong.length)
+    throw new CloudAlmError("bad_request", `only user stories and project tasks go under a requirement, not ${wrong.map((w) => `${w.displayId} (${typeLabel(w.type)})`).join(", ")}`);
+  const todo: TaskSummary[] = [];
+  const skipped: string[] = [];
+  const relationIds = new Map<string, string>();
+  const conflicts: string[] = [];
+  for (const c of children) {
+    const rows = await relationRows(calm, c.id, "relations");
+    const current = rows.find((r) => String(r.type) === "10");
+    const currentReq = str(current?.relationTaskId);
+    if (currentReq?.toLowerCase() === requirement.id.toLowerCase()) {
+      if (unlink) {
+        todo.push(c);
+        relationIds.set(c.id, str(current?.id) ?? "");
+      } else skipped.push(c.displayId ?? c.id);
+    } else if (unlink) skipped.push(c.displayId ?? c.id);
+    else if (currentReq) conflicts.push(`${c.displayId} is under another requirement (${currentReq})`);
+    else todo.push(c);
+  }
+  if (conflicts.length)
+    throw new CloudAlmError("bad_request", `a task has one requirement: ${conflicts.join("; ")}. Unlink it from that one first`);
+  return {
+    name: `requirement ${requirement.displayId}`,
+    title: requirement.title,
+    todo,
+    skipped,
+    notes: [],
+    scope: "tasks.write",
+    run: async (t) => {
+      if (!unlink) {
+        await writer.post(`${PATHS.tasks}/${t.id}/relations`, { type: "10", relationTaskId: requirement.id });
+        return;
+      }
+      const id = relationIds.get(t.id);
+      if (!id) throw new CloudAlmError("not_found", "the link is gone already");
+      await writer.delete(`${PATHS.tasks}/relations/${id}`);
+    },
+  };
+}
 // ---------------------------------------------------------------------------
 
 export async function tag(

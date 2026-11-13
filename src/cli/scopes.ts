@@ -44,10 +44,32 @@ export const TOOL_SCOPES: Record<string, ToolScopes> = {
   },
   calm_link: {
     core: s("projects.read", "tasks.read", "testcases.read", "testcases.write", "tasks.write"),
-    extra: s("features.read"),
+    // Documents to link from; removing a test case's task link is a delete.
+    extra: s("features.read", "documents.read", "testcases.delete"),
     write: true,
   },
   calm_tag: { core: s("projects.read", "tasks.read", "tasks.write"), extra: [], write: true },
+  calm_update: {
+    core: s("projects.read", "tasks.read", "tasks.write"),
+    extra: s("features.read", "features.write", "testcases.read", "testcases.write"),
+    write: true,
+  },
+  calm_delete: {
+    core: s("projects.read", "tasks.read", "tasks.write"),
+    extra: s("testcases.read", "testcases.delete", "testcases.force-delete", "documents.read", "documents.delete", "features.read"),
+    write: true,
+  },
+  calm_comment: { core: s("projects.read", "tasks.read", "tasks.write"), extra: [], write: true },
+  calm_create_feature: {
+    core: s("projects.read", "features.read", "features.write"),
+    extra: s("tasks.read", "tasks.write"),
+    write: true,
+  },
+  calm_create_document: {
+    core: s("projects.read", "documents.read", "documents.write"),
+    extra: s("tasks.read"),
+    write: true,
+  },
 };
 
 /**

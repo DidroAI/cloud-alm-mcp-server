@@ -8,7 +8,7 @@ status events.
 
 **Read-only by default.** The read tools are annotated `readOnlyHint` and
 the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
-Writing (create test cases and tasks, link, tag; never delete) is opt-in
+Writing (create, change, link, tag, comment, delete) is opt-in
 with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
 
 > Status: in development, not on npm yet. MIT licence.
@@ -123,20 +123,49 @@ too. Answers are compact text written for a model's context.
 | `calm_analytics` | Analytics datasets (tasks, defects, test runs, jobs, exceptions, integration messages…), counted with `groupBy` |
 | `calm_landscape` | Systems and cloud services, and SAP service status events, open ones first |
 
-With write mode on (below), four more:
+With write mode on (below), ten more:
 
 | Tool | Does |
 | --- | --- |
+| `calm_create_task` | Creates a requirement, user story (optionally under a requirement), defect or project task; refuses a duplicate title |
 | `calm_create_test_case` | Creates a manual test case with activities and steps, linked to the requirements or user stories it covers; refuses a duplicate title |
-| `calm_link` | Links a test case (tests) or feature (delivers) to tasks; skips existing links |
+| `calm_create_feature` | Creates a feature, optionally linked to the tasks it delivers; refuses a duplicate title |
+| `calm_create_document` | Creates a document (content, type, status, priority) linked to tasks; refuses a duplicate title |
+| `calm_update` | Changes 1–20 items with the same changes: tasks (title, description, status in plain words, priority, assignee, start and due date, timebox, obsolete), features (title, description, status, priority), manual test cases (title, prepared, priority, `addActivity` with steps). Sends only the fields that differ and answers before → after per field |
+| `calm_delete` | Deletes tasks (`soft: true` marks them obsolete instead, as SAP recommends), manual test cases (`force: true` also deletes their runs and results) and documents |
+| `calm_comment` | Adds a comment to a task |
+| `calm_link` | Links, or with `unlink: true` unlinks, a test case (tests), feature (delivers) or document (documents) to tasks, and user stories or project tasks to their requirement; skips links already in that state |
 | `calm_tag` | Adds or removes tags on tasks, keeping the others, and reports tags Cloud ALM silently dropped |
-| `calm_create_task` | Creates a requirement, user story (optionally under a requirement), defect or project task |
 
-Every write tool takes `dryRun: true` to answer with what it would send.
-Writes are never retried and nothing is ever deleted. What the Cloud ALM
-API cannot do, the tools do not offer: test cases cannot be deleted, tagged
-or given a solution process through the API, and automated test cases
-cannot be changed.
+Every write tool takes `dryRun: true` and then answers with a complete
+preview: item ids and titles, each field before → after, what gets created,
+linked or deleted. Display ids work everywhere. Statuses are plain words,
+mapped to Cloud ALM's codes per task type (`open`, `in progress`,
+`blocked`, `in review`, `done`, `not relevant` as the type has them;
+requirements also `to be approved`, `approved`, `in realization`,
+`approved for deployment`, `rejected`; defects also `retest`). A field that
+does not apply to an item is refused before anything is written. A 403
+names the scope the key lacks. Writes are never retried.
+
+What Cloud ALM's API itself does not allow (no scope changes it):
+
+- Features cannot be deleted, and their status moves only along Cloud
+  ALM's path (in realization → in testing → successfully tested, back to in
+  realization); "ready for production" cannot be set through the API, so
+  "deployed" is not reachable from it either.
+- A feature description holding images cannot be changed through the API.
+- A document's title, content, status, priority and type cannot change
+  after create; only its links can.
+- Test cases and features cannot be tagged; automated test cases are
+  read-only; a test case's project, scope and process cannot change.
+- No API records manual test execution (runs, step results, pass/fail).
+- A requirement's approval is final (it cannot go back to "to be approved"
+  or "rejected"), and an approved requirement cannot be deleted.
+- A task has one requirement: unlink it before linking another.
+- Every write is recorded as the key's technical user.
+
+Deleting test cases and documents needs extra scopes on the key
+(`testcases.delete`, `testcases.force-delete`, `documents.delete`).
 
 A read the key has no scope for is named in the answer ("not readable with
 this key"); the rest still answers. Errors are short text with a code
@@ -157,8 +186,11 @@ decides what Cloud ALM allows.
 Scopes (`calm-api.` …): `projects.read`, `tasks.read`, `features.read`,
 `documents.read`, `testcases.read`, `testplans.read`,
 `processmanagement.read`, `landscape.read`, `lib.read`, `analytics.read`
-with `tests.read` (test results), `bsm.read`; for writing `tasks.write` and
-`testcases.write` (feature links are written through the Tasks API).
+with `tests.read` (test results), `bsm.read`; for writing `tasks.write`,
+`testcases.write`, `features.write`, `documents.write` (task links of
+features and documents are written through the Tasks API), and to delete
+test cases and documents (or unlink a test case from a task)
+`testcases.delete`, `testcases.force-delete`, `documents.delete`.
 
 ## Two ways to run it
 
@@ -265,10 +297,12 @@ which must be `https://` on a `*.alm.cloud.sap` host (`hostPattern` option
 to change it for a test double). No redirects followed. At most 40 requests
 and 30 seconds per operation; answers above 8 MB are refused.
 
-The writer (`CloudAlmWriter`), used only in write mode, posts to a fixed
-list of create and link endpoints (manual test cases, test case task
-assignments, tasks, task tags, feature assignments), never retries, and has
-no delete.
+The writer (`CloudAlmWriter`), used only in write mode, sends POST, PATCH
+or DELETE only to a fixed allow-list of (method, path) pairs: create and
+change tasks, features, documents and manual test cases (with their
+activities and steps), comments, tags, links, and the deletes the API
+offers. It never retries. A test case write carries its ETag (Cloud ALM
+answers 428 without one).
 
 ## Develop
 
