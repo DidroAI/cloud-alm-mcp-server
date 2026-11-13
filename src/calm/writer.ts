@@ -25,7 +25,7 @@ const WRITE_PATHS = [
 export type WriteRecord = { path: string; body: unknown };
 
 export class CloudAlmWriter {
-  /** Every write sent (or, in a dry run, planned), in order. */
+  /** The last 50 writes sent, in order. */
   readonly log: WriteRecord[] = [];
 
   constructor(
@@ -39,6 +39,7 @@ export class CloudAlmWriter {
     const grant = typeof this.grant === "function" ? await this.grant() : this.grant;
     const root = apiRoot(grant.baseUrl, this.options.hostPattern);
     this.log.push({ path, body });
+    if (this.log.length > 50) this.log.shift();
     let response: Response;
     try {
       response = await (this.options.fetch ?? fetch)(`${root}/${path}`, {

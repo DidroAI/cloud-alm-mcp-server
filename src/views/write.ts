@@ -5,6 +5,8 @@
  * front: test cases cannot be deleted or tagged through the API.
  */
 import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js";
+import { PATHS } from "../calm/client.js";
+import { rowOf } from "../calm/values.js";
 import type { CloudAlmWriter } from "../calm/writer.js";
 import { escapeHtml } from "./html.js";
 import { resolveProject, Snapshot } from "./snapshot.js";
@@ -45,9 +47,9 @@ async function tasksByRef(snap: Snapshot, refs: string[]): Promise<TaskSummary[]
   const tasks = await snap.tasks();
   const found: TaskSummary[] = [];
   const missing: string[] = [];
-  for (const ref of refs) {
-    const r = ref.trim().toLowerCase();
-    const t = tasks.find((x) => x.displayId === ref.trim() || x.id.toLowerCase() === r);
+  for (const raw of refs) {
+    const ref = raw.trim().replace(/^\[|\]$/g, "");
+    const t = tasks.find((x) => x.displayId === ref || x.id.toLowerCase() === ref.toLowerCase());
     if (t) found.push(t);
     else missing.push(ref);
   }
@@ -56,7 +58,45 @@ async function tasksByRef(snap: Snapshot, refs: string[]): Promise<TaskSummary[]
   return found;
 }
 
+/** A tag Cloud ALM keeps: at most 256 characters, no markup or control characters. */
+function checkTag(t: string) {
+  if (t.length > 256 || [...t].some((c) => c === "<" || c === ">" || c.charCodeAt(0) < 32))
+    throw new CloudAlmError("bad_request", `tag "${short(t, 40)}": at most 256 characters, no < > or control characters`);
+}
+
+/**
+ * Every tag of a task, uncapped: `updateTags` replaces the whole list, so a
+ * list read short would delete the rest. Refuses anything not plain text.
+ */
+async function allTags(calm: CloudAlm, taskId: string): Promise<string[]> {
+  const row = await calm.operation(async (s) => rowOf(await s.get(`${PATHS.tasks}/${taskId}`)));
+  const tags = row.tags ?? [];
+  if (!Array.isArray(tags) || tags.some((t) => typeof t !== "string"))
+    throw new CloudAlmError("unavailable", "Cloud ALM returned the task's tags in an unexpected shape; nothing written");
+  return tags as string[];
+}
+
+/** Duplicate checks need the whole project: refuse when a list was cut. */
+function requireComplete(snap: Snapshot) {
+  if (snap.truncated)
+    throw new CloudAlmError("bad_request", "the project has more than 1000 items of a kind; this server cannot check for duplicates, so it does not create");
+}
+
+/** After a create succeeded, later failures must not read as "not created". */
+async function afterCreate<T>(what: string, step: () => Promise<T>): Promise<T | string> {
+  try {
+    return await step();
+  } catch (error) {
+    return `${what} failed (${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error"})`;
+  }
+}
+
 const dry = (o: WriteOptions, dryRun?: boolean) => o.writeMode === "dry-run" || dryRun === true;
+/** Why nothing was sent: the call's dryRun, or the server's mode. */
+const dryNote = (o: WriteOptions) =>
+  o.writeMode === "dry-run"
+    ? "Dry run (the server is in dry-run mode, CALM_WRITE=dry-run; only its operator can turn writing on), nothing sent."
+    : "Dry run, nothing sent.";
 const label = (t: TaskSummary) => `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 70)}"`;
 
 // ---------------------------------------------------------------------------
@@ -76,6 +116,8 @@ export async function createTestCase(
 ) {
   const snap = await snapshot(calm, input.projectId, o);
   const covered = await tasksByRef(snap, input.covers ?? []);
+  await snap.testCases();
+  requireComplete(snap);
   const existing = (await snap.testCases()).find(
     (t) => (t.title ?? "").trim().toLowerCase() === input.title.trim().toLowerCase(),
   );
@@ -84,8 +126,13 @@ export async function createTestCase(
       "bad_request",
       `a test case with this title exists: ${existing.displayId}. Test cases cannot be deleted through the API, so no duplicate is created.`,
     );
-  const scopeId = covered.find((t) => t.scopeId)?.scopeId ?? (await calm.listScopes({ projectId: snap.project.id }))[0]?.id;
+  const scopes = await calm.listScopes({ projectId: snap.project.id });
+  const fromTask = covered.find((t) => t.scopeId);
+  if (!fromTask && scopes.length > 1)
+    throw new CloudAlmError("bad_request", `the project has ${scopes.length} scopes; give covers so the test case goes in their scope`);
+  const scopeId = fromTask?.scopeId ?? scopes[0]?.id;
   if (!scopeId) throw new CloudAlmError("bad_request", "the project has no scope to put the test case in");
+  const scopeName = fromTask?.scopeName ?? scopes.find((x) => x.id === scopeId)?.name ?? scopeId;
   const body = {
     projectId: snap.project.id,
     scopeId,
@@ -107,15 +154,16 @@ export async function createTestCase(
     })),
   };
   const steps = input.activities.reduce((n, a) => n + a.steps.length, 0);
-  const plan = `test case "${body.title}" with ${input.activities.length} activities and ${steps} steps${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
+  const plan = `test case "${body.title}" in scope "${scopeName}" with ${input.activities.length} activities and ${steps} steps${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
   if (dry(o, input.dryRun))
-    return `Dry run, nothing sent. Would create ${plan}.\nNote: a created test case cannot be deleted or tagged through the API.`;
+    return `${dryNote(o)} Would create ${plan}.\nNote: a created test case cannot be deleted or tagged through the API.`;
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
     uuid?: string;
     displayId?: string;
   } | null;
   const id = created?.uuid;
-  if (!id) throw new CloudAlmError("unavailable", "Cloud ALM did not return the new test case's id");
+  if (!id)
+    return `Cloud ALM accepted the test case "${body.title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
   const linked: string[] = [];
   const failed: string[] = [];
   for (const t of covered) {
@@ -126,10 +174,13 @@ export async function createTestCase(
       failed.push(`${t.displayId}: ${error instanceof CloudAlmError ? error.reason : "failed"}`);
     }
   }
-  const back = await calm.getTestCase(id);
-  const stored = back.activities.reduce((n, a) => n + a.actions.length, 0);
+  const back = await afterCreate("reading it back", () => calm.getTestCase(id));
+  const stored =
+    typeof back === "string"
+      ? back
+      : `${back.activities.length} activities, ${back.activities.reduce((n, a) => n + a.actions.length, 0)} steps stored`;
   return [
-    `Created ${back.displayId ?? created?.displayId} "${back.title}" [${id}]: ${back.activities.length} activities, ${stored} steps stored${linked.length ? `; linked to ${linked.join(", ")}` : ""}.`,
+    `Created ${created?.displayId ?? (typeof back === "string" ? "" : back.displayId)} "${body.title}" [${id}]: ${stored}${linked.length ? `; linked to ${linked.join(", ")}` : ""}.`,
     failed.length ? `Links that failed: ${failed.join("; ")}` : "",
     "It cannot be deleted or tagged through the API; change or delete it in the Cloud ALM UI.",
   ]
@@ -149,7 +200,8 @@ export async function link(
   const tasks = await tasksByRef(snap, input.tasks);
   const ref = input.from.trim();
   const testCase = (await snap.testCases()).find((t) => t.displayId === ref || t.id.toLowerCase() === ref.toLowerCase());
-  const feature = testCase ? undefined : (await snap.features()).find((f) => f.displayId === ref || f.id.toLowerCase() === ref.toLowerCase());
+  const snapFeatures = testCase ? undefined : await snap.features();
+  const feature = snapFeatures?.find((f) => f.displayId === ref || f.id.toLowerCase() === ref.toLowerCase());
   if (!testCase && !feature)
     throw new CloudAlmError("not_found", `${ref} is not a test case or feature of ${snap.project.name ?? "the project"}`);
   if (testCase?.kind === "automated")
@@ -160,7 +212,14 @@ export async function link(
   const skipped = tasks.filter((t) => already.has(t.id)).map((t) => t.displayId);
   if (!todo.length) return `Nothing to do: ${name} is already linked to ${skipped.join(", ")}.`;
   if (dry(o, input.dryRun))
-    return `Dry run, nothing sent. Would link ${name} to ${todo.map(label).join("; ")}.`;
+    return `${dryNote(o)} Would link ${name} to ${todo.map(label).join("; ")}.`;
+  const others = feature
+    ? todo.flatMap((t) =>
+        (snapFeatures ?? [])
+          .filter((f) => f.id !== feature.id && f.taskIds.includes(t.id))
+          .map((f) => `${t.displayId} is also linked to feature ${f.displayId}`),
+      )
+    : [];
   const done: string[] = [];
   for (const t of todo) {
     if (testCase)
@@ -168,7 +227,7 @@ export async function link(
     else await writer.post(`calm-tasks/v1/tasks/${t.id}/featureAssignments`, { featureId: feature?.id });
     done.push(t.displayId ?? t.id);
   }
-  return `Linked ${name} to ${done.join(", ")}.${skipped.length ? ` Already linked: ${skipped.join(", ")}.` : ""}`;
+  return `Linked ${name} to ${done.join(", ")}.${skipped.length ? ` Already linked: ${skipped.join(", ")}.` : ""}${others.length ? ` Note: ${others.join("; ")}.` : ""}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,16 +240,14 @@ export async function tag(
 ) {
   const add = (input.add ?? []).map((t) => t.trim()).filter(Boolean);
   const remove = new Set((input.remove ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean));
-  for (const t of add)
-    if (t.length > 256 || [...t].some((c) => c === "<" || c === ">" || c.charCodeAt(0) < 32))
-      throw new CloudAlmError("bad_request", `tag "${short(t, 40)}": at most 256 characters, no < > or control characters`);
+  for (const t of add) checkTag(t);
   if (!add.length && !remove.size) throw new CloudAlmError("bad_request", "give tags to add or remove");
   const snap = await snapshot(calm, input.projectId, o);
   const tasks = await tasksByRef(snap, input.tasks);
   const lines: string[] = [];
   for (const t of tasks) {
     // Read just before writing: the call replaces the whole list.
-    const before = (await calm.getTask(t.id, { comments: false, links: false })).tags;
+    const before = await allTags(calm, t.id);
     const kept = before.filter((x) => !remove.has(x.toLowerCase()));
     const keys = new Set(kept.map((x) => x.toLowerCase()));
     const target = [...kept, ...add.filter((x) => !keys.has(x.toLowerCase()))];
@@ -200,11 +257,11 @@ export async function tag(
       continue;
     }
     if (dry(o, input.dryRun)) {
-      lines.push(`${t.displayId}: would go from [${before.join(", ")}] to [${target.join(", ")}] (dry run, nothing sent)`);
+      lines.push(`${t.displayId}: would go from [${before.join(", ")}] to [${target.join(", ")}] (${dryNote(o).replace(/\.$/, "")})`);
       continue;
     }
     await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: t.id, tags: target });
-    const after = (await calm.getTask(t.id, { comments: false, links: false })).tags;
+    const after = await allTags(calm, t.id);
     const stored = new Set(after.map((x) => x.toLowerCase()));
     const dropped = target.filter((x) => !stored.has(x.toLowerCase()));
     lines.push(
@@ -231,8 +288,10 @@ export async function createTask(
   },
   o: WriteOptions,
 ) {
+  for (const t of input.tags ?? []) checkTag(t);
   const snap = await snapshot(calm, input.projectId, o);
   const tasks = await snap.tasks();
+  requireComplete(snap);
   const title = input.title.trim();
   const duplicate = tasks.find((t) => (t.title ?? "").trim().toLowerCase() === title.toLowerCase() && t.type === TASK_TYPES[input.type]);
   if (duplicate)
@@ -242,7 +301,11 @@ export async function createTask(
     throw new CloudAlmError("bad_request", `${parent.displayId} is a ${typeLabel(parent.type)}, not a requirement`);
   if (parent && !["user_story", "project_task"].includes(input.type))
     throw new CloudAlmError("bad_request", "only user stories and project tasks go under a requirement");
-  const scopeId = parent?.scopeId ?? tasks.find((t) => t.scopeId)?.scopeId ?? undefined;
+  const scopes = parent ? [] : await calm.listScopes({ projectId: snap.project.id });
+  if (!parent && scopes.length > 1)
+    throw new CloudAlmError("bad_request", `the project has ${scopes.length} scopes; give a requirement, or create it in the Cloud ALM UI`);
+  const scopeId = parent?.scopeId ?? scopes[0]?.id;
+  const scopeName = parent?.scopeName ?? scopes[0]?.name ?? null;
   const body = {
     projectId: snap.project.id,
     type: TASK_TYPES[input.type],
@@ -252,14 +315,19 @@ export async function createTask(
     ...(scopeId ? { scopeId } : {}),
     ...(parent ? { parentId: parent.id } : {}),
   };
-  const plan = `${input.type.replace("_", " ")} "${title}"${parent ? ` under ${label(parent)}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
-  if (dry(o, input.dryRun)) return `Dry run, nothing sent. Would create ${plan}.`;
+  const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
+  if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.`;
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
-  if (!created?.id) throw new CloudAlmError("unavailable", "Cloud ALM did not return the new task's id");
+  if (!created?.id)
+    return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
   let tags = "";
   if (input.tags?.length) {
-    await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: created.id, tags: input.tags });
-    tags = ` Tags: ${(await calm.getTask(created.id, { comments: false, links: false })).tags.join(", ") || "none stored"}.`;
+    const id = created.id;
+    const stored = await afterCreate("setting its tags", async () => {
+      await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: id, tags: input.tags });
+      return (await allTags(calm, id)).join(", ") || "none stored";
+    });
+    tags = ` Tags: ${stored}.`;
   }
   return `Created ${created.displayId ?? ""} ${plan} [${created.id}].${tags}`;
 }

@@ -11,7 +11,8 @@ const NEW_TC = "dddddddd-0000-4000-8000-000000000099";
 /** The fake tenant plus POST handling: records bodies, answers like Cloud ALM. */
 function fakeTenant() {
   const posts: { path: string; body: unknown }[] = [];
-  const tags = new Map<string, string[]>([[US2, ["Old"]]]);
+  const many = Array.from({ length: 25 }, (_, i) => `T${i + 1}`);
+  const tags = new Map<string, string[]>([[US2, ["Old"]], [US1, many]]);
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const path = url.pathname.replace(/^\/api\//, "");
@@ -135,10 +136,16 @@ describe("write mode", () => {
     expect(r.text).toContain("did not store old");
   });
 
+  test("tag keeps every existing tag, also past the 20th", async () => {
+    const { call, posts } = await connect();
+    await call("calm_tag", { tasks: ["[3-2]"], add: ["New"] });
+    expect((posts[0]?.body as { tags: string[] }).tags).toHaveLength(26);
+  });
+
   test("create a user story under a requirement", async () => {
     const { call, posts } = await connect();
     const r = await call("calm_create_task", { type: "user_story", title: "Credit limit warning", description: "As a rep\n\nI see a warning.", requirement: "3-1" });
-    expect(r.text).toStartWith('Created 3-99 user story "Credit limit warning" under 3-1');
+    expect(r.text).toStartWith('Created 3-99 user story "Credit limit warning" in scope "Order to Cash" under 3-1');
     expect(posts[0]?.body).toMatchObject({ type: "CALMUS", parentId: REQ, description: "<p>As a rep</p><p>I see a warning.</p>" });
     const bad = await call("calm_create_task", { type: "defect", title: "x", description: "y", requirement: "3-1" });
     expect(bad.text).toContain("only user stories and project tasks");

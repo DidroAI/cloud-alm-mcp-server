@@ -120,12 +120,13 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   if (tags) lines.push(`Tags: ${tags}`);
   // Gaps in one line; calm_gaps lists them.
   const tested = new Set(testCases.flatMap((t) => t.taskIds));
-  const reqs = tasks.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
+  // Open items only, as calm_gaps counts them.
+  const reqs = tasks.filter((t) => (t.type === "CALMREQU" || t.type === "CALMUS") && isOpen(t.status));
   const untested = reqs.filter((t) => !tested.has(t.id)).length;
-  const noProcess = tasks.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).length;
+  const noProcess = reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).length;
   const orphans = testCases.filter((t) => !t.taskIds.length).length;
   lines.push(
-    `Gaps: ${untested} of ${reqs.length} requirements/user stories without a test case · ${noProcess} requirements without a solution process · ${orphans} test cases linked to no task (calm_gaps lists them)`,
+    `Gaps: ${untested} of ${reqs.length} open requirements/user stories without a test case · ${noProcess} open requirements without a solution process · ${orphans} test cases linked to no task (calm_gaps lists them)`,
   );
   lines.push(...footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]));
   return lines.join("\n");
@@ -279,7 +280,11 @@ async function resolve(snap: Snapshot, raw: string): Promise<Ref> {
   const ref = raw.trim().replace(/^\[|\]$/g, "");
   const byId = (x: { id: string; displayId: string | null }) =>
     GUID.test(ref) ? x.id.toLowerCase() === ref.toLowerCase() : x.displayId === ref;
-  if (/^ERL-|^[A-Z]{2,}-[0-9a-f]{20,}$/i.test(ref)) return { kind: "process", id: ref };
+  if (/^ERL-|^[A-Z]{2,}-[0-9a-f]{20,}$/i.test(ref)) {
+    const process = (await snap.processes()).find((p) => p.id.toLowerCase() === ref.toLowerCase());
+    if (!process) throw new CloudAlmError("not_found", `solution process ${ref} is not in project ${snap.project.name ?? snap.project.id}`);
+    return { kind: "process", id: process.id };
+  }
   if (!GUID.test(ref) && !/^\d+(-\d+)+$/.test(ref))
     throw new CloudAlmError("bad_request", `"${ref.slice(0, 40)}" is not an id; use a display id like 3-17 or 8-1-2, or a GUID`);
   const prefix = ref.split("-")[0];
@@ -545,9 +550,11 @@ export async function gaps(
   if (checks.has("untested")) {
     const missing = reqs.filter((t) => !tested.has(t.id));
     const items: string[] = [];
+    let lookups = 0;
     for (const t of missing) {
       let note = "";
-      if (t.type === "CALMREQU") {
+      // The user stories under a requirement need one call each: cap them.
+      if (t.type === "CALMREQU" && lookups++ < 30) {
         const kids = (await snap.relations(t.id)).filter((r) => r.type === "0").map((r) => r.taskId);
         const covered = kids.filter((k) => tested.has(k)).length;
         if (kids.length) note = ` (user stories under it with a test case: ${covered} of ${kids.length})`;
@@ -559,7 +566,9 @@ export async function gaps(
   if (checks.has("failed_tests")) {
     const byId = new Map(tasks.map((t) => [t.id, t]));
     const failed = testCases.filter((t) => results.get(t.id)?.some((r: { status: string }) => /fail/i.test(r.status)));
-    section(
+    if (snap.unavailable.has("testResults"))
+      lines.push("", "Test cases whose latest run failed: unknown — test results need the key's analytics and test scopes (calm-api.analytics.read, calm-api.tests.read).");
+    else section(
       "Test cases whose latest run failed",
       failed.sort(byDisplayId).map((t) => `${testCaseLine(t, results.get(t.id))}${t.taskIds.length ? ` — covers ${t.taskIds.map((id) => byId.get(id)?.displayId ?? id).join(", ")}` : ""}`),
     );

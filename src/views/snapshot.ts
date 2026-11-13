@@ -243,12 +243,16 @@ export class Snapshot {
       "processes",
       () =>
         this.calm.operation(async (s) =>
-          rowsOf(
-            await s.get(PATHS.solutionProcesses, {
-              projectId: this.pid,
-              $top: ODATA_PAGE,
-            }),
-          ).map(solutionProcess),
+          {
+            const rows = rowsOf(
+              await s.get(PATHS.solutionProcesses, {
+                projectId: this.pid,
+                $top: ODATA_PAGE,
+              }),
+            );
+            if (rows.length >= ODATA_PAGE) this.truncated = true;
+            return rows.map(solutionProcess);
+          },
         ),
       [],
     );
@@ -313,17 +317,22 @@ export class Snapshot {
             period,
             limit: 200,
           });
+          if (result.truncated || result.rows.length >= 200) this.truncated = true;
           for (const r of result.rows) {
-            if (r.projectGUID && r.projectGUID !== this.pid) continue;
+            if (String(r.projectGUID ?? "").toLowerCase() !== this.pid.toLowerCase()) continue;
             const id = typeof r.testcaseId === "string" ? r.testcaseId : null;
             const plan = typeof r.testPlan === "string" ? r.testPlan : null;
             if (!id || !plan || plan === "(None)") continue;
             const list = map.get(id) ?? [];
-            if (!list.some((x) => x.plan === plan))
-              list.push({
+            const date = String(r.date ?? "");
+            const at = list.findIndex((x) => x.plan === plan);
+            // Keep the latest row per test case and plan.
+            if (at >= 0 && (list[at] as TestResult).date >= date) continue;
+            if (at >= 0) list.splice(at, 1);
+            list.push({
                 plan,
                 status: String(r.status ?? "?"),
-                date: String(r.date ?? ""),
+                date,
                 passed: Number(r.passedActions ?? 0),
                 failed: Number(r.failedActions ?? 0),
                 steps: Number(r.allActions ?? 0),

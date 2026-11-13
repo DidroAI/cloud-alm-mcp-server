@@ -95,7 +95,7 @@ export type ServerOptions = ViewOptions & {
 };
 
 const INSTRUCTIONS =
-  "SAP Cloud ALM, read-only. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts. calm_find lists, calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, documents, process), calm_gaps lists what is missing.";
+  "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts. calm_find lists, calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, documents, process), calm_gaps lists what is missing.";
 
 /**
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
@@ -107,7 +107,15 @@ export function createServer(
 ): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: INSTRUCTIONS },
+    {
+      instructions: `${INSTRUCTIONS} ${
+        options.writer && options.writeMode === "on"
+          ? "Write tools are on: confirm with the user before creating; nothing can be deleted through the API."
+          : options.writer && options.writeMode === "dry-run"
+            ? "Write tools are in dry-run mode, set by the operator (CALM_WRITE=dry-run): they only preview, even with dryRun false. Tell the user what would be written."
+            : "Read-only: no write tools."
+      }`,
+    },
   );
   const allowed = options.tools ? new Set(options.tools) : null;
   const tool = <Shape extends z.ZodRawShape>(

@@ -63,7 +63,7 @@ describe("tools", () => {
     expect(text).toContain("Test cases: 3 manual (2 prepared), 0 automated");
     expect(text).toContain("Test results (latest per test case and plan): 1 failed, 1 passed");
     expect(text).toContain(
-      "Gaps: 1 of 3 requirements/user stories without a test case · 0 requirements without a solution process · 1 test cases linked to no task",
+      "Gaps: 1 of 3 open requirements/user stories without a test case · 0 open requirements without a solution process · 1 test cases linked to no task",
     );
   });
 
