@@ -11,27 +11,47 @@ the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
 Writing (create test cases and tasks, link, tag; never delete) is opt-in
 with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
 
-> Status: private, in development. Not published yet; no licence chosen.
+> Status: in development, not on npm yet. MIT licence.
 
 ## Quick start
 
-1. Get a Cloud ALM API service key (below), save it outside any repository,
-   `chmod 600`.
-2. Add the server to your MCP client:
+Requires Node 22 or later.
 
-```json
-{
-  "mcpServers": {
-    "cloud-alm": {
-      "command": "node",
-      "args": ["/path/to/cloud-alm-mcp-server/dist/cli.js"],
-      "env": { "CALM_SERVICE_KEY": "/home/me/keys/calm-read.json" }
-    }
-  }
-}
-```
+1. Get a Cloud ALM API service key (below) and download its JSON.
+2. Check it and save it:
 
-From a checkout: `bun install && bun run build`. Requires Node 22 or later.
+   ```sh
+   npx -y cloud-alm-mcp-server init ~/Downloads/calm-read.json
+   ```
+
+   `init` gets a token to prove the key works, lists which areas of Cloud
+   ALM its scopes can read, makes one read, then saves the key readable
+   only by you (mode 600) in `~/.config/cloud-alm-mcp-server/` and prints
+   the configuration for Claude Code, Codex, Claude Desktop and Cursor.
+   Paste the JSON instead of naming a file: `init` alone reads stdin.
+   You can delete the downloaded copy afterwards.
+3. Add the server to your client with the printed line, e.g.
+
+   ```sh
+   claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=$HOME/.config/cloud-alm-mcp-server/service-key.json -- npx -y cloud-alm-mcp-server
+   ```
+
+4. Any time later: `npx -y cloud-alm-mcp-server doctor` checks the key,
+   token, scopes, API and Node version.
+
+| Command | Does |
+| --- | --- |
+| `cloud-alm-mcp-server` | starts the stdio server (default) |
+| `cloud-alm-mcp-server http` | starts the streamable HTTP server |
+| `cloud-alm-mcp-server init [file\|-] [--force] [--skip-check]` | checks and saves a key, prints client config |
+| `cloud-alm-mcp-server doctor` | checks the setup |
+| `cloud-alm-mcp-server --version` / `--help` | |
+
+No command prints the key's secret or a token.
+
+> Not on npm yet. Until it is, build from a checkout (`bun install && bun
+> run build && npm link`) and use `cloud-alm-mcp-server` instead of
+> `npx -y cloud-alm-mcp-server`.
 
 ## Get a service key
 
@@ -75,12 +95,16 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
    own (`…metrics.read`, `…jobs.read`, `…exm.read` …). Personal fields
    (assignee names) need `calm-api.tasks.personal.read` and its siblings.
 4. Create a **service binding** (the key) on the instance and download its
-   JSON. Keep it outside any repository, readable only by you (`chmod 600`).
+   JSON. Run `cloud-alm-mcp-server init <file>` on it: it saves a copy
+   readable only by you. Never put it in a repository.
 
 The key holds `uaa.url`, `uaa.clientid`, `uaa.clientsecret` and
 `endpoints.Api` (e.g. `https://eu20.alm.cloud.sap/api`, regional; the token
 selects your tenant). The token carries no user: calls run as a machine
 with access to the whole tenant. SAP cannot limit a key to one project.
+
+Changed the scopes? The token reflects them at once: rerun
+`cloud-alm-mcp-server doctor`. Rotated the key? `init --force <new file>`.
 
 ## Tools
 
@@ -140,11 +164,17 @@ with `tests.read` (test results), `bsm.read`; for writing `tasks.write` and
 
 ### stdio, with your own key (default)
 
-The server reads the key file named by `CALM_SERVICE_KEY`, gets tokens by
-client credentials and keeps them in memory only.
+The server finds the key in `CALM_SERVICE_KEY`, either a file path or the
+JSON itself, else in the file `init` saved
+(`$XDG_CONFIG_HOME/cloud-alm-mcp-server/service-key.json`, by default under
+`~/.config`; `%APPDATA%\cloud-alm-mcp-server\` on Windows;
+`CALM_CONFIG_DIR` overrides the directory). It gets tokens by client
+credentials and keeps them in memory only.
 
 ```sh
-CALM_SERVICE_KEY=~/keys/calm-read.json node dist/cli.js
+npx -y cloud-alm-mcp-server                                    # the key saved by init
+CALM_SERVICE_KEY=~/keys/calm-read.json npx -y cloud-alm-mcp-server
+CALM_SERVICE_KEY="$SECRET_FROM_YOUR_VAULT" npx -y cloud-alm-mcp-server   # the JSON itself
 ```
 
 ### Streamable HTTP, a bearer token per request
@@ -156,7 +186,7 @@ or `CALM_API_URL` when the header is absent; it must be an
 `https://…alm.cloud.sap` address, so a token is never sent anywhere else.
 
 ```sh
-PORT=3333 CALM_API_URL=https://eu20.alm.cloud.sap/api node dist/cli.js http
+PORT=3333 CALM_API_URL=https://eu20.alm.cloud.sap/api npx -y cloud-alm-mcp-server http
 # MCP endpoint: http://127.0.0.1:3333/mcp  (HOST to bind elsewhere)
 ```
 
@@ -208,7 +238,7 @@ per operation. The library never reads environment variables or files.
   from the task's feature assignments, its requirement from relation type
   10 (`parentId` stays empty), its processes from
   `tasks/solutionProcessAssignments`. A link the key has no scope for is
-  listed as not readable instead of failing the task. `calm_test_coverage`
+  listed as not readable instead of failing the task. `calm_gaps`
   counts direct links only: a requirement tested only through its user
   stories counts as uncovered.
 
@@ -242,11 +272,14 @@ no delete.
 
 ## Develop
 
+Bun for development and tests, plain Node 22+ for the built package.
+
 ```sh
 bun install
 bun run typecheck
-bun run test          # unit tests on hand-written fixtures, in-process MCP client over both modes
+bun run test          # unit tests on hand-written fixtures, in-process MCP client over both modes, CLI with fakes
 bun run build         # dist/ for Node
+node dist/cli.js doctor
 CALM_SERVICE_KEY=~/keys/calm-read.json bun scripts/live-check.ts stdio   # against a real tenant
 CALM_SERVICE_KEY=~/keys/calm-read.json bun scripts/live-check.ts http
 ```
@@ -255,3 +288,21 @@ The live check calls every tool against a real tenant and prints per tool
 whether it answered and the size of the answer, never its text, the secret
 or a token. Test fixtures are invented values in the shapes a real tenant
 returns.
+
+Try the package as users get it:
+
+```sh
+npm pack --pack-destination /tmp
+cd "$(mktemp -d)" && npm init -y >/dev/null && npm i /tmp/cloud-alm-mcp-server-*.tgz
+npx --no-install cloud-alm-mcp-server doctor
+```
+
+CI runs typecheck, tests, build, a start-up check and the packed command on
+Node 22 and 24. Releases: bump `version` in `package.json`, add a
+`CHANGELOG.md` entry, tag `vX.Y.Z` and push the tag; the release workflow
+checks again and runs `npm publish --provenance`. It publishes nothing
+until the repository has an `NPM_TOKEN` secret.
+
+## Licence
+
+MIT: see [LICENSE](LICENSE). Use it, change it, ship it.

@@ -3,7 +3,7 @@
     "cloud-alm": {
       "command": "npx",
       "args": ["-y", "cloud-alm-mcp-server"],
-      "env": { "CALM_SERVICE_KEY": "${CALM_SERVICE_KEY}" }
+      "env": { "CALM_SERVICE_KEY": "${CALM_SERVICE_KEY:-}" }
     }
   }
 }

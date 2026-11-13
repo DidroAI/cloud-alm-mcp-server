@@ -1,19 +1,34 @@
 #!/usr/bin/env node
 /**
- * Start the Cloud ALM MCP server.
+ * The cloud-alm-mcp-server command.
  *
- *   CALM_SERVICE_KEY=~/keys/calm.json cloud-alm-mcp-server            # stdio (default)
+ *   cloud-alm-mcp-server init ~/Downloads/calm-key.json   # check and save a key
+ *   cloud-alm-mcp-server doctor                           # check the setup
+ *   cloud-alm-mcp-server                                  # stdio server (default)
  *   PORT=3333 CALM_API_URL=https://eu20.alm.cloud.sap/api cloud-alm-mcp-server http
  */
 import { createServer as createHttpServer } from "node:http";
+import { text } from "node:stream/consumers";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { COMMANDS, runCommand } from "./cli/main.js";
 import { createHttpHandler } from "./http.js";
 import { toNodeListener } from "./node-http.js";
 import { stdioServer } from "./stdio.js";
 
 const mode = process.argv[2] ?? "stdio";
 
-if (mode === "stdio") {
+if (COMMANDS.includes(mode)) {
+  process.exitCode = await runCommand(
+    {
+      env: process.env,
+      out: (line) => process.stdout.write(`${line}\n`),
+      err: (line) => process.stderr.write(`${line}\n`),
+      readStdin: () => text(process.stdin),
+      stdinIsTTY: Boolean(process.stdin.isTTY),
+    },
+    process.argv.slice(2),
+  );
+} else if (mode === "stdio") {
   try {
     await stdioServer().connect(new StdioServerTransport());
   } catch (error) {
@@ -37,6 +52,6 @@ if (mode === "stdio") {
     console.error(`Cloud ALM MCP server on http://${host}:${port}/mcp`);
   });
 } else {
-  console.error("Usage: cloud-alm-mcp-server [stdio | http]");
+  console.error(`Unknown command ${mode}. See cloud-alm-mcp-server --help.`);
   process.exit(2);
 }
