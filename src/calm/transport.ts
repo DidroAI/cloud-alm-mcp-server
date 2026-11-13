@@ -270,10 +270,24 @@ export async function readAnswer(response: Response): Promise<unknown> {
     throw new CloudAlmError("unavailable", "unexpected redirect", status);
   throw new CloudAlmError(
     "unavailable",
-    message
+    message && !looksInternal(message)
       ? `SAP Cloud ALM error ${status}: ${message}`
-      : `SAP Cloud ALM error ${status}`,
+      : `SAP Cloud ALM error ${status} (an error inside SAP Cloud ALM)`,
     status,
+  );
+}
+
+/**
+ * A server error's message that is a stack trace or an exception text
+ * (`Cannot invoke "…getBody()" because "response" is null`) says nothing to
+ * the caller and leaks internals: it is not passed on.
+ */
+export function looksInternal(message: string): boolean {
+  return (
+    message.length > 160 ||
+    /\n\s*at\s|exception|cannot invoke|null(pointer)?\b|\bjava\.|\borg\.|\bcom\.sap\.|stack ?trace|\.java:\d+/i.test(
+      message,
+    )
   );
 }
 
