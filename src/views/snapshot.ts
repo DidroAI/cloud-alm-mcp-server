@@ -1,7 +1,14 @@
 /**
  * One project's items and the links between them, read in a few requests
  * (each list expands its links), for the opinionated tools. Parts are read
- * on demand, so a tool reads only what it needs.
+ * on demand, so a tool reads only what it needs, and each part is its own
+ * operation (own request budget and deadline), so parts can be read in
+ * parallel.
+ *
+ * `snapshotOf` keeps a snapshot per reader and project for a short while
+ * (`SNAPSHOT_TTL_MS`), so an agent's follow-up calls do not re-read every
+ * list. The cache hangs off the `CloudAlm` instance (a WeakMap keyed by it):
+ * readers built per request or per token never share it.
  */
 import {
   type CloudAlm,
@@ -21,13 +28,15 @@ import {
   taskSummary,
   testPlan,
 } from "../calm/client.js";
-import { bool, guid, type Row, rowOf, rowsOf, str } from "../calm/values.js";
+import { bool, guid, num, type Row, rowOf, rowsOf, str } from "../calm/values.js";
 import type { DocumentSummary, TestPlan } from "../calm/model.js";
 
 /** Rows read per list; a project above this is reported as truncated. */
 export const MAX_ROWS = 1000;
 const PAGE = 200;
 const ODATA_PAGE = 500;
+/** How long a project's snapshot (and the project list) is reused. */
+export const SNAPSHOT_TTL_MS = 45_000;
 
 export type SnapTestCase = {
   id: string;
@@ -35,7 +44,10 @@ export type SnapTestCase = {
   title: string | null;
   kind: TestCaseKind;
   prepared: boolean | null;
+  priority: number | null;
   taskIds: string[];
+  /** Tag labels (manual test cases only; automated ones have none). */
+  tags: string[];
 };
 export type SnapFeature = Feature & { taskIds: string[] };
 export type SnapDocument = DocumentSummary & {
@@ -60,7 +72,8 @@ export type Part =
   | "processes"
   | "processLinks"
   | "timeboxes"
-  | "testResults";
+  | "testResults"
+  | "defects";
 
 /** A test case's latest result in one test plan (analytics `Tests`). */
 export type TestResult = {
@@ -72,6 +85,14 @@ export type TestResult = {
   steps: number;
 };
 
+/** Defect ↔ test case links, from the analytics `Defects` dataset. */
+export type DefectLinks = {
+  /** Test case id → ids of the defects raised from it (lower case). */
+  byTestCase: Map<string, string[]>;
+  /** Defect (task) id → the test case it was raised from (lower case). */
+  byDefect: Map<string, string>;
+};
+
 const children = (value: unknown): Row[] =>
   Array.isArray(value)
     ? (value as unknown[]).filter(
@@ -81,11 +102,47 @@ const children = (value: unknown): Row[] =>
 const ids = (rows: Row[], field: string) => [
   ...new Set(rows.map((r) => str(r[field])).filter((v): v is string => !!v)),
 ];
+/** Tags as strings, whether Cloud ALM sends strings or `{label}` objects. */
+const tagLabels = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? (value as unknown[])
+        .map((t) =>
+          typeof t === "string"
+            ? t
+            : t && typeof t === "object"
+              ? (str((t as Row).label) ?? str((t as Row).name) ?? str((t as Row).tag))
+              : null,
+        )
+        .filter((t): t is string => !!t)
+        .slice(0, 50)
+    : [];
+
+/** Run `fn` over `items`, at most `limit` at a time, keeping the order. */
+export async function pool<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i] as T, i);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+  return out;
+}
 
 export class Snapshot {
   truncated = false;
   /** Parts the key may not read (403). */
   readonly unavailable = new Set<Part>();
+  /** Optional parts whose read failed this time (not kept: retried next call). */
+  readonly failed = new Set<Part>();
   private readonly cache = new Map<string, Promise<unknown>>();
 
   constructor(
@@ -93,12 +150,26 @@ export class Snapshot {
     readonly project: Project,
   ) {}
 
-  private once<T>(key: Part, read: () => Promise<T>, empty: T): Promise<T> {
+  /**
+   * Read a part once. A 403 gives `empty` (the key lacks the scope). An
+   * `optional` part (analytics enrichment) also gives `empty` on any other
+   * Cloud ALM error, so it never breaks the answer. Failures are not kept.
+   */
+  private once<T>(key: Part, read: () => Promise<T>, empty: T, optional = false): Promise<T> {
     let hit = this.cache.get(key) as Promise<T> | undefined;
     if (!hit) {
-      hit = read().catch((error) => {
+      hit = read().then((value) => {
+        this.failed.delete(key);
+        return value;
+      }, (error: unknown) => {
         if (error instanceof CloudAlmError && error.code === "forbidden") {
           this.unavailable.add(key);
+          return empty;
+        }
+        // A failed read is not kept: the next call tries again.
+        this.cache.delete(key);
+        if (optional && error instanceof CloudAlmError) {
+          this.failed.add(key);
           return empty;
         }
         throw error;
@@ -168,6 +239,7 @@ export class Snapshot {
           })
         ).map((r) => ({
           ...feature(r),
+          tags: tagLabels(r.tags),
           // The assignment's `uuid` is the task's id.
           taskIds: ids(children(r.toTaskAssignments), "uuid"),
         })),
@@ -203,28 +275,37 @@ export class Snapshot {
     return this.once(
       "testCases",
       async () => {
-        const out: SnapTestCase[] = [];
-        for (const kind of ["manual", "automated"] as const) {
-          const rows = await this.odata(
-            kind === "manual"
-              ? PATHS.manualTestCases
-              : PATHS.automatedTestCases,
-            {
-              $select: "uuid,displayId,title,isPrepared",
-              $expand: "toTaskAssignments",
-            },
-          );
-          for (const r of rows)
-            out.push({
-              id: str(r.uuid) ?? "",
-              displayId: str(r.displayId),
-              title: str(r.title),
-              kind,
-              prepared: bool(r.isPrepared),
-              taskIds: ids(children(r.toTaskAssignments), "taskId"),
-            });
-        }
-        return out;
+        // Manual and automated lists are independent: read both at once.
+        const lists = await Promise.all(
+          (["manual", "automated"] as const).map(async (kind) => {
+            const rows = await this.odata(
+              kind === "manual"
+                ? PATHS.manualTestCases
+                : PATHS.automatedTestCases,
+              {
+                $select: "uuid,displayId,title,isPrepared,priorityCode",
+                // Only manual test cases carry tags.
+                $expand:
+                  kind === "manual"
+                    ? "toTaskAssignments,toTagAssignments"
+                    : "toTaskAssignments",
+              },
+            );
+            return rows.map(
+              (r): SnapTestCase => ({
+                id: str(r.uuid) ?? "",
+                displayId: str(r.displayId),
+                title: str(r.title),
+                kind,
+                prepared: bool(r.isPrepared),
+                priority: num(r.priorityCode),
+                taskIds: ids(children(r.toTaskAssignments), "taskId"),
+                tags: tagLabels(children(r.toTagAssignments)),
+              }),
+            );
+          }),
+        );
+        return lists.flat();
       },
       [],
     );
@@ -344,6 +425,46 @@ export class Snapshot {
         return map;
       },
       new Map(),
+      true,
+    );
+  }
+
+  /**
+   * Which test case each defect was raised from, from the analytics
+   * `Defects` dataset (today, else yesterday). The Tasks API does not carry
+   * this link.
+   */
+  defects(): Promise<DefectLinks> {
+    return this.once(
+      "defects",
+      async () => {
+        const links: DefectLinks = { byTestCase: new Map(), byDefect: new Map() };
+        for (const period of ["C1D", "L1D"]) {
+          const result = await this.calm.queryAnalytics({
+            dataset: "Defects",
+            period,
+            limit: 200,
+          });
+          if (result.truncated) this.truncated = true;
+          const mine = result.rows.filter(
+            (r) => String(r.project ?? "").toLowerCase() === this.pid.toLowerCase(),
+          );
+          for (const r of mine) {
+            const defect = typeof r.GUID === "string" ? r.GUID.toLowerCase() : null;
+            const testCase =
+              typeof r.testcaseId === "string" ? r.testcaseId.toLowerCase() : null;
+            if (!defect || !testCase) continue;
+            links.byDefect.set(defect, testCase);
+            const list = links.byTestCase.get(testCase) ?? [];
+            if (!list.includes(defect)) list.push(defect);
+            links.byTestCase.set(testCase, list);
+          }
+          if (mine.length) break;
+        }
+        return links;
+      },
+      { byTestCase: new Map(), byDefect: new Map() },
+      true,
     );
   }
 
@@ -366,21 +487,80 @@ export class Snapshot {
   }
 }
 
+type ReaderCache = {
+  projects?: { at: number; value: Promise<Project[]> };
+  project: Map<string, { at: number; value: Promise<Project> }>;
+  snapshots: Map<string, { at: number; snap: Snapshot }>;
+};
+/** Per reader (CloudAlm instance): gone with the reader, never shared. */
+const caches = new WeakMap<CloudAlm, ReaderCache>();
+function cacheOf(calm: CloudAlm): ReaderCache {
+  let c = caches.get(calm);
+  if (!c) {
+    c = { project: new Map(), snapshots: new Map() };
+    caches.set(calm, c);
+  }
+  return c;
+}
+const fresh = (at: number, now: number) => now - at < SNAPSHOT_TTL_MS;
+
+/** Drop a reader's cached project list and snapshots (e.g. after a write). */
+export function forgetSnapshots(calm: CloudAlm) {
+  caches.delete(calm);
+}
+
+/** The tenant's projects, reused for a short while per reader. */
+export function listProjects(calm: CloudAlm, now = Date.now()): Promise<Project[]> {
+  const c = cacheOf(calm);
+  if (c.projects && fresh(c.projects.at, now)) return c.projects.value;
+  const value = calm.listProjects();
+  const entry = { at: now, value };
+  c.projects = entry;
+  value.catch(() => {
+    if (c.projects === entry) delete c.projects;
+  });
+  return value;
+}
+
+/**
+ * The project's snapshot, reused for `SNAPSHOT_TTL_MS` per reader: parts
+ * it has read stay read until it expires.
+ */
+export function snapshotOf(calm: CloudAlm, project: Project, now = Date.now()): Snapshot {
+  const c = cacheOf(calm);
+  const hit = c.snapshots.get(project.id);
+  if (hit && fresh(hit.at, now)) return hit.snap;
+  for (const [id, entry] of c.snapshots)
+    if (!fresh(entry.at, now)) c.snapshots.delete(id);
+  const snap = new Snapshot(calm, project);
+  c.snapshots.set(project.id, { at: now, snap });
+  return snap;
+}
+
 /** The project a tool works on: the given one, the configured default, or the only one. */
 export async function resolveProject(
   calm: CloudAlm,
   projectId: string | undefined,
   defaultProject: string | undefined,
+  now = Date.now(),
 ): Promise<{ project: Project; others: Project[] }> {
   const wanted = projectId ?? defaultProject;
   if (wanted) {
     const id = guid(wanted, "projectId");
-    const row = await calm.operation(async (s) =>
-      rowOf(await s.get(`${PATHS.projects}/${id}`)),
+    const c = cacheOf(calm);
+    const hit = c.project.get(id);
+    if (hit && fresh(hit.at, now)) return { project: await hit.value, others: [] };
+    const value = calm.operation(async (s) =>
+      project(rowOf(await s.get(`${PATHS.projects}/${id}`))),
     );
-    return { project: project(row), others: [] };
+    const entry = { at: now, value };
+    c.project.set(id, entry);
+    value.catch(() => {
+      if (c.project.get(id) === entry) c.project.delete(id);
+    });
+    return { project: await value, others: [] };
   }
-  const all = await calm.listProjects();
+  const all = await listProjects(calm, now);
   if (!all.length)
     throw new CloudAlmError("not_found", "the tenant has no project");
   if (all.length > 1)

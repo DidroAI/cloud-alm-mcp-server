@@ -130,7 +130,7 @@ export const APPROVAL_TOOL_NAMES = ["calm_approve", "calm_confirm"] as const;
 const previewText = (text: string) => text.replace(/^Dry run[^\n]*?nothing sent\.\s*/, "").trim();
 
 const INSTRUCTIONS =
-  "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts. calm_find lists, calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, documents, process), calm_gaps lists what is missing.";
+  "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts, as do codes in titles (REQ-03). calm_find lists (status \"failed\" finds failed test cases), calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, defects, documents, process), calm_gaps lists what is missing or failing. SAP service status, outages and maintenance: calm_landscape. Counts across the tenant by status, priority or day (defects by status, test results, jobs, messages): calm_analytics.";
 
 /**
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
@@ -278,7 +278,7 @@ export function createServer(
     .string()
     .min(1)
     .max(80)
-    .describe("Display id (3-17, 6-1, 8-1-2), GUID, or process id (ERL-…)");
+    .describe("Display id (3-17, 6-1, 8-1-2), GUID, process id (ERL-…), or a code in a title (REQ-03)");
 
   tool(
     "calm_overview",
@@ -294,8 +294,8 @@ export function createServer(
     {
       query: z.string().max(200).optional().describe("Words in the title or tags"),
       types: z.array(z.enum(FIND_TYPES)).optional().describe("Default: all project items (not library)"),
-      status: z.string().max(40).optional().describe('e.g. "open", "done", "in testing"'),
-      tag: z.string().max(256).optional(),
+      status: z.string().max(40).optional().describe('e.g. "open", "new", "done", "in testing"; test cases: "failed", "passed" (latest result)'),
+      tag: z.string().max(256).optional().describe("Tasks, features, test cases"),
       projectId,
       limit: z.number().int().min(1).max(100).optional().describe("Default 30"),
       offset: z.number().int().min(0).max(5000).optional(),
@@ -305,7 +305,7 @@ export function createServer(
   tool(
     "calm_get",
     "Get items",
-    "Full content of 1–10 items: description, test case steps and latest result, document content, feature transports, and every link with its title.",
+    "Full content of 1–10 items: description, test case steps and latest result, defects and the test case they came from, a test plan's results, document content, feature transports, and every link with its title.",
     { ids: z.array(ref).min(1).max(10), projectId },
     (a) => get(calm, defined(a), options),
   );
@@ -330,7 +330,7 @@ export function createServer(
   tool(
     "calm_analytics",
     "Analytics",
-    "Cloud ALM analytics, refreshed daily, tenant-wide: tasks, defects, test runs, jobs, exceptions, integration messages… Without dataset: the list. groupBy counts by columns.",
+    "Cloud ALM analytics, refreshed daily, tenant-wide: tasks, defects, test runs, jobs, exceptions, integration messages… Without dataset: the list and the columns to group by. groupBy counts on the latest day; `status` means the dataset's status column.",
     {
       dataset: z.enum(ANALYTICS_DATASETS).optional(),
       groupBy: z.array(z.string().max(60)).max(4).optional(),

@@ -14,13 +14,14 @@ import {
   TOOL_NAMES,
 } from "../src/server.js";
 import { readerFromKeyFile, stdioServer } from "../src/stdio.js";
-import { BASE_URL, fakeCloudAlm, PROJECT_ID, REQ, TENANT } from "./tenant.js";
+import { BASE_URL, DEF, fakeCloudAlm, PROJECT_ID, REQ, TENANT } from "./tenant.js";
 
 async function connect(
   routes: Record<string, unknown> = TENANT,
   options: ServerOptions = {},
+  fakeOptions: { delayMs?: number } = {},
 ) {
-  const fake = fakeCloudAlm(routes);
+  const fake = fakeCloudAlm(routes, fakeOptions);
   const calm = new CloudAlm(
     { accessToken: "t", baseUrl: BASE_URL },
     { fetch: fake.fetch },
@@ -59,12 +60,16 @@ describe("tools", () => {
     expect(text).toContain("Realize (current) 2026-10-01–2026-12-31");
     expect(text).toContain("1 requirement (1 open)");
     expect(text).toContain("2 user stories (2 open)");
+    expect(text).toContain("Defects: 1 open (new) · priority: 1 very high");
     expect(text).toContain("Features: 1 (1 in testing)");
-    expect(text).toContain("Test cases: 3 manual (2 prepared), 0 automated");
+    expect(text).toContain("Test cases: 3 manual (2 prepared), 1 automated");
     expect(text).toContain("Test results (latest per test case and plan): 1 failed, 1 passed");
     expect(text).toContain(
-      "Gaps: 1 of 3 open requirements/user stories without a test case · 0 open requirements without a solution process · 1 test cases linked to no task",
+      "Gaps: 1 of 3 open requirements/user stories without a test case · 0 open requirements without a solution process · 2 test cases linked to no task",
     );
+    // Where outages and tenant-wide counts are.
+    expect(text).toContain("calm_landscape");
+    expect(text).toContain("calm_analytics");
   });
 
   test("find: words, alternatives, types and status", async () => {
@@ -72,27 +77,28 @@ describe("tools", () => {
     const credit = await call("calm_find", { query: "credit" });
     expect(credit.text).toStartWith("6 matches");
     expect(credit.text).toContain(
-      '- 3-1 · requirement · open · priority 20 · "Credit check on order release" · #Wave 1',
+      '- 3-1 · requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release" · #Wave 1',
     );
+    expect(credit.text).toContain('- 3-4 · defect · open (new) · priority very high · "Credit block not set for export orders"');
     const alt = await call("calm_find", { query: "worklist | regression" });
     expect(alt.text).toContain("3-2 ·");
     expect(alt.text).toContain("8-1-3 ·");
     const defects = await call("calm_find", { types: ["defect"], status: "open" });
     expect(defects.text).toStartWith("1 match");
     const tagged = await call("calm_find", { tag: "wave 1" });
-    expect(tagged.text).toStartWith("1 match");
+    expect(tagged.text).toStartWith("3 matches");
   });
 
   test("get: several items by display id, with their links named", async () => {
     const { call } = await connect();
     const { text } = await call("calm_get", { ids: ["3-1", "8-1-2", "6-1", "9-9"] });
-    expect(text).toContain('3-1 requirement · open · priority 20 · "Credit check on order release"');
+    expect(text).toContain('3-1 requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release"');
     expect(text).toContain("Orders above the credit limit are blocked.");
     expect(text).toContain('User stories / tasks under it: 3-2 user story "Release blocked orders from a worklist" (open); 3-3');
-    expect(text).toContain('Test cases: 8-1-1 "Order blocked by credit limit"');
     expect(text).toContain("Solution processes: Lead to Cash");
     expect(text).toContain("1.1 Open the worklist [evidence]");
-    expect(text).toContain("Latest result: passed 1/1 in UAT cycle 1");
+    expect(text).toContain("Latest result: passed, 1 of 1 steps passed in UAT cycle 1");
+    expect(text).toContain('Test cases: 8-1-1 "Order blocked by credit limit" (failed, 1 of 2 steps passed in UAT cycle 1) · defect 3-4');
     expect(text).toContain("expect: The order is listed");
     expect(text).toContain("Transports: DEVK900123");
     expect(text).toContain("9-9: not_found");
@@ -104,7 +110,7 @@ describe("tools", () => {
     expect(text).toContain("- 3-1 requirement");
     expect(text).toContain("process: Lead to Cash");
     expect(text).toContain("feature: 6-1 \"Credit management\" (in testing) · transports: DEVK900123");
-    expect(text).toContain('    - 3-3 user story "Credit exposure shown in the order" (open)');
+    expect(text).toContain('    - 3-3 user story "Credit exposure shown in the order (see REQ-01)" (open)');
     expect(text).toContain("test cases: NONE");
   });
 
@@ -114,10 +120,10 @@ describe("tools", () => {
     expect(text).toContain("Without a test case: 1");
     expect(text).toContain("3-3 · user story");
     expect(text).toContain("1 of 2 tasks it delivers have no test case: 3-3");
-    expect(text).toContain("Test cases linked to no task: 1");
+    expect(text).toContain("Test cases linked to no task: 2");
     expect(text).toContain("Test cases not prepared: 1");
     expect(text).toContain(
-      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed 1/2 in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "Credit check on order release"',
+      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed, 1 of 2 steps passed in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "[demo] REQ-01 Credit check on order release" — defect 3-4 "Credit block not set for export orders" (open (new), priority very high)',
     );
   });
 
@@ -127,6 +133,8 @@ describe("tools", () => {
     expect(text).toContain("- SAP Cloud ALM · CloudService · 100 · PROD");
     expect(text).toContain("Service status events: 1 open, 1 closed");
     expect(text.indexOf("Planned")).toBeLessThan(text.indexOf("Closed ·"));
+    // The event's own text, not only its id.
+    expect(text).toContain("Planned database upgrade; the service is read-only for 30 minutes. (EVB2)");
   });
 
   test("analytics without dataset lists the datasets, no request", async () => {

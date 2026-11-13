@@ -22,6 +22,38 @@ export function statusLabel(code: string | null): string {
 export const isOpen = (code: string | null) =>
   !["done", "not relevant"].includes(statusLabel(code));
 
+const SUB_STATES: Record<string, string | null> = {
+  // A requirement's sub-status "CREATED" is shown as "in refinement" in Cloud ALM.
+  CREATED: "in refinement",
+};
+/**
+ * A task's sub-status in words: `DFC_NEW` → "new", `DFC_RETEST_REQ` →
+ * "retest required". Null when there is none.
+ */
+export function subStatusLabel(code: string | null): string | null {
+  if (!code) return null;
+  if (code in SUB_STATES) return SUB_STATES[code] ?? null;
+  return code
+    .replace(/^[A-Z]{2,4}_/, "")
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\breq\b/, "required")
+    .replace(/\binp\b/, "in progress")
+    .trim() || null;
+}
+
+/** "open (new)" for a defect, "open" for a task without a sub-status. */
+export function taskStatus(t: { status: string | null; subStatus: string | null }): string {
+  const main = statusLabel(t.status);
+  const sub = subStatusLabel(t.subStatus);
+  return sub && sub !== main ? `${main} (${sub})` : main;
+}
+
+const PRIORITIES: Record<number, string> = { 10: "very high", 20: "high", 30: "medium", 40: "low" };
+/** Cloud ALM priority codes in words: 10 → "very high" … 40 → "low". */
+export const priorityLabel = (code: number | null) =>
+  code === null ? null : (PRIORITIES[code] ?? String(code));
+
 export const typeLabel = (type: string | null) =>
   type ? (TASK_TYPES[type as TaskTypeCode] ?? type) : "task";
 
@@ -67,8 +99,8 @@ export const taskLine = (t: TaskSummary) =>
   [
     t.displayId ?? "?",
     typeLabel(t.type),
-    statusLabel(t.status),
-    t.priority !== null ? `priority ${t.priority}` : null,
+    taskStatus(t),
+    t.priority !== null ? `priority ${priorityLabel(t.priority)}` : null,
     `"${short(t.title)}"`,
     t.tags.length ? `#${t.tags.join(" #")}` : null,
   ]
@@ -76,17 +108,24 @@ export const taskLine = (t: TaskSummary) =>
     .join(" · ");
 
 export const featureLine = (f: SnapFeature) =>
-  `${f.displayId ?? "?"} · feature · ${featureStatus(f.statusCode)} · "${short(f.title)}"`;
+  `${f.displayId ?? "?"} · feature · ${featureStatus(f.statusCode)}${f.priorityCode !== null ? ` · priority ${priorityLabel(f.priorityCode)}` : ""} · "${short(f.title)}"${f.tags.length ? ` · #${f.tags.join(" #")}` : ""}`;
 
-/** "failed 3/4 in UAT cycle 1" for each plan the test case is in. */
+/** One result in words: "failed, 3 of 4 steps passed", "not run yet". */
+export function resultWords(r: TestResult): string {
+  const status = r.status.toLowerCase();
+  if (status === "initial") return "not run yet";
+  return `${status}${r.steps ? `, ${r.passed} of ${r.steps} steps passed` : ""}`;
+}
+
+/** "failed, 3 of 4 steps passed in UAT cycle 1" for each plan the test case is in. */
 export const resultText = (results: TestResult[] | undefined) =>
   (results ?? [])
-    .map((r) => `${r.status.toLowerCase()}${r.steps ? ` ${r.passed}/${r.steps}` : ""} in ${short(r.plan, 40)}`)
-    .join(", ");
+    .map((r) => `${resultWords(r)} in ${short(r.plan, 40)}`)
+    .join("; ");
 
 export const testCaseLine = (t: SnapTestCase, results?: TestResult[]) => {
   const result = resultText(results);
-  return `${t.displayId ?? "?"} · ${t.kind} test case${t.prepared === false ? " · not prepared" : ""}${result ? ` · ${result}` : ""} · "${short(t.title)}"`;
+  return `${t.displayId ?? "?"} · ${t.kind} test case${t.prepared === false ? " · not prepared" : ""}${result ? ` · ${result}` : ""} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
 };
 
 export const documentLine = (d: SnapDocument) =>
