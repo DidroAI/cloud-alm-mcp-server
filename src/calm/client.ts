@@ -608,19 +608,22 @@ export class CloudAlm {
   ): Promise<Task> {
     const taskId = guid(id, "task id");
     return this.run(async (s) => {
-      const row = rowOf(await s.get(`${PATHS.tasks}/${taskId}`));
-      let comments: TaskComment[] = [];
-      if (options.comments !== false) {
-        try {
-          comments = rowsOf(await s.get(`${PATHS.tasks}/${taskId}/comments`))
-            .slice(-MAX_COMMENTS)
-            .map(comment);
-        } catch (error) {
-          // A token without the comments' scope still gets the task.
-          if (!(error instanceof CloudAlmError) || error.code !== "forbidden")
-            throw error;
-        }
-      }
+      // The task and its comments are independent: read them at once.
+      const [body, comments] = await Promise.all([
+        s.get(`${PATHS.tasks}/${taskId}`),
+        options.comments === false
+          ? Promise.resolve([] as TaskComment[])
+          : s
+              .get(`${PATHS.tasks}/${taskId}/comments`)
+              .then((c) => rowsOf(c).slice(-MAX_COMMENTS).map(comment))
+              .catch((error: unknown) => {
+                // A token without the comments' scope still gets the task.
+                if (!(error instanceof CloudAlmError) || error.code !== "forbidden")
+                  throw error;
+                return [] as TaskComment[];
+              }),
+      ]);
+      const row = rowOf(body);
       const links =
         options.links === false
           ? null
