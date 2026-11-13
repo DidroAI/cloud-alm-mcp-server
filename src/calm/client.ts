@@ -223,6 +223,7 @@ export const taskSummary = (row: Row): TaskSummary => {
     priority: num(row.priorityId),
     assigneeName: str(row.assigneeName),
     scopeName: str(row.scopeName),
+    scopeId: str(row.scopeId),
     dueDate: str(row.dueDate),
     tags: strings(row.tags),
     changedAt: str(row.lastChangedTimestamp),

@@ -75,6 +75,7 @@ export type TaskSummary = {
   priority: number | null;
   assigneeName: string | null;
   scopeName: string | null;
+  scopeId: string | null;
   dueDate: string | null;
   tags: string[];
   /** `lastChangedTimestamp`. */

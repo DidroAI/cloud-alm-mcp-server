@@ -6,6 +6,14 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import type { CloudAlmWriter } from "./calm/writer.js";
+import {
+  CREATABLE_TASK_TYPES,
+  createTask,
+  createTestCase,
+  link,
+  tag,
+} from "./views/write.js";
 import {
   analytics,
   FIND_TYPES,
@@ -60,6 +68,13 @@ async function answer(read: () => Promise<string>): Promise<CallToolResult> {
   }
 }
 
+const WRITE = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+} as const;
+
 const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -70,6 +85,13 @@ const READ_ONLY = {
 export type ServerOptions = ViewOptions & {
   /** Tool names to offer; others are left out. Default: all. */
   tools?: readonly string[];
+  /**
+   * Writing: off (default), "on", or "dry-run" (write tools answer with
+   * what they would send). Needs `writer`.
+   */
+  writeMode?: "off" | "on" | "dry-run";
+  /** The writer write tools use; created from the same credentials. */
+  writer?: CloudAlmWriter;
 };
 
 const INSTRUCTIONS =
@@ -89,7 +111,7 @@ export function createServer(
   );
   const allowed = options.tools ? new Set(options.tools) : null;
   const tool = <Shape extends z.ZodRawShape>(
-    name: (typeof TOOL_NAMES)[number],
+    name: (typeof TOOL_NAMES)[number] | (typeof WRITE_TOOL_NAMES)[number],
     title: string,
     description: string,
     inputSchema: Shape,
@@ -103,7 +125,9 @@ export function createServer(
         description,
         // A zod v4 raw shape; the SDK's compat type does not name v4 shapes.
         inputSchema: inputSchema as never,
-        annotations: { ...READ_ONLY, title },
+        annotations: (WRITE_TOOL_NAMES as readonly string[]).includes(name)
+          ? { ...WRITE, title }
+          : { ...READ_ONLY, title },
       },
       // The SDK has validated `args` against `inputSchema`.
       ((args: z.infer<z.ZodObject<Shape>>) => answer(() => run(args))) as never,
@@ -182,12 +206,76 @@ export function createServer(
     {},
     () => landscape(calm),
   );
+
+  const writer = options.writer;
+  const writeMode = options.writeMode ?? "off";
+  if (writer && writeMode !== "off") {
+    const w = { ...options, writeMode } as const;
+    const dryRun = z.boolean().optional().describe("true: answer with what would be sent, send nothing");
+    const step = z.object({
+      title: z.string().min(1).max(500),
+      description: z.string().min(1).max(4000).describe("What to do; required by Cloud ALM"),
+      expected: z.string().min(1).max(4000),
+      evidence: z.boolean().optional(),
+    });
+    tool(
+      "calm_create_test_case",
+      "Create a manual test case",
+      "Create a manual test case with activities and steps, linked to the tasks it covers. Cannot be deleted or tagged through the API afterwards: check with the user first; refuses a duplicate title.",
+      {
+        title: z.string().min(1).max(250),
+        covers: z.array(ref).max(20).optional().describe("Requirements or user stories it tests"),
+        activities: z.array(z.object({ title: z.string().min(1).max(250), steps: z.array(step).min(1).max(50) })).min(1).max(30),
+        priority: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).optional().describe("10 very high … 40 low; default 30"),
+        projectId,
+        dryRun,
+      },
+      (a) => createTestCase(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_link",
+      "Link a test case or feature to tasks",
+      "Link a manual test case (it tests them) or a feature (it delivers them) to requirements or user stories. Skips links that exist.",
+      { from: ref.describe("Test case or feature id"), tasks: z.array(ref).min(1).max(20), projectId, dryRun },
+      (a) => link(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_tag",
+      "Tag tasks",
+      "Add or remove tags on requirements, user stories, defects or tasks; other tags stay. (Test cases cannot be tagged through the API.)",
+      {
+        tasks: z.array(ref).min(1).max(20),
+        add: z.array(z.string().min(1).max(256)).max(20).optional(),
+        remove: z.array(z.string().min(1).max(256)).max(20).optional(),
+        projectId,
+        dryRun,
+      },
+      (a) => tag(calm, writer, defined(a) as never, w),
+    );
+    tool(
+      "calm_create_task",
+      "Create a task",
+      "Create a requirement, user story (optionally under a requirement), defect or project task. Refuses a duplicate title of the same type.",
+      {
+        type: z.enum(CREATABLE_TASK_TYPES as [string, ...string[]]),
+        title: z.string().min(1).max(180),
+        description: z.string().min(1).max(8000).describe("Plain text; blank lines separate paragraphs"),
+        requirement: ref.optional().describe("Parent requirement of a user story or project task"),
+        priority: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).optional(),
+        tags: z.array(z.string().min(1).max(256)).max(20).optional(),
+        projectId,
+        dryRun,
+      },
+      (a) => createTask(calm, writer, defined(a) as never, w),
+    );
+  }
   return server;
 }
 
 /**
  * Server options from the environment: `CALM_PROJECT` (default project
- * GUID), `CALM_TOOLS` (comma-separated tool names to offer).
+ * GUID), `CALM_TOOLS` (comma-separated tool names to offer), `CALM_WRITE`
+ * (off, on, dry-run).
  */
 export function serverOptionsFromEnv(
   env: Record<string, string | undefined> = process.env,
@@ -198,14 +286,28 @@ export function serverOptionsFromEnv(
     if (!GUID.test(project)) throw new Error("CALM_PROJECT must be a project GUID.");
     options.defaultProject = project;
   }
+  const write = env.CALM_WRITE?.trim().toLowerCase();
+  if (write) {
+    if (!["off", "on", "dry-run"].includes(write)) throw new Error("CALM_WRITE must be off, on or dry-run.");
+    options.writeMode = write as "off" | "on" | "dry-run";
+  }
   const tools = env.CALM_TOOLS?.split(",").map((t) => t.trim()).filter(Boolean);
   if (tools?.length) {
-    const unknown = tools.filter((t) => !(TOOL_NAMES as readonly string[]).includes(t));
-    if (unknown.length) throw new Error(`CALM_TOOLS: unknown tools ${unknown.join(", ")}; known: ${TOOL_NAMES.join(", ")}.`);
+    const known = [...TOOL_NAMES, ...WRITE_TOOL_NAMES] as readonly string[];
+    const unknown = tools.filter((t) => !known.includes(t));
+    if (unknown.length) throw new Error(`CALM_TOOLS: unknown tools ${unknown.join(", ")}; known: ${known.join(", ")}.`);
     options.tools = tools;
   }
   return options;
 }
+
+/** Write tools, offered only when writing is on. */
+export const WRITE_TOOL_NAMES = [
+  "calm_create_test_case",
+  "calm_link",
+  "calm_tag",
+  "calm_create_task",
+] as const;
 
 /** Tool names, for documentation, tests and the allow list. */
 export const TOOL_NAMES = [

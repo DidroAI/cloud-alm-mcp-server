@@ -5,6 +5,7 @@ import {
   type CloudAlmOptions,
 } from "./calm/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { CloudAlmWriter } from "./calm/writer.js";
 import { createServer, type ServerOptions, serverOptionsFromEnv } from "./server.js";
 
 export type HttpOptions = {
@@ -82,7 +83,12 @@ export function createHttpHandler(options: HttpOptions = {}) {
       { accessToken: match[1], baseUrl },
       options.reader ?? {},
     );
-    const server = createServer(calm, serverOptions);
+    const grant = { accessToken: match[1], baseUrl };
+    const writes = serverOptions.writeMode && serverOptions.writeMode !== "off";
+    const server = createServer(calm, {
+      ...serverOptions,
+      ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
+    });
     // No session id generator: stateless, one server per request.
     const transport = new WebStandardStreamableHTTPServerTransport({
       enableJsonResponse: true,

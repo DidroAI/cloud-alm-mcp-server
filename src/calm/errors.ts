@@ -9,7 +9,7 @@ export type CloudAlmErrorCode =
 
 const DEFAULT_REASONS: Record<CloudAlmErrorCode, string> = {
   unauthorized: "no valid token for SAP Cloud ALM",
-  forbidden: "the token lacks the scope for this read",
+  forbidden: "the token lacks the scope for this call",
   not_found: "not found",
   rate_limited: "SAP Cloud ALM is rate limiting requests; try again shortly",
   unavailable: "SAP Cloud ALM did not answer usably",

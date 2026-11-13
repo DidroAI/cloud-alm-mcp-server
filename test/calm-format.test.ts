@@ -94,6 +94,7 @@ describe("formatters", () => {
       priority: null,
       assigneeName: null,
       scopeName: null,
+      scopeId: null,
       dueDate: null,
       tags: [],
       changedAt: null,

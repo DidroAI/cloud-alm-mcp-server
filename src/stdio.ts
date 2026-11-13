@@ -6,6 +6,7 @@ import {
   parseServiceKey,
   serviceKeyGrants,
 } from "./calm/index.js";
+import { CloudAlmWriter } from "./calm/writer.js";
 import { createServer, serverOptionsFromEnv } from "./server.js";
 
 /** Env var naming the path of the developer's own service key (JSON). */
@@ -19,6 +20,14 @@ export function readerFromKeyFile(
   path: string,
   options: CloudAlmOptions = {},
 ): CloudAlm {
+  return clientsFromKeyFile(path, options).reader;
+}
+
+/** Reader and opt-in writer over one service key; they share its tokens. */
+export function clientsFromKeyFile(
+  path: string,
+  options: CloudAlmOptions = {},
+): { reader: CloudAlm; writer: CloudAlmWriter } {
   const resolved = path.replace(/^~(?=$|\/)/, homedir());
   let raw: string;
   try {
@@ -35,10 +44,14 @@ export function readerFromKeyFile(
     throw new Error("The service key file is not JSON.");
   }
   const fetcher = options.fetch;
-  return new CloudAlm(
-    serviceKeyGrants(parseServiceKey(json), fetcher ? { fetch: fetcher } : {}),
-    options,
+  const grants = serviceKeyGrants(
+    parseServiceKey(json),
+    fetcher ? { fetch: fetcher } : {},
   );
+  return {
+    reader: new CloudAlm(grants, options),
+    writer: new CloudAlmWriter(grants, options),
+  };
 }
 
 /** The MCP server for stdio mode, from `CALM_SERVICE_KEY`. */
@@ -50,5 +63,10 @@ export function stdioServer(
     throw new Error(
       `Set ${SERVICE_KEY_ENV} to the path of your Cloud ALM API service key (JSON).`,
     );
-  return createServer(readerFromKeyFile(path), serverOptionsFromEnv(env));
+  const options = serverOptionsFromEnv(env);
+  const { reader, writer } = clientsFromKeyFile(path);
+  return createServer(reader, {
+    ...options,
+    ...(options.writeMode && options.writeMode !== "off" ? { writer } : {}),
+  });
 }

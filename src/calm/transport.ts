@@ -224,48 +224,57 @@ export class Session {
     }
   }
 
-  private async read(response: Response): Promise<unknown> {
-    const { status } = response;
-    if (status >= 200 && status < 300) {
-      const body = parseJson(await boundedText(response, MAX_BODY_BYTES));
-      if (body === undefined)
-        throw new CloudAlmError("unavailable", "answer is not JSON", status);
-      return body;
-    }
-    let message: string | undefined;
-    try {
-      message = providerMessage(
-        parseJson(await boundedText(response, MAX_ERROR_BYTES)),
-      );
-    } catch {
-      message = undefined;
-    }
-    if (status === 400 || status === 422 || status === 428)
-      throw new CloudAlmError("bad_request", message, status);
-    if (status === 401)
-      throw new CloudAlmError("unauthorized", undefined, status);
-    if (status === 403)
-      throw new CloudAlmError(
-        "forbidden",
-        message
-          ? `the token lacks the scope for this read (${message})`
-          : undefined,
-        status,
-      );
-    if (status === 404 || status === 410)
-      throw new CloudAlmError("not_found", message, status);
-    if (status === 429)
-      throw new CloudAlmError("rate_limited", undefined, status);
-    if (status >= 300 && status < 400)
-      throw new CloudAlmError("unavailable", "unexpected redirect", status);
+  private read(response: Response): Promise<unknown> {
+    return readAnswer(response);
+  }
+}
+
+/**
+ * The parsed JSON of a 2xx answer, or a `CloudAlmError` for any other
+ * status. Used by reads and by the opt-in writer.
+ */
+export async function readAnswer(response: Response): Promise<unknown> {
+
+  const { status } = response;
+  if (status >= 200 && status < 300) {
+    const body = parseJson(await boundedText(response, MAX_BODY_BYTES));
+    if (body === undefined)
+      throw new CloudAlmError("unavailable", "answer is not JSON", status);
+    return body;
+  }
+  let message: string | undefined;
+  try {
+    message = providerMessage(
+      parseJson(await boundedText(response, MAX_ERROR_BYTES)),
+    );
+  } catch {
+    message = undefined;
+  }
+  if (status === 400 || status === 422 || status === 428)
+    throw new CloudAlmError("bad_request", message, status);
+  if (status === 401)
+    throw new CloudAlmError("unauthorized", undefined, status);
+  if (status === 403)
     throw new CloudAlmError(
-      "unavailable",
+      "forbidden",
       message
-        ? `SAP Cloud ALM error ${status}: ${message}`
-        : `SAP Cloud ALM error ${status}`,
+        ? `the token lacks the scope for this call (${message})`
+        : undefined,
       status,
     );
-  }
+  if (status === 404 || status === 410)
+    throw new CloudAlmError("not_found", message, status);
+  if (status === 429)
+    throw new CloudAlmError("rate_limited", undefined, status);
+  if (status >= 300 && status < 400)
+    throw new CloudAlmError("unavailable", "unexpected redirect", status);
+  throw new CloudAlmError(
+    "unavailable",
+    message
+      ? `SAP Cloud ALM error ${status}: ${message}`
+      : `SAP Cloud ALM error ${status}`,
+    status,
+  );
 }
 
 /** Resolve the grant, run one operation in its own session, close it. */
