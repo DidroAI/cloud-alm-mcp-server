@@ -100,48 +100,33 @@ async function call(
   return text;
 }
 
-const firstId = (text: string) => GUID.exec(text)?.[1];
+// Display ids (3-17, 6-1, 8-1-2) as the tools print them.
+const firstDisplayId = (text: string, prefix: string) =>
+  new RegExp(`- (${prefix}-[0-9-]+) ·`).exec(text)?.[1];
 
-const projectId = firstId(await call("calm_list_projects"));
-if (projectId) await call("calm_get_project", { projectId });
-await call("calm_search_tasks", { limit: 20 });
-const defectId = firstId(await call("calm_search_tasks", { type: "defect" }));
-await call("calm_search_tasks", { type: "requirement" });
-await call("calm_search_tasks", { query: "invoice" });
-if (defectId) await call("calm_get_task", { taskId: defectId });
-const featureId = firstId(await call("calm_list_features"));
-if (featureId) await call("calm_get_feature", { featureId });
-const documentId = firstId(await call("calm_list_documents"));
-if (documentId) await call("calm_get_document", { documentId });
-const testCaseId = firstId(await call("calm_list_test_cases"));
-if (projectId) await call("calm_test_coverage", { projectId });
-await call("calm_list_test_cases", { kind: "automated" });
-if (testCaseId) await call("calm_get_test_case", { testCaseId });
-const testPlanId = firstId(await call("calm_list_test_plans"));
-if (testPlanId) await call("calm_get_test_plan", { testPlanId });
-await call("calm_list_scopes");
-await call("calm_list_processes", { limit: 5 });
-await call("calm_list_process_hierarchy");
-await call("calm_list_landscape");
-for (const kind of [
-  "applications",
-  "developments",
-  "interfaces",
-  "configurations",
-])
-  await call("calm_list_library", { kind });
-await call("calm_list_analytics_providers");
-await call("calm_query_analytics", { dataset: "Tasks", limit: 10 });
-await call("calm_query_analytics", {
-  dataset: "Tests",
-  period: "C30D",
-  limit: 10,
-});
-await call("calm_list_status_events", { limit: 5 });
+await call("calm_overview");
+const all = await call("calm_find", { limit: 100 });
+await call("calm_find", { query: "order | invoice", types: ["requirement", "user_story", "defect"] });
+await call("calm_find", { types: ["application", "development", "interface", "configuration"] });
+const ids = [
+  firstDisplayId(all, "3"),
+  firstDisplayId(all, "6"),
+  firstDisplayId(all, "7"),
+  firstDisplayId(all, "8-1"),
+  firstDisplayId(all, "8-3"),
+].filter((x): x is string => !!x);
+if (ids.length) await call("calm_get", { ids });
+const requirement = firstDisplayId(await call("calm_find", { types: ["requirement"] }), "3");
+if (requirement) await call("calm_trace", { id: requirement });
+await call("calm_gaps");
+await call("calm_analytics");
+await call("calm_analytics", { dataset: "Tasks", groupBy: ["type", "statusText"] });
+await call("calm_analytics", { dataset: "Tests", period: "C30D", limit: 10 });
+await call("calm_landscape");
 
 const notCalled = tools.map((t) => t.name).filter((n) => !called.has(n));
 console.log(
-  `\ncalled ${called.size} of ${tools.length} tools${notCalled.length ? `; not called (no item to get): ${notCalled.join(", ")}` : ""}`,
+  `\ncalled ${called.size} of ${tools.length} tools${notCalled.length ? `; not called: ${notCalled.join(", ")}` : ""}`,
 );
 console.log(
   failures

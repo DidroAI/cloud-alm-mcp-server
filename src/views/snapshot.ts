@@ -59,7 +59,18 @@ export type Part =
   | "testPlans"
   | "processes"
   | "processLinks"
-  | "timeboxes";
+  | "timeboxes"
+  | "testResults";
+
+/** A test case's latest result in one test plan (analytics `Tests`). */
+export type TestResult = {
+  plan: string;
+  status: string;
+  date: string;
+  passed: number;
+  failed: number;
+  steps: number;
+};
 
 const children = (value: unknown): Row[] =>
   Array.isArray(value)
@@ -284,6 +295,46 @@ export class Snapshot {
           ),
         ),
       [],
+    );
+  }
+
+  /**
+   * Latest result per test case and test plan, from the analytics `Tests`
+   * dataset (today, else yesterday). Rows outside a test plan are skipped.
+   */
+  testResults(): Promise<Map<string, TestResult[]>> {
+    return this.once(
+      "testResults",
+      async () => {
+        const map = new Map<string, TestResult[]>();
+        for (const period of ["C1D", "L1D"]) {
+          const result = await this.calm.queryAnalytics({
+            dataset: "Tests",
+            period,
+            limit: 200,
+          });
+          for (const r of result.rows) {
+            if (r.projectGUID && r.projectGUID !== this.pid) continue;
+            const id = typeof r.testcaseId === "string" ? r.testcaseId : null;
+            const plan = typeof r.testPlan === "string" ? r.testPlan : null;
+            if (!id || !plan || plan === "(None)") continue;
+            const list = map.get(id) ?? [];
+            if (!list.some((x) => x.plan === plan))
+              list.push({
+                plan,
+                status: String(r.status ?? "?"),
+                date: String(r.date ?? ""),
+                passed: Number(r.passedActions ?? 0),
+                failed: Number(r.failedActions ?? 0),
+                steps: Number(r.allActions ?? 0),
+              });
+            map.set(id, list);
+          }
+          if (map.size) break;
+        }
+        return map;
+      },
+      new Map(),
     );
   }
 

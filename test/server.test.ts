@@ -61,6 +61,7 @@ describe("tools", () => {
     expect(text).toContain("2 user stories (2 open)");
     expect(text).toContain("Features: 1 (1 in testing)");
     expect(text).toContain("Test cases: 3 manual (2 prepared), 0 automated");
+    expect(text).toContain("Test results (latest per test case and plan): 1 failed, 1 passed");
     expect(text).toContain(
       "Gaps: 1 of 3 requirements/user stories without a test case · 0 requirements without a solution process · 1 test cases linked to no task",
     );
@@ -91,6 +92,7 @@ describe("tools", () => {
     expect(text).toContain('Test cases: 8-1-1 "Order blocked by credit limit"');
     expect(text).toContain("Solution processes: Lead to Cash");
     expect(text).toContain("1.1 Open the worklist [evidence]");
+    expect(text).toContain("Latest result: passed 1/1 in UAT cycle 1");
     expect(text).toContain("expect: The order is listed");
     expect(text).toContain("Transports: DEVK900123");
     expect(text).toContain("9-9: not_found");
@@ -114,6 +116,9 @@ describe("tools", () => {
     expect(text).toContain("1 of 2 tasks it delivers have no test case: 3-3");
     expect(text).toContain("Test cases linked to no task: 1");
     expect(text).toContain("Test cases not prepared: 1");
+    expect(text).toContain(
+      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed 1/2 in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1',
+    );
   });
 
   test("landscape: open events first, services by name", async () => {

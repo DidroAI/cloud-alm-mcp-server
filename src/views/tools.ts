@@ -33,6 +33,7 @@ import {
   short,
   statusLabel,
   taskLine,
+  resultText,
   testCaseLine,
   typeLabel,
 } from "./text.js";
@@ -75,7 +76,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   }
   const snap = await snapshotFor(calm, input.projectId, o);
   const p = snap.project;
-  const [tasks, features, documents, testCases, testPlans, processes, processLinks, timeboxes] =
+  const [tasks, features, documents, testCases, testPlans, processes, processLinks, timeboxes, results] =
     await Promise.all([
       snap.tasks(),
       snap.features(),
@@ -85,6 +86,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
       snap.processes(),
       snap.processLinks(),
       snap.timeboxes(),
+      snap.testResults(),
     ]);
   const phases = timeboxes.filter((t) => t.type === 1);
   const milestones = timeboxes.filter((t) => t.type === 0);
@@ -110,6 +112,9 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   lines.push(
     `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${testPlans.length}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
+  const latest = [...results.values()].flat();
+  if (latest.length)
+    lines.push(`Test results (latest per test case and plan): ${counts(latest.map((r) => r.status.toLowerCase()))}`);
   lines.push(`Documents: ${documents.length}${documents.length ? ` (${counts(documents.map((d) => documentType(d.documentTypeCode)))})` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
@@ -122,7 +127,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   lines.push(
     `Gaps: ${untested} of ${reqs.length} requirements/user stories without a test case · ${noProcess} requirements without a solution process · ${orphans} test cases linked to no task (calm_gaps lists them)`,
   );
-  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes"]));
+  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]));
   return lines.join("\n");
 }
 
@@ -219,8 +224,9 @@ export async function find(
     }
     if (types.has("test_case") && !status) {
       parts.push("testCases");
+      const results = await snap.testResults();
       for (const t of await snap.testCases())
-        if (match(t.title)) hits.push({ sort: "4", displayId: t.displayId, line: testCaseLine(t) });
+        if (match(t.title)) hits.push({ sort: "4", displayId: t.displayId, line: testCaseLine(t, results.get(t.id)) });
     }
     if (types.has("test_plan") && !status) {
       parts.push("testPlans");
@@ -301,12 +307,13 @@ async function resolve(snap: Snapshot, raw: string): Promise<Ref> {
 
 /** Names for linked ids, from the snapshot. */
 async function namer(snap: Snapshot) {
-  const [tasks, features, documents, testCases, processes] = await Promise.all([
+  const [tasks, features, documents, testCases, processes, results] = await Promise.all([
     snap.tasks(),
     snap.features(),
     snap.documents(),
     snap.testCases(),
     snap.processes(),
+    snap.testResults(),
   ]);
   const task = new Map(tasks.map((t) => [t.id, t]));
   return {
@@ -319,7 +326,11 @@ async function namer(snap: Snapshot) {
       return t ? `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 70)}" (${statusLabel(t.status)})` : `[${id}]`;
     },
     feature: (f: SnapFeature) => `${f.displayId} "${short(f.title, 70)}" (${featureStatus(f.statusCode)})`,
-    testCase: (t: SnapTestCase) => `${t.displayId} "${short(t.title, 70)}"${t.kind === "automated" ? " (automated)" : ""}`,
+    results,
+    testCase: (t: SnapTestCase) => {
+      const r = resultText(results.get(t.id));
+      return `${t.displayId} "${short(t.title, 70)}"${t.kind === "automated" ? " (automated)" : ""}${r ? ` (${r})` : ""}`;
+    },
     document: (d: SnapDocument) => `${d.displayId} "${short(d.title, 70)}" (${documentType(d.documentTypeCode)})`,
     process: (id: string) => processes.find((p) => p.id === id)?.name ?? id,
   };
@@ -395,6 +406,8 @@ async function getOne(
       const t = await calm.getTestCase(tc.id);
       lines.push(`${t.displayId} manual test case · ${t.isPrepared ? "prepared" : "not prepared"}${t.priorityCode !== null ? ` · priority ${t.priorityCode}` : ""} · "${t.title}" [${t.id}]`);
       list("Covers", tc.taskIds.map(n.task));
+      const result = resultText(n.results.get(tc.id));
+      if (result) lines.push(`Latest result: ${result}`);
       if (t.tags.length) list("Tags", t.tags.map((g) => (g.group ? `${g.group}: ${g.label}` : g.label)));
       t.activities.forEach((a, i) => {
         lines.push(`${i + 1}. ${a.title ?? ""}${a.inScope === false ? " (out of scope)" : ""}`);
@@ -502,7 +515,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
 // calm_gaps
 // ---------------------------------------------------------------------------
 
-export const GAP_CHECKS = ["untested", "no_process", "no_feature", "features", "orphan_tests", "unprepared_tests"] as const;
+export const GAP_CHECKS = ["untested", "failed_tests", "no_process", "no_feature", "features", "orphan_tests", "unprepared_tests"] as const;
 export type GapCheck = (typeof GAP_CHECKS)[number];
 
 export async function gaps(
@@ -513,11 +526,12 @@ export async function gaps(
   const checks = new Set(input.checks?.length ? input.checks : GAP_CHECKS);
   const max = Math.min(Math.max(input.max ?? 20, 1), 200);
   const snap = await snapshotFor(calm, input.projectId, o);
-  const [tasks, features, testCases, processLinks] = await Promise.all([
+  const [tasks, features, testCases, processLinks, results] = await Promise.all([
     snap.tasks(),
     snap.features(),
     snap.testCases(),
     snap.processLinks(),
+    checks.has("failed_tests") ? snap.testResults() : Promise.resolve(new Map()),
   ]);
   const open = tasks.filter((t) => isOpen(t.status));
   const reqs = open.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
@@ -542,6 +556,14 @@ export async function gaps(
     }
     section("Without a test case", items, "calm_get shows a task's description to draft one");
   }
+  if (checks.has("failed_tests")) {
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    const failed = testCases.filter((t) => results.get(t.id)?.some((r: { status: string }) => /fail/i.test(r.status)));
+    section(
+      "Test cases whose latest run failed",
+      failed.sort(byDisplayId).map((t) => `${testCaseLine(t, results.get(t.id))}${t.taskIds.length ? ` — covers ${t.taskIds.map((id) => byId.get(id)?.displayId ?? id).join(", ")}` : ""}`),
+    );
+  }
   if (checks.has("no_process"))
     section("Requirements without a solution process", reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).map(taskLine));
   if (checks.has("no_feature"))
@@ -559,11 +581,11 @@ export async function gaps(
     section("Features with a gap", items);
   }
   if (checks.has("orphan_tests"))
-    section("Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testCaseLine));
+    section("Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map((t) => testCaseLine(t)));
   if (checks.has("unprepared_tests"))
-    section("Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map(testCaseLine));
+    section("Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map((t) => testCaseLine(t)));
   lines.push("", "Links counted: test case → task (Test Management), feature → task, task → solution process. Direct links only.");
-  lines.push(...footer(snap, ["tasks", "features", "testCases", "processLinks"]));
+  lines.push(...footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults"]));
   return lines.join("\n");
 }
 
@@ -625,10 +647,17 @@ export async function analytics(
     ].join("\n");
   }
   const cols = result.columns.filter((c) => rows.some((r) => r[c] !== null && r[c] !== ""));
+  // Columns equal on every row are printed once, not per row.
+  const same = cols.filter((c) => rows.every((r) => r[c] === rows[0]?.[c]));
+  const varying = cols.filter((c) => !same.includes(c));
+  const cell = (v: unknown) => short(String(v), 60);
   return [
-    `${input.dataset}: ${rows.length} rows${result.truncated ? " (cut)" : ""}. Columns with values: ${cols.join(", ")}. Use group_by to count.`,
-    ...rows.slice(0, input.limit ?? 10).map((r) => `- ${cols.map((c) => `${c}=${r[c]}`).join("; ")}`),
-  ].join("\n");
+    `${input.dataset}: ${rows.length} rows${result.truncated ? " (cut)" : ""}. Use groupBy to count.`,
+    same.length ? `All rows: ${same.map((c) => `${c}=${cell(rows[0]?.[c])}`).join("; ")}` : "",
+    ...rows.slice(0, input.limit ?? 10).map((r) => `- ${varying.map((c) => `${c}=${cell(r[c])}`).join("; ")}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ---------------------------------------------------------------------------

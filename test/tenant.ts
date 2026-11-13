@@ -102,6 +102,13 @@ export const TENANT: Record<string, unknown> = {
   "calm-processmanagement/v1/solutionProcesses": odata([
     { solutionProcessId: PROCESS, solutionProcessVersionName: "Lead to Cash", isScoped: true, projectId: PROJECT_ID },
   ]),
+  "calm-analytics/v1/odata/v4/analytics/Tests": {
+    value: [
+      { date: "2026-11-13", period: "C1D", projectGUID: PROJECT_ID, testcaseId: TC1, testPlan: "UAT cycle 1", status: "Failed", passedActions: 1, failedActions: 1, allActions: 2 },
+      { date: "2026-11-13", period: "C1D", projectGUID: PROJECT_ID, testcaseId: TC1, testPlan: "(None)", status: "Initial", passedActions: 0, failedActions: 0, allActions: 0 },
+      { date: "2026-11-13", period: "C1D", projectGUID: PROJECT_ID, testcaseId: TC2, testPlan: "UAT cycle 1", status: "Passed", passedActions: 1, failedActions: 0, allActions: 1 },
+    ],
+  },
   "calm-landscape/v1/landscapeObjects": [
     { lmsId: "l1", name: "acct-1", objectType: "CloudService", systemNumber: "100", role: "PROD", serviceType: "SAP Cloud ALM" },
   ],

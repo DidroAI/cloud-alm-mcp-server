@@ -140,7 +140,7 @@ export function createServer(
   tool(
     "calm_get",
     "Get items",
-    "Full content of 1–10 items: description, steps of a test case, content of a document, transports of a feature, and every link with its title.",
+    "Full content of 1–10 items: description, test case steps and latest result, document content, feature transports, and every link with its title.",
     { ids: z.array(ref).min(1).max(10), projectId },
     (a) => get(calm, defined(a), options),
   );
@@ -154,7 +154,7 @@ export function createServer(
   tool(
     "calm_gaps",
     "Find gaps",
-    "What is missing in a project: requirements and user stories without a test case, process or feature; features whose tasks are untested; test cases linked to nothing or not prepared.",
+    "What is missing or failing in a project: requirements and user stories without a test case, process or feature; failed test runs; features whose tasks are untested; test cases linked to nothing or not prepared.",
     {
       checks: z.array(z.enum(GAP_CHECKS)).optional().describe("Default: all"),
       max: z.number().int().min(1).max(200).optional().describe("Items listed per check, default 20"),

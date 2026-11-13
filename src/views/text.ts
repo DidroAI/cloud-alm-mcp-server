@@ -1,6 +1,6 @@
 /** Short labels and lines shared by the opinionated tools. */
 import { TASK_TYPES, type TaskSummary, type TaskTypeCode } from "../calm/index.js";
-import type { SnapDocument, SnapFeature, SnapTestCase } from "./snapshot.js";
+import type { SnapDocument, SnapFeature, SnapTestCase, TestResult } from "./snapshot.js";
 
 const STATES: Record<string, string> = {
   OPEN: "open",
@@ -78,8 +78,16 @@ export const taskLine = (t: TaskSummary) =>
 export const featureLine = (f: SnapFeature) =>
   `${f.displayId ?? "?"} · feature · ${featureStatus(f.statusCode)} · "${short(f.title)}"`;
 
-export const testCaseLine = (t: SnapTestCase) =>
-  `${t.displayId ?? "?"} · ${t.kind} test case${t.prepared === false ? " · not prepared" : ""} · "${short(t.title)}"`;
+/** "failed 3/4 in UAT cycle 1" for each plan the test case is in. */
+export const resultText = (results: TestResult[] | undefined) =>
+  (results ?? [])
+    .map((r) => `${r.status.toLowerCase()}${r.steps ? ` ${r.passed}/${r.steps}` : ""} in ${short(r.plan, 40)}`)
+    .join(", ");
+
+export const testCaseLine = (t: SnapTestCase, results?: TestResult[]) => {
+  const result = resultText(results);
+  return `${t.displayId ?? "?"} · ${t.kind} test case${t.prepared === false ? " · not prepared" : ""}${result ? ` · ${result}` : ""} · "${short(t.title)}"`;
+};
 
 export const documentLine = (d: SnapDocument) =>
   `${d.displayId ?? "?"} · ${documentType(d.documentTypeCode)} · "${short(d.title)}"`;
