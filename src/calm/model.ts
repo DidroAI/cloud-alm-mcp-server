@@ -85,6 +85,29 @@ export type TaskComment = {
   text: string | null;
 };
 
+/** A test case as named from a link (a task's coverage, a coverage view). */
+export type LinkedTestCase = {
+  id: string;
+  displayId: string | null;
+  title: string | null;
+  kind: TestCaseKind;
+};
+
+/**
+ * What a task is linked to. Each list is read from the service that owns
+ * the link; a link the key may not read is named in `unavailable` (e.g.
+ * `testCases` without `testcases.read`) instead of failing the task.
+ */
+export type TaskLinks = {
+  /** The requirement above a user story or project task (relation type 10). */
+  requirementId: string | null;
+  testCases: LinkedTestCase[];
+  featureIds: string[];
+  /** `solutionProcessId`s, the ids `listSolutionProcesses` returns. */
+  solutionProcessIds: string[];
+  unavailable: string[];
+};
+
 export type Task = TaskSummary & {
   description: string | null;
   parentId: string | null;
@@ -92,6 +115,8 @@ export type Task = TaskSummary & {
   createdAt: string | null;
   externalReferences: { name: string | null; url: string | null }[];
   comments: TaskComment[];
+  /** Null when the caller asked for no links. */
+  links: TaskLinks | null;
 };
 
 export type Feature = {
@@ -155,7 +180,41 @@ export type TestActivity = {
   actions: TestAction[];
 };
 
-export type TestCaseDetail = TestCase & { activities: TestActivity[] };
+/** A task a test case covers (Test Management's task assignment). */
+export type CoveredTask = {
+  taskId: string;
+  displayId: string | null;
+  type: string | null;
+  typeName: string | null;
+};
+
+export type TestCaseDetail = TestCase & {
+  activities: TestActivity[];
+  tasks: CoveredTask[];
+  /** Tags with their group, if any. Cloud ALM's API cannot write these. */
+  tags: { label: string; group: string | null }[];
+};
+
+export type CoverageRow = {
+  task: TaskSummary;
+  /** Test cases linked to the task itself (not through its user stories). */
+  testCases: LinkedTestCase[];
+};
+
+/** Which tasks of a project have a test case, and which test cases cover nothing. */
+export type TestCoverage = {
+  projectId: string;
+  /** Task type codes looked at, e.g. `CALMREQU`, `CALMUS`. */
+  types: string[];
+  rows: CoverageRow[];
+  covered: number;
+  uncovered: number;
+  testCaseCount: number;
+  /** Test cases of the project linked to no task. */
+  unlinkedTestCases: LinkedTestCase[];
+  /** True when a list reached the read cap and the view is incomplete. */
+  truncated: boolean;
+};
 
 export type TestPlan = {
   id: string;

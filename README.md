@@ -91,11 +91,12 @@ the next page.
 | `calm_list_projects` | projects | `projects.read` |
 | `calm_get_project` | one project, its timeboxes and teams | `projects.read` |
 | `calm_search_tasks` | tasks by project, type (requirement, user story, defect, roadmap task…), status, words in the title | `tasks.read` |
-| `calm_get_task` | one task with description, references, comments | `tasks.read` |
+| `calm_get_task` | one task with description, references, comments, tags, and links: requirement, test cases, features, solution processes | `tasks.read` (+ `testcases.read` for its test cases) |
 | `calm_list_features` / `calm_get_feature` | features; one with its transport ids | `features.read` |
 | `calm_list_documents` / `calm_get_document` | documents; one with its content as text | `documents.read` |
 | `calm_list_test_cases` | manual or automated test cases | `testcases.read` |
-| `calm_get_test_case` | one manual test case with activities and steps | `testcases.read` |
+| `calm_get_test_case` | one manual test case with activities and steps, the tasks it covers, its tags | `testcases.read` |
+| `calm_test_coverage` | requirements and user stories of a project with and without a linked test case; test cases linked to no task | `tasks.read`, `testcases.read` |
 | `calm_list_test_plans` / `calm_get_test_plan` | test plans; one with its test cases | `testplans.read` |
 | `calm_list_scopes` | project scopes | `processmanagement.read` |
 | `calm_list_processes` | solution processes and whether each is in scope | `processmanagement.read` |
@@ -178,6 +179,14 @@ per operation. The library never reads environment variables or files.
   values, not records. Unknown or unfilterable dimensions in `filters` are
   ignored by Cloud ALM. Some datasets refuse without a filter (428, e.g.
   `ServiceLevels` needs a business service id).
+- **Links live with one side.** A task's test cases are found from Test
+  Management (`toTaskAssignments/any(a:a/taskId eq …)`), its features
+  from the task's feature assignments, its requirement from relation type
+  10 (`parentId` stays empty), its processes from
+  `tasks/solutionProcessAssignments`. A link the key has no scope for is
+  listed as not readable instead of failing the task. `calm_test_coverage`
+  counts direct links only: a requirement tested only through its user
+  stories counts as uncovered.
 
 ## Errors
 

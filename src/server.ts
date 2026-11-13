@@ -4,6 +4,7 @@ import {
   CloudAlmError,
   formatAnalytics,
   formatAnalyticsProviders,
+  formatCoverage,
   formatDocument,
   formatDocuments,
   formatFeature,
@@ -170,7 +171,7 @@ export function createServer(calm: CloudAlm): McpServer {
   tool(
     "calm_get_task",
     "Get a task",
-    "One task with its description, references and comments.",
+    "One task with its description, references, comments, tags and links: its requirement, the test cases covering it, its features and solution processes.",
     { taskId: guid("Task id") },
     async (a) => formatTask(await calm.getTask(a.taskId)),
   );
@@ -219,9 +220,25 @@ export function createServer(calm: CloudAlm): McpServer {
   tool(
     "calm_get_test_case",
     "Get a test case",
-    "One manual test case with its activities and steps (what to do, what to expect).",
+    "One manual test case with its activities and steps (what to do, what to expect), the tasks it covers and its tags.",
     { testCaseId: guid("Test case id") },
     async (a) => formatTestCase(await calm.getTestCase(a.testCaseId)),
+  );
+  tool(
+    "calm_test_coverage",
+    "Test coverage",
+    "Which requirements and user stories of a project have a test case linked to them and which have none, plus test cases linked to no task. Direct links only. Use it to find what still needs a test.",
+    {
+      projectId: guid("Project id"),
+      types: z
+        .array(z.string().max(40))
+        .max(9)
+        .optional()
+        .describe(
+          'Task types to check (default ["requirement", "user story"]); names or codes like CALMREQU',
+        ),
+    },
+    async (a) => formatCoverage(await calm.testCoverage(defined(a))),
   );
   tool(
     "calm_list_test_plans",
@@ -334,6 +351,7 @@ export const TOOL_NAMES = [
   "calm_get_document",
   "calm_list_test_cases",
   "calm_get_test_case",
+  "calm_test_coverage",
   "calm_list_test_plans",
   "calm_get_test_plan",
   "calm_list_scopes",

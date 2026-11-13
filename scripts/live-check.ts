@@ -114,6 +114,7 @@ if (featureId) await call("calm_get_feature", { featureId });
 const documentId = firstId(await call("calm_list_documents"));
 if (documentId) await call("calm_get_document", { documentId });
 const testCaseId = firstId(await call("calm_list_test_cases"));
+if (projectId) await call("calm_test_coverage", { projectId });
 await call("calm_list_test_cases", { kind: "automated" });
 if (testCaseId) await call("calm_get_test_case", { testCaseId });
 const testPlanId = firstId(await call("calm_list_test_plans"));

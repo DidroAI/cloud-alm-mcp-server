@@ -156,6 +156,40 @@ describe("tools (in-process client)", () => {
   });
 });
 
+describe("test coverage", () => {
+  test("calm_test_coverage lists tasks without a test case", async () => {
+    const client = await connect(
+      new CloudAlm(
+        { accessToken: "t", baseUrl: BASE_URL },
+        {
+          fetch: fakeCloudAlm({
+            ...ROUTES,
+            "calm-testmanagement/v1/ManualTestCases": {
+              value: [
+                {
+                  uuid: "dddddddd-0000-4000-8000-000000000001",
+                  displayId: "8-1-1",
+                  title: "O2C-01 Example case",
+                  toTaskAssignments: [],
+                },
+              ],
+            },
+            "calm-testmanagement/v1/AutomatedTestCases": { value: [] },
+          }).fetch,
+        },
+      ),
+    );
+    const result = await client.callTool({
+      name: "calm_test_coverage",
+      arguments: { projectId: PROJECT_ID, types: ["defect"] },
+    });
+    expect(result.isError).toBeFalsy();
+    expect(text(result)).toContain("1 tasks, 0 with a test case, 1 without");
+    expect(text(result)).toContain("Without a test case:\n- 3-12");
+    expect(text(result)).toContain("Test cases linked to no task:\n- 8-1-1");
+  });
+});
+
 describe("mode (b): streamable HTTP with a bearer per request", () => {
   const fake = fakeCloudAlm();
   const server = Bun.serve({

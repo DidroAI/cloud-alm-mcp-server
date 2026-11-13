@@ -10,8 +10,10 @@ import {
   json,
   landscapeObjects,
   manualTestCases,
+  PROCESS_ID,
   PROJECT_ID,
   projects,
+  REQUIREMENT_ID,
   SECOND_PROJECT_ID,
   solutionProcesses,
   statusEvents,
@@ -20,6 +22,7 @@ import {
   TEST_PLAN_ID,
   task,
   taskDetail,
+  taskLinkRoutes,
   teams,
   testCaseExpanded,
   testPlanExpanded,
@@ -146,6 +149,7 @@ describe("tasks", () => {
 
   test("gets a task with plain-text description, references and comments", async () => {
     const { calm } = client({
+      ...taskLinkRoutes(),
       [`calm-tasks/v1/tasks/${TASK_ID}`]: taskDetail,
       [`calm-tasks/v1/tasks/${TASK_ID}/comments`]: [
         {
@@ -169,6 +173,56 @@ describe("tasks", () => {
         text: "Seen again",
       },
     ]);
+  });
+
+  test("a task comes with its requirement, test cases, features and processes", async () => {
+    const { calm, calls } = client({
+      ...taskLinkRoutes(),
+      [`calm-tasks/v1/tasks/${TASK_ID}`]: taskDetail,
+      [`calm-tasks/v1/tasks/${TASK_ID}/comments`]: [],
+    });
+    const t = await calm.getTask(TASK_ID);
+    expect(t.links).toEqual({
+      requirementId: REQUIREMENT_ID,
+      testCases: [
+        {
+          id: TEST_CASE_ID,
+          displayId: "8-1-1",
+          title: "O2C-01 Example case",
+          kind: "manual",
+        },
+      ],
+      featureIds: [FEATURE_ID],
+      solutionProcessIds: [PROCESS_ID],
+      unavailable: [],
+    });
+    const manual = calls.find((c) =>
+      c.url.pathname.endsWith("/ManualTestCases"),
+    );
+    expect(manual?.url.searchParams.get("$filter")).toBe(
+      `toTaskAssignments/any(a:a/taskId eq ${TASK_ID})`,
+    );
+    const processes = calls.find((c) =>
+      c.url.pathname.endsWith("/solutionProcessAssignments"),
+    );
+    expect(processes?.url.searchParams.get("taskId")).toBe(TASK_ID);
+    expect(processes?.url.searchParams.get("projectId")).toBe(PROJECT_ID);
+  });
+
+  test("a link the key may not read is named, the task still comes", async () => {
+    const forbidden = () => json({ message: "Forbidden", status: 403 }, 403);
+    const { calm } = client({
+      ...taskLinkRoutes(),
+      "calm-testmanagement/v1/ManualTestCases": forbidden,
+      "calm-testmanagement/v1/AutomatedTestCases": forbidden,
+      [`calm-tasks/v1/tasks/${TASK_ID}`]: taskDetail,
+      [`calm-tasks/v1/tasks/${TASK_ID}/comments`]: [],
+    });
+    const t = await calm.getTask(TASK_ID);
+    expect(t.links?.unavailable).toEqual(["testCases"]);
+    expect(t.links?.featureIds).toEqual([FEATURE_ID]);
+    const noLinks = await calm.getTask(TASK_ID, { links: false });
+    expect(noLinks.links).toBeNull();
   });
 
   test("a 404 becomes not_found with Cloud ALM's reason", async () => {
@@ -236,8 +290,20 @@ describe("OData areas", () => {
     });
     const t = await calm.getTestCase(TEST_CASE_ID);
     expect(calls[0]?.url.searchParams.get("$expand")).toBe(
-      "toActivities($expand=toActions)",
+      "toActivities($expand=toActions),toTaskAssignments,toTagAssignments",
     );
+    expect(t.tasks).toEqual([
+      {
+        taskId: TASK_ID,
+        displayId: "3-12",
+        type: "CALMDEF",
+        typeName: "defect",
+      },
+    ]);
+    expect(t.tags).toEqual([
+      { label: "Wave 1", group: "Release" },
+      { label: "Pricing", group: null },
+    ]);
     expect(t.activities.map((a) => a.title)).toEqual(["Create order", "Bill"]);
     expect(t.activities[0]?.actions[0]).toEqual({
       title: "Enter the order",
@@ -245,6 +311,64 @@ describe("OData areas", () => {
       expectedResult: "Order saved",
       evidenceRequired: true,
     });
+  });
+
+  test("coverage maps test cases to requirements and user stories", async () => {
+    const req = task({
+      id: REQUIREMENT_ID,
+      type: "CALMREQU",
+      displayId: "3-1",
+    });
+    const story = task({ type: "CALMUS", displayId: "3-2" });
+    const tc = (uuid: string, displayId: string, taskIds: string[]) => ({
+      uuid,
+      displayId,
+      title: displayId,
+      toTaskAssignments: taskIds.map((taskId) => ({ taskId })),
+    });
+    const { calm, calls } = client({
+      "calm-tasks/v1/tasks": (url: URL) =>
+        json(url.searchParams.get("type") === "CALMREQU" ? [req] : [story]),
+      "calm-testmanagement/v1/ManualTestCases": {
+        value: [
+          tc(TEST_CASE_ID, "8-1-1", [REQUIREMENT_ID]),
+          tc("dddddddd-0000-4000-8000-000000000002", "8-1-2", []),
+        ],
+      },
+      "calm-testmanagement/v1/AutomatedTestCases": {
+        value: [
+          tc("dddddddd-0000-4000-8000-000000000003", "8-2-1", [REQUIREMENT_ID]),
+        ],
+      },
+    });
+    const c = await calm.testCoverage({ projectId: PROJECT_ID });
+    expect(c.types).toEqual(["CALMREQU", "CALMUS"]);
+    expect(
+      c.rows.map((r) => [
+        r.task.displayId,
+        r.testCases.map((t) => t.displayId),
+      ]),
+    ).toEqual([
+      ["3-1", ["8-1-1", "8-2-1"]],
+      ["3-2", []],
+    ]);
+    expect(c).toMatchObject({
+      covered: 1,
+      uncovered: 1,
+      testCaseCount: 3,
+      truncated: false,
+    });
+    expect(c.unlinkedTestCases.map((t) => t.displayId)).toEqual(["8-1-2"]);
+    const manual = calls.find((x) =>
+      x.url.pathname.endsWith("/ManualTestCases"),
+    );
+    expect(manual?.url.searchParams.get("$filter")).toBe(
+      `projectId eq ${PROJECT_ID}`,
+    );
+    expect(manual?.url.searchParams.get("$expand")).toBe("toTaskAssignments");
+    await expect(calm.testCoverage({ projectId: "nope" })).rejects.toThrow(
+      CloudAlmError,
+    );
   });
 
   test("a test plan comes with its test cases", async () => {

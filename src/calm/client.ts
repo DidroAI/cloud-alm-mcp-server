@@ -2,6 +2,7 @@ import { CloudAlmError } from "./errors.js";
 import {
   type AnalyticsProvider,
   type AnalyticsResult,
+  type CoverageRow,
   type DocumentDetail,
   type DocumentSummary,
   type Feature,
@@ -11,6 +12,7 @@ import {
   LIBRARY_KINDS,
   type LibraryItem,
   type LibraryKind,
+  type LinkedTestCase,
   type Page,
   type PageInput,
   type Project,
@@ -21,11 +23,13 @@ import {
   TASK_TYPES,
   type Task,
   type TaskComment,
+  type TaskLinks,
   type TaskSummary,
   type TaskTypeCode,
   type TestCase,
   type TestCaseDetail,
   type TestCaseKind,
+  type TestCoverage,
   type TestPlan,
   type TestPlanDetail,
 } from "./model.js";
@@ -57,6 +61,8 @@ const MAX_PROJECTS_SCANNED = 10;
 /** Tasks scanned per project when matching words in titles. */
 const MAX_TASKS_SCANNED = 500;
 const MAX_COMMENTS = 20;
+/** Rows read per list in a coverage view (tasks per type, test cases per kind). */
+const MAX_COVERAGE_ROWS = 500;
 
 /** Service paths. Casing differs per service, as Cloud ALM serves them. */
 const PATHS = {
@@ -268,6 +274,93 @@ const testCase = (row: Row, kind: TestCaseKind): TestCase => ({
   isPrepared: bool(row.isPrepared),
   modifiedAt: str(row.modifiedAt),
 });
+
+const linkedTestCase = (row: Row, kind: TestCaseKind): LinkedTestCase => ({
+  id: str(row.uuid) ?? "",
+  displayId: str(row.displayId),
+  title: str(row.title),
+  kind,
+});
+
+const typeName = (type: string | null) =>
+  type ? (TASK_TYPES[type as TaskTypeCode] ?? null) : null;
+
+/** OData filter for test cases linked to one task. */
+const coversTask = (taskId: string) =>
+  `toTaskAssignments/any(a:a/taskId eq ${taskId})`;
+
+/**
+ * Read the links of one task, each from the service that owns it. A link
+ * the key has no scope for is named in `unavailable`; other errors throw.
+ */
+async function taskLinks(
+  s: Session,
+  taskId: string,
+  projectId: string | null,
+): Promise<TaskLinks> {
+  const unavailable = new Set<string>();
+  const soft = async (name: string, read: () => Promise<Row[]>) => {
+    try {
+      return await read();
+    } catch (error) {
+      if (error instanceof CloudAlmError && error.code === "forbidden") {
+        unavailable.add(name);
+        return [];
+      }
+      throw error;
+    }
+  };
+  const testCases = (kind: TestCaseKind) =>
+    soft("testCases", async () =>
+      rowsOf(
+        await s.get(
+          kind === "manual" ? PATHS.manualTestCases : PATHS.automatedTestCases,
+          {
+            $filter: coversTask(taskId),
+            $select: "uuid,displayId,title",
+            $top: MAX_LIMIT,
+          },
+        ),
+      ),
+    );
+  const [relations, features, processes, manual, automated] = await Promise.all(
+    [
+      soft("requirement", async () =>
+        rowsOf(await s.get(`${PATHS.tasks}/${taskId}/relations`)),
+      ),
+      soft("features", async () =>
+        rowsOf(await s.get(`${PATHS.tasks}/${taskId}/featureAssignments`)),
+      ),
+      projectId
+        ? soft("solutionProcesses", async () =>
+            rowsOf(
+              await s.get(`${PATHS.tasks}/solutionProcessAssignments`, {
+                projectId: guid(projectId, "projectId"),
+                taskId,
+              }),
+            ),
+          )
+        : Promise.resolve([] as Row[]),
+      testCases("manual"),
+      testCases("automated"),
+    ],
+  );
+  const ids = (rows: Row[], field: string) => [
+    ...new Set(rows.map((r) => str(r[field])).filter((v): v is string => !!v)),
+  ];
+  return {
+    requirementId:
+      str(relations.find((r) => String(r.type) === "10")?.relationTaskId) ??
+      null,
+    testCases: [
+      ...manual.map((r) => linkedTestCase(r, "manual")),
+      ...automated.map((r) => linkedTestCase(r, "automated")),
+    ].slice(0, MAX_LIMIT),
+    featureIds: ids(features, "featureId").slice(0, MAX_LIMIT),
+    solutionProcessIds: ids(processes, "solutionProcessId").slice(0, MAX_LIMIT),
+    unavailable: [...unavailable],
+  };
+}
 
 const bySequence = (a: Row, b: Row) =>
   (num(a.sequence) ?? Number.MAX_SAFE_INTEGER) -
@@ -494,10 +587,13 @@ export class CloudAlm {
     });
   }
 
-  /** One task with its description, external references and comments. */
+  /**
+   * One task with its description, external references, comments and links
+   * (requirement, test cases, features, solution processes).
+   */
   async getTask(
     id: string,
-    options: { comments?: boolean } = {},
+    options: { comments?: boolean; links?: boolean } = {},
   ): Promise<Task> {
     const taskId = guid(id, "task id");
     return this.run(async (s) => {
@@ -514,6 +610,10 @@ export class CloudAlm {
             throw error;
         }
       }
+      const links =
+        options.links === false
+          ? null
+          : await taskLinks(s, taskId, str(row.projectId));
       const references = Array.isArray(row.externalReferences)
         ? (row.externalReferences as unknown[])
         : [];
@@ -528,6 +628,7 @@ export class CloudAlm {
           .slice(0, 20)
           .map((r) => ({ name: str(r.name), url: str(r.url, 1000) })),
         comments,
+        links,
       };
     });
   }
@@ -613,15 +714,25 @@ export class CloudAlm {
     });
   }
 
-  /** A manual test case with its activities and their actions (steps). */
+  /**
+   * A manual test case with its activities and their actions (steps), the
+   * tasks it covers and its tags.
+   */
   async getTestCase(id: string): Promise<TestCaseDetail> {
     const testCaseId = guid(id, "test case id");
     return this.run(async (s) => {
       const row = rowOf(
         await s.get(`${PATHS.manualTestCases}/${testCaseId}`, {
-          $expand: "toActivities($expand=toActions)",
+          $expand:
+            "toActivities($expand=toActions),toTaskAssignments,toTagAssignments",
         }),
       );
+      const rowList = (value: unknown) =>
+        Array.isArray(value)
+          ? (value as unknown[]).filter(
+              (r): r is Row => !!r && typeof r === "object",
+            )
+          : [];
       const activities = Array.isArray(row.toActivities)
         ? (row.toActivities as Row[])
         : [];
@@ -646,6 +757,103 @@ export class CloudAlm {
                 evidenceRequired: bool(action.isEvidenceRequired),
               })),
           })),
+        tasks: rowList(row.toTaskAssignments)
+          .slice(0, MAX_LIMIT)
+          .map((a) => ({
+            taskId: str(a.taskId) ?? "",
+            displayId: str(a.taskDisplayId),
+            type: str(a.type),
+            typeName: typeName(str(a.type)),
+          })),
+        tags: rowList(row.toTagAssignments)
+          .slice(0, MAX_LIMIT)
+          .map((t) => ({ label: str(t.label) ?? "", group: str(t.groupLabel) }))
+          .filter((t) => t.label),
+      };
+    });
+  }
+
+  /**
+   * Which tasks of a project (requirements and user stories by default) have
+   * a test case linked to them, which have none, and which test cases are
+   * linked to no task. Direct links only: a requirement whose user stories
+   * are tested but which has no test case itself counts as uncovered.
+   */
+  async testCoverage(input: {
+    projectId: string;
+    types?: string[];
+  }): Promise<TestCoverage> {
+    const projectId = guid(input.projectId, "projectId");
+    const types = [
+      ...new Set(
+        (input.types?.length ? input.types : ["CALMREQU", "CALMUS"]).map(
+          taskTypeCode,
+        ),
+      ),
+    ].slice(0, 9);
+    return this.run(async (s) => {
+      let truncated = false;
+      const tasks: TaskSummary[] = [];
+      for (const type of types) {
+        const rows = rowsOf(
+          await s.get(PATHS.tasks, {
+            projectId,
+            type,
+            limit: MAX_COVERAGE_ROWS,
+          }),
+        );
+        if (rows.length >= MAX_COVERAGE_ROWS) truncated = true;
+        tasks.push(...rows.map(taskSummary));
+      }
+      const byTask = new Map<string, LinkedTestCase[]>();
+      const unlinked: LinkedTestCase[] = [];
+      let testCaseCount = 0;
+      for (const kind of ["manual", "automated"] as const) {
+        const rows = rowsOf(
+          await s.get(
+            kind === "manual"
+              ? PATHS.manualTestCases
+              : PATHS.automatedTestCases,
+            {
+              ...projectFilter(projectId),
+              $select: "uuid,displayId,title",
+              $expand: "toTaskAssignments",
+              $top: MAX_COVERAGE_ROWS,
+            },
+          ),
+        );
+        if (rows.length >= MAX_COVERAGE_ROWS) truncated = true;
+        testCaseCount += rows.length;
+        for (const row of rows) {
+          const linked = linkedTestCase(row, kind);
+          const assignments = Array.isArray(row.toTaskAssignments)
+            ? (row.toTaskAssignments as Row[])
+            : [];
+          const taskIds = assignments
+            .map((a) => str(a?.taskId))
+            .filter((t): t is string => !!t);
+          if (!taskIds.length) unlinked.push(linked);
+          for (const taskId of taskIds) {
+            const list = byTask.get(taskId) ?? [];
+            list.push(linked);
+            byTask.set(taskId, list);
+          }
+        }
+      }
+      const rows: CoverageRow[] = tasks.map((task) => ({
+        task,
+        testCases: byTask.get(task.id) ?? [],
+      }));
+      const covered = rows.filter((r) => r.testCases.length).length;
+      return {
+        projectId,
+        types,
+        rows,
+        covered,
+        uncovered: rows.length - covered,
+        testCaseCount,
+        unlinkedTestCases: unlinked,
+        truncated,
       };
     });
   }

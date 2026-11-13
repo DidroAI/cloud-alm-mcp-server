@@ -12,6 +12,7 @@ import type {
   HierarchyNode,
   LandscapeObject,
   LibraryItem,
+  LinkedTestCase,
   Page,
   Project,
   ProjectDetail,
@@ -22,6 +23,7 @@ import type {
   TaskSummary,
   TestCase,
   TestCaseDetail,
+  TestCoverage,
   TestPlan,
   TestPlanDetail,
 } from "./model.js";
@@ -92,7 +94,11 @@ const taskLine = (t: TaskSummary) =>
     t.priority !== null && `priority ${t.priority}`,
     t.assigneeName && `assignee ${t.assigneeName}`,
     t.dueDate && `due ${t.dueDate}`,
+    t.tags.length > 0 && `tags ${t.tags.join(", ")}`,
   ])}`;
+
+const linkedTestCase = (t: LinkedTestCase) =>
+  `${t.displayId ?? "?"} ${t.title ?? "(no title)"} [${t.id}]${t.kind === "automated" ? " automated" : ""}`;
 
 export function formatTasks(page: Page<TaskSummary>): string {
   return list(page, "tasks", taskLine);
@@ -123,6 +129,19 @@ export function formatTask(t: Task): string {
       "References:",
       ...t.externalReferences.map((r) => `- ${join([r.name, r.url], " ")}`),
     );
+  if (t.links) {
+    const l = t.links;
+    lines.push(
+      "",
+      "Links:",
+      `- requirement: ${l.requirementId ? `[${l.requirementId}]` : "none"}`,
+      `- test cases: ${l.testCases.length ? l.testCases.map(linkedTestCase).join("; ") : "none"}`,
+      `- features: ${l.featureIds.length ? l.featureIds.map((f) => `[${f}]`).join(", ") : "none"}`,
+      `- solution processes: ${l.solutionProcessIds.length ? l.solutionProcessIds.join(", ") : "none"}`,
+    );
+    if (l.unavailable.length)
+      lines.push(`- not readable with this key: ${l.unavailable.join(", ")}`);
+  }
   if (t.comments.length)
     lines.push(
       "",
@@ -192,6 +211,21 @@ export function formatTestCases(page: Page<TestCase>): string {
 
 export function formatTestCase(t: TestCaseDetail): string {
   const lines = [testCaseLine(t)];
+  lines.push(
+    `Covers: ${
+      t.tasks.length
+        ? t.tasks
+            .map((k) =>
+              join([k.displayId, k.typeName ?? k.type, `[${k.taskId}]`], " "),
+            )
+            .join("; ")
+        : "no task"
+    }`,
+  );
+  if (t.tags.length)
+    lines.push(
+      `Tags: ${t.tags.map((g) => (g.group ? `${g.group}: ${g.label}` : g.label)).join(", ")}`,
+    );
   t.activities.forEach((activity, i) => {
     lines.push(
       `${i + 1}. ${activity.title ?? "(activity)"}${activity.inScope === false ? " (out of scope)" : ""}`,
@@ -332,4 +366,41 @@ export function formatStatusEvents(page: Page<StatusEvent>): string {
         e.systemNumber && `system number ${e.systemNumber}`,
       ])}`,
   );
+}
+
+export function formatCoverage(c: TestCoverage): string {
+  const lines = [
+    `Test coverage of project ${c.projectId} (${c.types.join(", ")}): ${c.rows.length} tasks, ${c.covered} with a test case, ${c.uncovered} without; ${c.testCaseCount} test cases, ${c.unlinkedTestCases.length} linked to no task.`,
+    "Direct links only: a requirement covered only through its user stories counts as without.",
+  ];
+  if (c.truncated)
+    lines.push(
+      "Incomplete: a list reached the read cap of 500; counts are lower bounds.",
+    );
+  const uncovered = c.rows.filter((r) => !r.testCases.length);
+  const covered = c.rows.filter((r) => r.testCases.length);
+  if (uncovered.length)
+    lines.push(
+      "",
+      "Without a test case:",
+      ...uncovered.map((r) => `- ${taskLine(r.task)}`),
+    );
+  if (covered.length)
+    lines.push(
+      "",
+      "With a test case:",
+      ...covered.map(
+        (r) =>
+          `- ${r.task.displayId ?? "?"} ${r.task.title ?? "(no title)"} [${r.task.id}] ${r.task.typeName ?? r.task.type ?? ""} <- ${r.testCases
+            .map((t) => `${t.displayId ?? "?"} ${t.title ?? ""}`.trim())
+            .join("; ")}`,
+      ),
+    );
+  if (c.unlinkedTestCases.length)
+    lines.push(
+      "",
+      "Test cases linked to no task:",
+      ...c.unlinkedTestCases.map((t) => `- ${linkedTestCase(t)}`),
+    );
+  return lines.join("\n");
 }

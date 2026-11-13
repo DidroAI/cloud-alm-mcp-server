@@ -16,6 +16,8 @@ export const TEST_CASE_ID = "dddddddd-0000-4000-8000-000000000001";
 export const TEST_PLAN_ID = "eeeeeeee-0000-4000-8000-000000000001";
 export const FEATURE_ID = "ffffffff-0000-4000-8000-000000000001";
 export const DOCUMENT_ID = "abababab-0000-4000-8000-000000000001";
+export const REQUIREMENT_ID = "cccccccc-0000-4000-8000-000000000099";
+export const PROCESS_ID = "ERL-00000000000000000000000000000001";
 
 export const projects = [
   {
@@ -123,6 +125,19 @@ export const manualTestCases = (count: number) => ({
 
 export const testCaseExpanded = {
   ...manualTestCases(1).value[0],
+  toTaskAssignments: [
+    {
+      uuid: "17171717-0000-4000-8000-000000000001",
+      parentTestCase_ID: TEST_CASE_ID,
+      taskId: TASK_ID,
+      taskDisplayId: "3-12",
+      type: "CALMDEF",
+    },
+  ],
+  toTagAssignments: [
+    { label: "Wave 1", groupLabel: "Release", parentTestCase_ID: TEST_CASE_ID },
+    { label: "Pricing", groupLabel: null, parentTestCase_ID: TEST_CASE_ID },
+  ],
   toActivities: [
     {
       uuid: "15151515-0000-4000-8000-000000000002",
@@ -162,6 +177,41 @@ export const testCaseExpanded = {
     },
   ],
 };
+
+/** The link reads of `getTask` for TASK_ID, in the shapes seen live (X-249). */
+export const taskLinkRoutes = () => ({
+  [`calm-tasks/v1/tasks/${TASK_ID}/relations`]: [
+    {
+      id: "18181818-0000-4000-8000-000000000001",
+      type: "10",
+      relationTaskId: REQUIREMENT_ID,
+    },
+  ],
+  [`calm-tasks/v1/tasks/${TASK_ID}/featureAssignments`]: [
+    {
+      id: "19191919-0000-4000-8000-000000000001",
+      taskId: TASK_ID,
+      taskType: "CALMDEF",
+      taskTitle: "Credit memo uses the wrong tax code",
+      featureId: FEATURE_ID,
+    },
+  ],
+  "calm-tasks/v1/tasks/solutionProcessAssignments": [
+    {
+      relationId: "20202020-0000-4000-8000-000000000001",
+      taskId: TASK_ID,
+      projectId: PROJECT_ID,
+      scopeId: SCOPE_ID,
+      solutionScenarioVersionId: "21212121-0000-4000-8000-000000000001",
+      solutionProcessId: PROCESS_ID,
+    },
+  ],
+  "calm-testmanagement/v1/ManualTestCases": manualTestCases(1),
+  "calm-testmanagement/v1/AutomatedTestCases": {
+    "@context": "$metadata#AutomatedTestCases",
+    value: [],
+  },
+});
 
 export const testPlanExpanded = {
   "@context": "$metadata#TestPlans(toTestCaseAssignments())/$entity",
