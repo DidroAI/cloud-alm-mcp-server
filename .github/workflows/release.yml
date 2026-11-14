@@ -61,6 +61,9 @@ jobs:
       # prepublishOnly runs typecheck, tests and build again.
       # A prerelease version (0.1.0-beta.0) goes out under the beta tag.
       - if: env.NPM_TOKEN != ''
-        run: npm publish --provenance --access public --tag "$(node -p 'require("./package.json").version.includes("-") ? "beta" : "latest"')"
+        run: |
+          tag=latest
+          case "$(node -p 'require("./package.json").version')" in *-*) tag=beta ;; esac
+          npm publish --provenance --access public --tag "$tag"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
