@@ -204,8 +204,11 @@ The card's button calls `calm_approve`, a tool visible to the card only,
 with a one-time token that travels in the result's `_meta`, never in the
 text the model reads. If the host drops `_meta` (some do, e.g. on reload),
 the card falls back to the id in `structuredContent`, which approves only
-in `prefer`; if the card cannot reach the server, it asks the user to
-reply yes in the chat. An approval is single-use, expires after 60
+in `prefer`. If the host does not pass the card's calls to the server
+(it does not declare `serverTools`; the Claude Code tab is one, see
+anthropics/claude-code#106708), the card shows the change without
+buttons and asks the user to reply yes in the chat; a failed call does
+the same. An approval is single-use, expires after 60
 minutes (the card then shows it as expired) and, over HTTP, must come with the same bearer token as the
 request that proposed it. `dryRun: true` previews without asking.
 

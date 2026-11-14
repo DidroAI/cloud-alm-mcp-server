@@ -206,9 +206,17 @@ app.ontoolresult = (result) => {
     return;
   }
   if (expired()) return;
+  if (!canCall()) {
+    say(pending.chat !== false
+      ? "This app does not pass answers from cards to the server. To approve, reply \u201cyes\u201d in the chat."
+      : "This app does not pass answers from cards to the server. Open the change in an app that does.", "err");
+    return;
+  }
   buttons(true);
   if (a.expiresAt) setTimeout(expired, Math.min(a.expiresAt - Date.now() + 500, 2 ** 31 - 1));
 };
+/** Hosts that forward a card's tool calls declare serverTools (the Claude Code tab, for one, does not). */
+const canCall = () => !app.getHostCapabilities || !!app.getHostCapabilities()?.serverTools;
 /** Past the expiry the server refuses the approval; say so instead of offering dead buttons. */
 function expired() {
   if (done || !pending?.expiresAt || Date.now() < pending.expiresAt) return false;
@@ -228,7 +236,7 @@ async function decide(decision) {
     if (pending.nonce) args.nonce = pending.nonce;
     r = await app.callServerTool({ name: "calm_approve", arguments: args });
   } catch (e) {
-    say("This app could not send your answer to the server." + chatHint(), "err");
+    say("This app could not send your answer to the server (" + (e?.message ?? e) + ")." + chatHint(), "err");
     return;
   }
   const text = (r?.content ?? []).map((c) => c?.text ?? "").join("\\n");
