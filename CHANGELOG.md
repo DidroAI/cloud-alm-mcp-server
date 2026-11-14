@@ -21,7 +21,8 @@ All notable changes to this package. The format follows
   a proposal the user approves in an approval card in the chat (MCP Apps)
   or, in `prefer`, by saying yes in the chat (`calm_confirm`). The client's
   confirm dialog is opt-in (`CALM_APPROVAL_DIALOG=on`), as some clients
-  decline it unseen. Approvals are single-use, expire, and are bound to
+  decline it unseen. Approvals are single-use, expire after an hour (the
+  card then shows them as expired), and are bound to
   the caller.
 - `doctor` checks scopes per tool, write mode, approval and the default project.
 

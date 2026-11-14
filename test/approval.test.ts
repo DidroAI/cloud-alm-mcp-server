@@ -228,7 +228,9 @@ describe("pending store", () => {
   test("expires, is single use, and belongs to its subject", () => {
     const p = propose(entry, 0);
     expect(() => take(p.id, "other", p.nonce, 1)).toThrow("another session");
-    expect(() => take(p.id, "s", p.nonce, 11 * 60_000)).toThrow("expired");
+    expect(() => take(p.id, "s", p.nonce, 61 * 60_000)).toThrow("expired");
+    const late = propose(entry, 0);
+    expect(take(late.id, "s", late.nonce, 50 * 60_000).tool).toBe("calm_tag");
     const q = propose(entry, 0);
     expect(() => take(q.id, "s", undefined, 1)).toThrow("approval card");
     expect(take(q.id, "s", q.nonce, 1).tool).toBe("calm_tag");
@@ -248,5 +250,6 @@ describe("pending store", () => {
   test("the card renders text, never HTML from the preview", () => {
     expect(cardHtml()).toContain('$("p").textContent = a.preview');
     expect(cardHtml()).not.toContain("innerHTML = a.");
+    expect(cardHtml()).toContain("This approval expired");
   });
 });

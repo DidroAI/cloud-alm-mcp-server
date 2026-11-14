@@ -205,8 +205,8 @@ with a one-time token that travels in the result's `_meta`, never in the
 text the model reads. If the host drops `_meta` (some do, e.g. on reload),
 the card falls back to the id in `structuredContent`, which approves only
 in `prefer`; if the card cannot reach the server, it asks the user to
-reply yes in the chat. An approval is single-use, expires after 10
-minutes and, over HTTP, must come with the same bearer token as the
+reply yes in the chat. An approval is single-use, expires after 60
+minutes (the card then shows it as expired) and, over HTTP, must come with the same bearer token as the
 request that proposed it. `dryRun: true` previews without asking.
 
 Why the dialog is off by default: some clients declare a confirm dialog

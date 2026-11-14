@@ -24,7 +24,8 @@ export const APPROVAL_MODES: ApprovalMode[] = ["off", "prefer", "required"];
 
 export const CARD_URI = "ui://cloud-alm/approve-v1.html";
 export const META_KEY = "cloud-alm/approval";
-const TTL_MS = 10 * 60_000;
+/** Long enough for a user who answers a turn later; still single-use and bound to one change. */
+export const TTL_MS = 60 * 60_000;
 const MAX_PENDING = 200;
 
 /** A write waiting for the user. Holds the tool name and its arguments, not a client. */
@@ -83,7 +84,7 @@ export function take(
   const p = pending.get(id);
   if (!p || p.expiresAt <= now) {
     pending.delete(id);
-    throw new ApprovalError("This approval is unknown or expired; nothing was written. Ask again.");
+    throw new ApprovalError("This approval is unknown or expired; nothing was written. Propose the change again and ask the user.");
   }
   if (p.subject !== subject) throw new ApprovalError("This approval belongs to another session; nothing was written.");
   if (nonce === undefined && !p.allowChat)
@@ -204,10 +205,21 @@ app.ontoolresult = (result) => {
     say("This app did not pass the approval to the card. Open the change in an app that shows approval cards.", "err");
     return;
   }
+  if (expired()) return;
   buttons(true);
+  if (a.expiresAt) setTimeout(expired, Math.min(a.expiresAt - Date.now() + 500, 2 ** 31 - 1));
 };
+/** Past the expiry the server refuses the approval; say so instead of offering dead buttons. */
+function expired() {
+  if (done || !pending?.expiresAt || Date.now() < pending.expiresAt) return false;
+  done = true;
+  buttons(false);
+  $("x").textContent = "expired " + new Date(pending.expiresAt).toLocaleTimeString();
+  say("This approval expired; nothing was written. Ask again in the chat to get a new one.", "err");
+  return true;
+}
 async function decide(decision) {
-  if (!pending || done) return;
+  if (!pending || done || expired()) return;
   buttons(false);
   say(decision === "approve" ? "Writing…" : "Rejecting…");
   let r;
