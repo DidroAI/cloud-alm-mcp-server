@@ -89,9 +89,9 @@ export function createHttpHandler(options: HttpOptions = {}) {
     const server = createServer(calm, {
       ...serverOptions,
       ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
-      // Stateless: client capabilities are unknown per call and no dialog can
-      // be sent, so approvals go through the card; only the same token approves.
-      approvalChannel: "card",
+      // Stateless: no dialog can be sent; approvals arrive in a later request
+      // (card or chat), and only from the same token.
+      approvalDialog: false,
       approvalSubject: subjectOf(match[1]),
     });
     // No session id generator: stateless, one server per request.

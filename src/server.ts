@@ -4,7 +4,6 @@ import {
   CloudAlmError,
 } from "./calm/index.js";
 import {
-  getUiCapability,
   RESOURCE_MIME_TYPE,
   registerAppResource,
   registerAppTool,
@@ -126,11 +125,11 @@ export type ServerOptions = ViewOptions & {
    */
   approval?: ApprovalMode;
   /**
-   * How to reach the user: "detect" from the client's capabilities (stdio),
-   * or "card" (stateless HTTP, where capabilities are not known per call
-   * and dialogs cannot be sent).
+   * Also ask in the client's confirm dialog (MCP elicitation) when it
+   * declares one. Off by default: only terminal clients show it reliably;
+   * others decline unseen. Never over stateless HTTP.
    */
-  approvalChannel?: "detect" | "card";
+  approvalDialog?: boolean;
   /** Who may approve a pending write: a hash of the caller's token, or "local". */
   approvalSubject?: string;
 };
@@ -158,7 +157,7 @@ export function createServer(
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
           ? options.approval && options.approval !== "off"
-            ? "Write tools are on, with the user's approval: a write answers with a preview the user approves (in a card, a dialog, or by saying yes in the chat when the answer asks for calm_confirm). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all."
+            ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${options.approval === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
             : "Write tools are on: confirm with the user before each write (show the dryRun preview); calm_delete cannot be undone, and features cannot be deleted at all."
           : options.writer && options.writeMode === "dry-run"
             ? "Write tools are in dry-run mode, set by the operator (CALM_WRITE=dry-run): they only preview, even with dryRun false. Tell the user what would be written."
@@ -185,23 +184,10 @@ export function createServer(
     const preview = await answer(() => run({ ...args, dryRun: true }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
-    const caps = server.server.getClientCapabilities();
-    const ui =
-      options.approvalChannel === "card" ||
-      Boolean(getUiCapability(caps as never)?.mimeTypes?.includes(RESOURCE_MIME_TYPE));
-    if (ui) {
-      const p = propose({ tool: name, args, preview: text, subject, channel: "card" });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `An approval card is shown to the user. Nothing is written until they approve it there; do not call ${name} again for this change. Preview:\n${text}`,
-          },
-        ],
-        _meta: { [META_KEY]: { ...p, title, tool: name, preview: text } },
-      };
-    }
-    if (caps?.elicitation) {
+    // Always a proposal: a host may draw the card without declaring MCP Apps,
+    // so every answer carries what the card needs, and the text a fallback.
+    const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });
+    if (options.approvalDialog && server.server.getClientCapabilities()?.elicitation) {
       const result = await server.server
         .elicitInput(
           {
@@ -209,45 +195,33 @@ export function createServer(
             message: `Cloud ALM: ${title}\n\n${text}`,
             requestedSchema: {
               type: "object",
-              properties: {
-                approve: { type: "boolean", title: "Approve this change", default: true },
-              },
+              properties: { approve: { type: "boolean", title: "Approve this change", default: true } },
               required: ["approve"],
             },
           },
           { relatedRequestId: extra.requestId, signal: extra.signal, timeout: 5 * 60_000 },
         )
-        .catch(() => ({ action: "cancel" as const, content: undefined }));
-      if (result.action === "accept" && result.content?.approve === true)
+        .catch(() => undefined);
+      if (result?.action === "accept" && result.content?.approve === true) {
+        try {
+          take(p.id, subject, p.nonce);
+        } catch (error) {
+          if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
+          throw error;
+        }
         return answer(() => run({ ...args, dryRun: false }));
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Not written: the user ${result.action === "accept" ? "did not approve" : result.action === "decline" ? "declined" : "did not answer"}.`,
-          },
-        ],
-      };
+      }
+      // Some clients decline without showing the dialog: keep the proposal.
     }
-    if (approval === "prefer") {
-      const p = propose({ tool: name, args, preview: text, subject, channel: "chat" });
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Approval needed, nothing written yet. Show the user this change and ask them to approve it; only if they say yes, call calm_confirm with id "${p.id}" (valid 10 minutes).\n${text}`,
-          },
-        ],
-      };
-    }
+    const ask =
+      approval === "prefer"
+        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" (valid 10 minutes). Do not call ${name} again for this change.`
+        : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid 10 minutes); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
     return {
-      isError: true,
-      content: [
-        {
-          type: "text",
-          text: "Not written: the operator requires approval (CALM_APPROVAL=required), and this client can show neither an approval card nor a confirm dialog.",
-        },
-      ],
+      content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
+      // The model may see structuredContent; the nonce stays in _meta.
+      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, expiresAt: p.expiresAt, chat: approval === "prefer" } },
+      _meta: { [META_KEY]: { ...p, title, tool: name, preview: text, chat: approval === "prefer" } },
     };
   };
 
@@ -559,13 +533,15 @@ export function createServer(
         description: "Called by the approval card when the user clicks Approve or Reject. The assistant never calls it.",
         inputSchema: {
           id: z.string().regex(/^[0-9a-f]{12}$/),
-          nonce: z.string().min(16).max(64),
+          // Absent when the host dropped the result's _meta: then only a
+          // change that may also be approved in the chat (mode prefer).
+          nonce: z.string().min(16).max(64).optional(),
           decision: z.enum(["approve", "reject"]),
         } as never,
         annotations: { ...WRITE, title: "Approve" },
         _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
       },
-      ((a: { id: string; nonce: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
+      ((a: { id: string; nonce?: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
     );
     if (approval === "prefer")
       server.registerTool(
@@ -607,6 +583,11 @@ export function serverOptionsFromEnv(
       throw new Error("CALM_APPROVAL must be off, prefer or required.");
     options.approval = approval as ApprovalMode;
   } else if (options.writeMode === "on") options.approval = "prefer";
+  const dialog = env.CALM_APPROVAL_DIALOG?.trim().toLowerCase();
+  if (dialog) {
+    if (!["on", "off"].includes(dialog)) throw new Error("CALM_APPROVAL_DIALOG must be on or off.");
+    options.approvalDialog = dialog === "on";
+  }
   const tools = env.CALM_TOOLS?.split(",").map((t) => t.trim()).filter(Boolean);
   if (tools?.length) {
     const known = [...TOOL_NAMES, ...WRITE_TOOL_NAMES] as readonly string[];

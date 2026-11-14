@@ -2,19 +2,23 @@
  * Human approval of writes. A write the agent asks for is first run as a
  * dry run; the preview goes to the user, and only their approval runs it.
  *
- * Channels, best first:
- * - card: an MCP Apps card in the chat (Claude, ChatGPT, Cursor, VS Code…)
- *   whose buttons call the app-only `calm_approve` tool with a nonce the
- *   model never sees (it travels in the result's `_meta` only);
- * - elicitation: the client's own confirm dialog (Claude Code, Codex, Cursor);
- * - chat: the agent asks the user and calls `calm_confirm` (mode `prefer`
- *   only: it trusts the agent to ask).
+ * Every write is first a proposal, whatever the client says it supports
+ * (hosts draw the card from the tool definition even when they do not
+ * declare MCP Apps support, and some declare dialogs they decline unseen).
+ * The same pending change can then be approved:
+ * - in the card: an MCP Apps view (Claude, ChatGPT, VS Code…) whose buttons
+ *   call the app-only `calm_approve` tool, with a nonce the model never sees
+ *   (it travels in the result's `_meta` only);
+ * - in the chat (mode `prefer` only, as it trusts the agent to ask): the
+ *   user says yes and the agent calls `calm_confirm`;
+ * - in the client's confirm dialog, when the operator opts in
+ *   (CALM_APPROVAL_DIALOG=on; reliable in terminal clients only).
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
-/** off: write at once; prefer: best channel, chat as a last resort; required: card or dialog, else refuse. */
+/** off: write at once; prefer: approve in the card or the chat; required: in the card (or an opted-in dialog) only. */
 export type ApprovalMode = "off" | "prefer" | "required";
 export const APPROVAL_MODES: ApprovalMode[] = ["off", "prefer", "required"];
 
@@ -26,8 +30,8 @@ const MAX_PENDING = 200;
 /** A write waiting for the user. Holds the tool name and its arguments, not a client. */
 type Pending = {
   tool: string;
-  /** card: approved with the nonce; chat: the agent relays the user's yes. */
-  channel: "card" | "chat";
+  /** Whether it may be taken without the card's nonce (mode prefer). */
+  allowChat: boolean;
   args: Record<string, unknown>;
   preview: string;
   subject: string;
@@ -68,7 +72,7 @@ export class ApprovalError extends Error {}
 
 /**
  * Take a pending write out (single use). With `nonce`, it must match: the
- * card path. Without, only `chat` approvals (mode prefer) may take it.
+ * card path. Without, only entries that allow the chat (mode prefer) may.
  */
 export function take(
   id: string,
@@ -82,8 +86,8 @@ export function take(
     throw new ApprovalError("This approval is unknown or expired; nothing was written. Ask again.");
   }
   if (p.subject !== subject) throw new ApprovalError("This approval belongs to another session; nothing was written.");
-  if (nonce === undefined && p.channel !== "chat")
-    throw new ApprovalError("This change waits for the user in the approval card; nothing was written.");
+  if (nonce === undefined && !p.allowChat)
+    throw new ApprovalError("This change can only be approved in the approval card; nothing was written.");
   if (nonce !== undefined) {
     const given = Buffer.from(nonce, "base64url");
     if (given.length !== p.nonce.length || !timingSafeEqual(given, p.nonce))
@@ -139,39 +143,88 @@ button:disabled{opacity:.5;cursor:default}
 </style></head><body>
 <div class="card">
 <div class="k">Cloud ALM · approval needed</div>
-<h1 id="t">Waiting for the change…</h1>
+<h1 id="t">Preparing the change…</h1>
 <pre id="p" hidden></pre>
 <div class="row"><button id="ok" class="ok" disabled>Approve</button><button id="no" disabled>Reject</button><span id="x" class="k"></span></div>
 <p id="m"></p>
 </div>
 <script type="module">
 ${appBundle()}
+const KEY = ${JSON.stringify(META_KEY)};
 const $ = (id) => document.getElementById(id);
-const app = new App({ name: "cloud-alm-approval", version: "1" });
+const say = (text, cls = "") => { $("m").className = cls; $("m").textContent = text; };
+const buttons = (on) => { $("ok").disabled = $("no").disabled = !on; };
+const app = new App({ name: "cloud-alm-approval", version: "2" });
 let pending;
+let done = false;
+/**
+ * The pending change, from wherever this host put it: the result's _meta
+ * (with the nonce), structuredContent, or the text (some hosts drop the
+ * others, e.g. on reload); the last two carry no nonce.
+ */
+function pendingFrom(result) {
+  const meta = result?._meta?.[KEY];
+  if (meta?.id) return meta;
+  const sc = result?.structuredContent?.approval;
+  if (sc?.id) return sc;
+  const text = (result?.content ?? []).map((c) => c?.text ?? "").join("\\n");
+  try {
+    const parsed = JSON.parse(text)?.approval;
+    if (parsed?.id) return parsed;
+  } catch {}
+  const id = /id "([0-9a-f]{12})"/.exec(text)?.[1];
+  if (!id) return undefined;
+  const body = text.slice(text.indexOf("\\n\\n") + 2);
+  const head = /^([^\\n]{1,80}):\\n/.exec(body);
+  return {
+    id,
+    title: head ? head[1] : "Change waiting for approval",
+    preview: head ? body.slice(head[0].length) : body,
+    chat: /calm_confirm/.test(text),
+  };
+}
+const chatHint = () => pending?.chat !== false ? " To approve, reply \u201cyes\u201d in the chat." : "";
+app.ontoolinput = () => { if (!pending && !done) $("t").textContent = "Preparing the change…"; };
+app.ontoolcancelled = () => { if (!pending) { $("t").textContent = "Cancelled; nothing was written."; buttons(false); } };
 app.ontoolresult = (result) => {
-  const a = result?._meta?.[${JSON.stringify(META_KEY)}];
-  if (!a) { $("t").textContent = "Nothing to approve."; return; }
+  const a = pendingFrom(result);
+  if (!a) {
+    const text = (result?.content ?? []).map((c) => c?.text ?? "").join("\\n").trim();
+    $("t").textContent = result?.isError ? "Not proposed" : "Nothing waits for approval here.";
+    if (text) { $("p").textContent = text; $("p").hidden = false; }
+    buttons(false);
+    return;
+  }
   pending = a;
-  $("t").textContent = a.title;
-  $("p").textContent = a.preview;
-  $("p").hidden = false;
-  $("x").textContent = "expires " + new Date(a.expiresAt).toLocaleTimeString();
-  $("ok").disabled = $("no").disabled = false;
+  $("t").textContent = a.title || "Change waiting for approval";
+  $("p").textContent = a.preview || "";
+  $("p").hidden = !a.preview;
+  if (a.expiresAt) $("x").textContent = "expires " + new Date(a.expiresAt).toLocaleTimeString();
+  if (!a.nonce && a.chat === false) {
+    say("This app did not pass the approval to the card. Open the change in an app that shows approval cards.", "err");
+    return;
+  }
+  buttons(true);
 };
 async function decide(decision) {
-  if (!pending) return;
-  $("ok").disabled = $("no").disabled = true;
-  $("m").className = ""; $("m").textContent = decision === "approve" ? "Writing…" : "Rejecting…";
+  if (!pending || done) return;
+  buttons(false);
+  say(decision === "approve" ? "Writing…" : "Rejecting…");
+  let r;
   try {
-    const r = await app.callServerTool({ name: "calm_approve", arguments: { id: pending.id, nonce: pending.nonce, decision } });
-    const text = (r?.content ?? []).map((c) => c.text ?? "").join("\\n");
-    $("m").className = r?.isError ? "err" : "done";
-    $("m").textContent = text;
-    await app.updateModelContext({ content: [{ type: "text", text: "Approval card (" + pending.tool + ", " + pending.id + "): user chose " + decision + ". " + text }] }).catch(() => {});
+    const args = { id: pending.id, decision };
+    if (pending.nonce) args.nonce = pending.nonce;
+    r = await app.callServerTool({ name: "calm_approve", arguments: args });
   } catch (e) {
-    $("m").className = "err"; $("m").textContent = "Could not reach the server: " + (e?.message ?? e);
+    say("This app could not send your answer to the server." + chatHint(), "err");
+    return;
   }
+  const text = (r?.content ?? []).map((c) => c?.text ?? "").join("\\n");
+  done = !r?.isError || /unknown or expired|already/.test(text);
+  if (!done) buttons(true);
+  say(text || (r?.isError ? "Refused." : "Done."), r?.isError ? "err" : "done");
+  const note = "Approval card for " + (pending.tool ?? "a change") + " (id " + pending.id + "): the user chose " + decision + ". Server answer: " + text;
+  await app.updateModelContext({ content: [{ type: "text", text: note }] }).catch(() => {});
 }
 $("ok").onclick = () => decide("approve");
 $("no").onclick = () => decide("reject");

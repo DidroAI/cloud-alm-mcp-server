@@ -55,7 +55,7 @@ async function connect(kind: ClientKind, options: ServerOptions) {
       content: { text: string }[];
       _meta?: Record<string, unknown>;
     };
-    return { error: !!r.isError, text: r.content[0]?.text ?? "", meta: r._meta };
+    return { error: !!r.isError, text: r.content[0]?.text ?? "", meta: r._meta, structured: (r as { structuredContent?: { approval?: Record<string, unknown> } }).structuredContent };
   };
   return { client, call, posts: fake.posts, prompts };
 }
@@ -71,7 +71,7 @@ describe("approval of writes", () => {
     const create = tools.tools.find((t) => t.name === "calm_create_task");
     expect((create?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri).toBe(CARD_URI);
     const r = await call("calm_create_task", NEW_DEFECT);
-    expect(r.text).toContain("approval card is shown");
+    expect(r.text).toContain("Approval needed");
     expect(r.text).toContain("Credit check skipped");
     expect(posts).toEqual([]);
     const a = r.meta?.[META_KEY] as { id: string; nonce: string; title: string };
@@ -103,19 +103,46 @@ describe("approval of writes", () => {
     expect(posts).toEqual([]);
   });
 
-  test("a dialog client is asked, and an accept writes", async () => {
-    const { call, posts, prompts } = await connect("elicit-accept", { approval: "required" });
+  test("every write is a proposal, whatever the client declares; the dialog is opt-in", async () => {
+    const { call, posts, prompts } = await connect("elicit-accept", { approval: "prefer" });
+    const r = await call("calm_create_task", NEW_DEFECT);
+    expect(prompts).toEqual([]);
+    expect(posts).toEqual([]);
+    const a = r.meta?.[META_KEY] as { id: string; nonce: string };
+    expect(a.nonce).toBeDefined();
+    // structuredContent carries the id for hosts that drop _meta, never the nonce.
+    expect(r.structured?.approval?.id).toBe(a.id);
+    expect(JSON.stringify(r.structured)).not.toContain(a.nonce);
+  });
+
+  test("with the dialog on, a dialog client is asked, and an accept writes", async () => {
+    const { call, posts, prompts } = await connect("elicit-accept", { approval: "required", approvalDialog: true });
     const r = await call("calm_create_task", NEW_DEFECT);
     expect(prompts[0]).toContain("Credit check skipped");
     expect(r.error).toBe(false);
     expect(posts).toEqual(["calm-tasks/v1/tasks"]);
   });
 
-  test("a declined dialog writes nothing", async () => {
-    const { call, posts } = await connect("elicit-decline", { approval: "prefer" });
+  test("a declined dialog writes nothing and keeps the proposal (some clients decline unseen)", async () => {
+    const { call, posts } = await connect("elicit-decline", { approval: "prefer", approvalDialog: true });
     const r = await call("calm_create_task", NEW_DEFECT);
-    expect(r.text).toContain("declined");
     expect(posts).toEqual([]);
+    const id = /calm_confirm with id "([0-9a-f]{12})"/.exec(r.text)?.[1];
+    expect((await call("calm_confirm", { id })).error).toBe(false);
+    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
+  });
+
+  test("a card whose host dropped the nonce approves by id in prefer, not in required", async () => {
+    const prefer = await connect("ui", { approval: "prefer" });
+    const a = (await prefer.call("calm_create_task", NEW_DEFECT)).structured?.approval as { id: string };
+    expect((await prefer.call("calm_approve", { id: a.id, decision: "approve" })).error).toBe(false);
+    expect(prefer.posts).toEqual(["calm-tasks/v1/tasks"]);
+    clearPending();
+    const required = await connect("ui", { approval: "required" });
+    const b = (await required.call("calm_create_task", NEW_DEFECT)).structured?.approval as { id: string };
+    const refused = await required.call("calm_approve", { id: b.id, decision: "approve" });
+    expect(refused.error).toBe(true);
+    expect(required.posts).toEqual([]);
   });
 
   test("prefer, with neither card nor dialog: the agent asks in chat and confirms by id", async () => {
@@ -128,13 +155,16 @@ describe("approval of writes", () => {
     expect(posts).toEqual(["calm-tasks/v1/tasks"]);
   });
 
-  test("required, with neither card nor dialog: refused, and no calm_confirm", async () => {
+  test("required: only the card approves; no calm_confirm", async () => {
     const { call, client, posts } = await connect("plain", { approval: "required" });
     const r = await call("calm_create_task", NEW_DEFECT);
-    expect(r.error).toBe(true);
-    expect(r.text).toContain("CALM_APPROVAL=required");
+    expect(r.error).toBe(false);
+    expect(r.text).toContain("does not accept approval in the chat");
     expect((await client.listTools()).tools.map((t) => t.name)).not.toContain("calm_confirm");
     expect(posts).toEqual([]);
+    const a = r.meta?.[META_KEY] as { id: string; nonce: string };
+    expect((await call("calm_approve", { ...a, decision: "approve" })).error).toBe(false);
+    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
   });
 
   test("dryRun previews without approval; approval off writes at once", async () => {
@@ -193,7 +223,7 @@ describe("approval over stateless HTTP", () => {
 });
 
 describe("pending store", () => {
-  const entry = { tool: "calm_tag", args: {}, preview: "p", subject: "s", channel: "card" as const };
+  const entry = { tool: "calm_tag", args: {}, preview: "p", subject: "s", allowChat: false };
 
   test("expires, is single use, and belongs to its subject", () => {
     const p = propose(entry, 0);
@@ -209,6 +239,9 @@ describe("pending store", () => {
     expect(serverOptionsFromEnv({ CALM_WRITE: "on" }).approval).toBe("prefer");
     expect(serverOptionsFromEnv({ CALM_WRITE: "on", CALM_APPROVAL: "off" }).approval).toBe("off");
     expect(serverOptionsFromEnv({}).approval).toBeUndefined();
+    expect(serverOptionsFromEnv({ CALM_WRITE: "on" }).approvalDialog).toBeUndefined();
+    expect(serverOptionsFromEnv({ CALM_APPROVAL_DIALOG: "on" }).approvalDialog).toBe(true);
+    expect(() => serverOptionsFromEnv({ CALM_APPROVAL_DIALOG: "yes" })).toThrow("CALM_APPROVAL_DIALOG");
     expect(() => serverOptionsFromEnv({ CALM_APPROVAL: "maybe" })).toThrow("CALM_APPROVAL");
   });
 

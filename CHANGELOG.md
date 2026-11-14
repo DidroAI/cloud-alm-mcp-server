@@ -17,11 +17,12 @@ All notable changes to this package. The format follows
 
 ### Added
 
-- Approval of writes (`CALM_APPROVAL=prefer|required|off`): an approval card
-  in the chat (MCP Apps) where the client renders one, the client's confirm
-  dialog (elicitation) where it can ask, or a preview the agent confirms
-  with the user. Approvals are single-use, expire, and are bound to the
-  caller.
+- Approval of writes (`CALM_APPROVAL=prefer|required|off`): every write is
+  a proposal the user approves in an approval card in the chat (MCP Apps)
+  or, in `prefer`, by saying yes in the chat (`calm_confirm`). The client's
+  confirm dialog is opt-in (`CALM_APPROVAL_DIALOG=on`), as some clients
+  decline it unseen. Approvals are single-use, expire, and are bound to
+  the caller.
 - `doctor` checks scopes per tool, write mode, approval and the default project.
 
 - Write mode, off by default (`CALM_WRITE=on|dry-run`):

@@ -49,7 +49,7 @@ export function offeredTools(settings: ServerOptions = {}): string[] {
 export function settingsCheck(settings: ServerOptions): Check {
   const write = settings.writeMode ?? "off";
   const parts = [
-    `write ${write === "off" ? "off (CALM_WRITE=on to offer write tools)" : write}${write === "on" ? `, approval ${settings.approval ?? "off"}` : ""}`,
+    `write ${write === "off" ? "off (CALM_WRITE=on to offer write tools)" : write}${write === "on" ? `, approval ${settings.approval ?? "off"}${settings.approvalDialog && settings.approval !== "off" ? " (+ dialog)" : ""}` : ""}`,
     settings.tools ? `tools limited to ${settings.tools.length} (CALM_TOOLS)` : "all tools",
     settings.defaultProject ? `default project ${settings.defaultProject}` : "no default project",
   ];
