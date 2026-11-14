@@ -113,6 +113,10 @@ describe("approval of writes", () => {
     // structuredContent carries the id for hosts that drop _meta, never the nonce.
     expect(r.structured?.approval?.id).toBe(a.id);
     expect(JSON.stringify(r.structured)).not.toContain(a.nonce);
+    // Hosts that show the model only structuredContent still pass on the ask.
+    expect(r.structured?.approval?.next).toContain("calm_confirm");
+    expect(r.structured?.approval?.title).toBe("Create a defect");
+    expect(r.text).toMatch(/valid until \d\d:\d\d UTC/);
   });
 
   test("with the dialog on, a dialog client is asked, and an accept writes", async () => {

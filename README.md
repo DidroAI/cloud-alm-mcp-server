@@ -11,7 +11,7 @@ the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
 Writing (create, change, link, tag, comment, delete) is opt-in
 with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
 
-> Status: in development, not on npm yet. MIT licence.
+> Status: beta (0.1.0-beta.0). MIT licence.
 
 ## Quick start
 
@@ -49,9 +49,9 @@ Requires Node 22 or later.
 
 No command prints the key's secret or a token.
 
-> Not on npm yet. Until it is, build from a checkout (`bun install && bun
-> run build && npm link`) and use `cloud-alm-mcp-server` instead of
-> `npx -y cloud-alm-mcp-server`.
+> Beta. Until 0.1.0 is out, name the beta: `npx -y cloud-alm-mcp-server@beta`.
+> A packed build installs with `npm install -g ./cloud-alm-mcp-server-<version>.tgz`;
+> then use `cloud-alm-mcp-server` instead of `npx -y cloud-alm-mcp-server`.
 
 ## Get a service key
 

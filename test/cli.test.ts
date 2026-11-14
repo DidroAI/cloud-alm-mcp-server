@@ -344,3 +344,12 @@ describe("client snippets", () => {
     expect(shellQuote("it's")).toBe(`'it'\\''s'`);
   });
 });
+
+test("a prerelease pins its version in the setup lines", async () => {
+  const { packageSpec, clientSnippets } = await import("../src/cli/clients.js");
+  expect(packageSpec("0.1.0")).toBe("cloud-alm-mcp-server");
+  expect(packageSpec("0.1.0-beta.0")).toBe("cloud-alm-mcp-server@0.1.0-beta.0");
+  const lines = clientSnippets("/k.json", "linux", packageSpec("0.1.0-beta.0")).map((s) => s.text).join("\n");
+  expect(lines).toContain("npx -y cloud-alm-mcp-server@0.1.0-beta.0");
+  expect(lines).toContain('"cloud-alm-mcp-server@0.1.0-beta.0"');
+});

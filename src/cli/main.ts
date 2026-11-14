@@ -11,7 +11,7 @@ import { dirname, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
 import { type ServerOptions, serverOptionsFromEnv } from "../server.js";
 import { type Check, keyChecks, nodeCheck, settingsCheck } from "./checks.js";
-import { clientSnippets, PACKAGE_NAME } from "./clients.js";
+import { clientSnippets, PACKAGE_NAME, packageSpec } from "./clients.js";
 import {
   CONFIG_DIR_ENV,
   expandHome,
@@ -44,7 +44,7 @@ export function version(): string {
   return pkg.version;
 }
 
-export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM (read-only)
+export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM
 
 Usage:
   ${PACKAGE_NAME} [stdio]          Start the MCP server on stdio (default)
@@ -178,7 +178,7 @@ async function init(io: Io, args: string[]): Promise<number> {
 
 function printSnippets(io: Io, keyPath: string) {
   io.out("\nAdd the server to your MCP client:");
-  for (const s of clientSnippets(keyPath, io.platform ?? process.platform)) {
+  for (const s of clientSnippets(keyPath, io.platform ?? process.platform, packageSpec(version()))) {
     io.out(`\n# ${s.client}: ${s.where}`);
     io.out(s.text);
   }

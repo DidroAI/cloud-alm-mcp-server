@@ -59,7 +59,8 @@ jobs:
         if: env.NPM_TOKEN != ''
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
       # prepublishOnly runs typecheck, tests and build again.
+      # A prerelease version (0.1.0-beta.0) goes out under the beta tag.
       - if: env.NPM_TOKEN != ''
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$(node -p 'require("./package.json").version.includes("-") ? "beta" : "latest"')"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

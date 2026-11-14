@@ -109,6 +109,16 @@ export async function keyChecks(
           : `  ${mark[r.status]} ${r.tool}: ${r.status === "none" ? "needs" : "parts need"} ${r.missing.join(", ")}`,
       ),
     });
+    // Writes are off: say whether this key could write, and how to turn it on.
+    if (!options.settings?.writeMode || options.settings.writeMode === "off") {
+      const writable = coverage(scopes, [...WRITE_TOOL_NAMES]).filter((r) => r.status !== "none").length;
+      if (writable)
+        checks.push({
+          name: "Writes",
+          status: "ok",
+          detail: `off; this key could use ${writable} of ${WRITE_TOOL_NAMES.length} write tools. Add CALM_WRITE=on to the server's env to offer them (each change waits for the user's approval)`,
+        });
+    }
   }
 
   try {

@@ -128,6 +128,14 @@ describe("write mode", () => {
     expect(bad.text).toContain("only user stories and project tasks");
   });
 
+  test("create a task without a description, with a named priority", async () => {
+    const { call, posts } = await connect();
+    const r = await call("calm_create_task", { type: "defect", title: "Credit check skipped", priority: 20 });
+    expect(r.text).toContain("priority high");
+    expect(posts[0]?.body).toMatchObject({ type: "CALMDEF", priorityId: 20 });
+    expect(posts[0]?.body).not.toHaveProperty("description");
+  });
+
   test("the writer sends only allowed (method, path) pairs", async () => {
     const writer = new CloudAlmWriter({ accessToken: "t", baseUrl: BASE_URL });
     await expect(writer.post("calm-tasks/v1/tasks/x/delete", {})).rejects.toThrow("not a path");

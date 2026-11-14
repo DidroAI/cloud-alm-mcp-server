@@ -6,6 +6,18 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.0] - 2026-11-14
+
+### Fixed
+
+- `calm_create_task` takes no description when there is none (Cloud ALM
+  does not need one), names its priority codes, and its preview and card
+  say the type and priority ("Create a defect", "priority high").
+- The approval ask states when it expires and also travels in
+  `structuredContent`, for hosts that show the model only that.
+- `init` says when the key could write and how to turn writes on; for a
+  prerelease, its setup lines pin the version.
+
 ### Changed
 
 - Seven task-shaped read tools replace the 21 endpoint mirrors:

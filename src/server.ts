@@ -51,7 +51,7 @@ import {
   type ViewOptions,
 } from "./views/tools.js";
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.1.0-beta.0";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
@@ -181,6 +181,8 @@ export function createServer(
     run: (args: Record<string, unknown>) => Promise<string>,
     extra: Extra,
   ): Promise<CallToolResult> => {
+    // "Create a defect" rather than the tool's generic "Create a task".
+    if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
     const preview = await answer(() => run({ ...args, dryRun: true }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
@@ -213,14 +215,16 @@ export function createServer(
       }
       // Some clients decline without showing the dialog: keep the proposal.
     }
+    const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
-        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" (valid 10 minutes). Do not call ${name} again for this change.`
-        : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid 10 minutes); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
+        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" (valid ${ttl}). Do not call ${name} again for this change.`
+        : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid ${ttl}); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
     return {
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
-      // The model may see structuredContent; the nonce stays in _meta.
-      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, expiresAt: p.expiresAt, chat: approval === "prefer" } },
+      // Some hosts show the model only structuredContent, so it repeats the
+      // ask; the nonce stays in _meta.
+      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, expiresAt: p.expiresAt, chat: approval === "prefer", next: ask } },
       _meta: { [META_KEY]: { ...p, title, tool: name, preview: text, chat: approval === "prefer" } },
     };
   };
@@ -401,9 +405,9 @@ export function createServer(
       {
         type: z.enum(CREATABLE_TASK_TYPES as [string, ...string[]]),
         title: z.string().min(1).max(180),
-        description: z.string().min(1).max(8000).describe("Plain text; blank lines separate paragraphs"),
+        description: z.string().min(1).max(8000).optional().describe("Plain text; blank lines separate paragraphs. Leave out rather than invent one"),
         requirement: ref.optional().describe("Parent requirement of a user story or project task"),
-        priority: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).optional(),
+        priority: z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).optional().describe("10 very high, 20 high, 30 medium (default), 40 low"),
         tags: z.array(z.string().min(1).max(256)).max(20).optional(),
         projectId,
         dryRun,

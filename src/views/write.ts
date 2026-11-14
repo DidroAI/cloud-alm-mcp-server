@@ -406,13 +406,15 @@ export async function tag(
 
 // ---------------------------------------------------------------------------
 
+const PRIORITY_NAMES: Record<number, string> = { 10: "very high", 20: "high", 30: "medium", 40: "low" };
+
 export async function createTask(
   calm: CloudAlm,
   writer: CloudAlmWriter,
   input: {
     type: CreatableTaskType;
     title: string;
-    description: string;
+    description?: string;
     priority?: number;
     requirement?: string;
     tags?: string[];
@@ -443,12 +445,12 @@ export async function createTask(
     projectId: snap.project.id,
     type: TASK_TYPES[input.type],
     title,
-    description: textToHtml(input.description),
+    ...(input.description ? { description: textToHtml(input.description) } : {}),
     priorityId: input.priority ?? 30,
     ...(scopeId ? { scopeId } : {}),
     ...(parent ? { parentId: parent.id } : {}),
   };
-  const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
+  const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
   if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.`;
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
   if (!created?.id)

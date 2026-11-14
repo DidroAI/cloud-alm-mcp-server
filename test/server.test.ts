@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -295,4 +295,10 @@ describe("mode (a): stdio with the developer's service key", () => {
       "Cannot read the service key file",
     );
   });
+});
+
+test("SERVER_VERSION matches package.json", async () => {
+  const { SERVER_VERSION } = await import("../src/server.js");
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  expect(SERVER_VERSION).toBe(pkg.version);
 });

@@ -15,9 +15,18 @@ export function shellQuote(value: string): string {
 
 export type Snippet = { client: string; where: string; text: string };
 
+/**
+ * What npx runs: the bare name, or name@version for a prerelease (a beta
+ * is not what a bare name resolves to once a release is out).
+ */
+export function packageSpec(version?: string): string {
+  return version?.includes("-") ? `${PACKAGE_NAME}@${version}` : PACKAGE_NAME;
+}
+
 export function clientSnippets(
   keyPath: string,
   platform: NodeJS.Platform = process.platform,
+  spec: string = PACKAGE_NAME,
 ): Snippet[] {
   const env = `CALM_SERVICE_KEY=${keyPath}`;
   const json = JSON.stringify(
@@ -25,7 +34,7 @@ export function clientSnippets(
       mcpServers: {
         [SERVER_KEY]: {
           command: "npx",
-          args: ["-y", PACKAGE_NAME],
+          args: ["-y", spec],
           env: { CALM_SERVICE_KEY: keyPath },
         },
       },
@@ -43,12 +52,12 @@ export function clientSnippets(
     {
       client: "Claude Code",
       where: "run once",
-      text: `claude mcp add ${SERVER_KEY} --scope user -e ${shellQuote(env)} -- npx -y ${PACKAGE_NAME}`,
+      text: `claude mcp add ${SERVER_KEY} --scope user -e ${shellQuote(env)} -- npx -y ${spec}`,
     },
     {
       client: "Codex",
       where: "run once",
-      text: `codex mcp add ${SERVER_KEY} --env ${shellQuote(env)} -- npx -y ${PACKAGE_NAME}`,
+      text: `codex mcp add ${SERVER_KEY} --env ${shellQuote(env)} -- npx -y ${spec}`,
     },
     {
       client: "Codex (by hand)",
@@ -57,7 +66,7 @@ export function clientSnippets(
       text: [
         `[mcp_servers.${SERVER_KEY}]`,
         `command = "npx"`,
-        `args = ["-y", "${PACKAGE_NAME}"]`,
+        `args = ["-y", "${spec}"]`,
         `env = { CALM_SERVICE_KEY = ${JSON.stringify(keyPath)} }`,
       ].join("\n"),
     },
