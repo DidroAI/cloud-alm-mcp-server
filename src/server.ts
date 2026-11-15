@@ -39,7 +39,7 @@ import {
   tag,
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
-import { GET_OUT, LIST_OUT } from "./schemas.js";
+import { GAPS_OUT, GET_OUT, LIST_OUT, LOOSE_OUT } from "./schemas.js";
 import { NOTHING_TO_DO } from "./views/items.js";
 import {
   comment,
@@ -336,6 +336,7 @@ export function createServer(
     "Start here. A project at a glance: current phase, counts of requirements, user stories, defects, features, test cases, documents by status, tags in use, and gaps.",
     { projectId },
     (a) => overview(calm, defined(a), options),
+    LOOSE_OUT,
   );
   tool(
     "calm_list",
@@ -376,17 +377,21 @@ export function createServer(
     "Follow an item's links both ways: requirement → user stories → features (status, transports), test cases, documents, solution process. Start from a task, feature, test case, document or process.",
     { id: ref, projectId },
     (a) => trace(calm, defined(a), options),
+    LOOSE_OUT,
   );
   tool(
     "calm_gaps",
     "Find gaps",
-    "What is missing or failing in a project: requirements and user stories without a test case, process or feature; failed test runs; features whose tasks are untested; test cases linked to nothing or not prepared.",
+    "What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared. Check coverage (asked by name): every requirement × test cases × latest result, for audits.",
     {
-      checks: z.array(z.enum(GAP_CHECKS)).optional().describe("Default: all"),
-      max: z.number().int().min(1).max(200).optional().describe("Items listed per check, default 20"),
+      checks: z.array(z.enum(GAP_CHECKS)).optional().describe("Default: all but coverage"),
+      includeClosed: z.boolean().optional().describe("Also closed requirements and user stories (default: open only)"),
+      max: z.number().int().min(1).max(200).optional().describe("Items per check, default 20"),
+      offset: z.number().int().min(0).max(5000).optional().describe("Skip this many items in each check (next page)"),
       projectId,
     },
     (a) => gaps(calm, defined(a), options),
+    GAPS_OUT,
   );
   tool(
     "calm_analytics",
@@ -399,7 +404,11 @@ export function createServer(
       period: z.string().regex(/^[A-Za-z0-9]{1,10}$/).optional().describe("e.g. C1D, C7D, C30D"),
       limit: z.number().int().min(1).max(200).optional(),
     },
-    (a) => analytics(calm, defined(a)),
+    async (a) => {
+      const out = await analytics(calm, defined(a));
+      return typeof out === "string" ? { text: out, data: { dataset: a.dataset ?? null, message: out } } : out;
+    },
+    LOOSE_OUT,
   );
   tool(
     "calm_landscape",
@@ -407,6 +416,7 @@ export function createServer(
     "Systems and cloud services of the tenant, and SAP service status events (outages, maintenance), open ones first.",
     {},
     () => landscape(calm),
+    LOOSE_OUT,
   );
 
   const writer = options.writer;

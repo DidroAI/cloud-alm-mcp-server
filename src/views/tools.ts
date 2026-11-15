@@ -95,7 +95,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     lines.push(`${projects.length} projects. Pass projectId for one project's overview:`);
     for (const p of projects.slice(0, 50))
       lines.push(`- ${projectLabel(p)} · ${(p.purpose ?? "").toLowerCase()} · status ${p.status ?? "?"}`);
-    return lines.join("\n");
+    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose, status: p.status })) } };
   }
   // The project list is already read: no second read for the project.
   const listed = projects.find((p) => p.id.toLowerCase() === (wanted ?? projects[0]?.id ?? "").toLowerCase());
@@ -144,8 +144,8 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   );
   const latest = [...results.values()].flat();
   if (latest.length)
-    lines.push(`Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run yet" : r.status.toLowerCase())))}`);
-  lines.push(`Documents: ${documents.length}${documents.length ? ` (${counts(documents.map((d) => documentType(d.documentTypeCode)))})` : ""}`);
+    lines.push(`Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase())))}`);
+  lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
   // Gaps in one line; calm_gaps lists them.
@@ -159,8 +159,27 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     `Gaps: ${untested} of ${reqs.length} open requirements/user stories without a test case · ${noProcess} open requirements without a solution process · ${orphans} test cases linked to no task (calm_gaps lists them)`,
   );
   lines.push(ELSEWHERE);
-  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]));
-  return lines.join("\n");
+  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]);
+  lines.push(...footnotes);
+  const tally = (words: string[]) => Object.fromEntries([...new Set(words)].map((w) => [w, words.filter((x) => x === w).length]));
+  return {
+    text: lines.join("\n"),
+    data: {
+      project: { id: p.id, name: p.name, purpose: p.purpose, status: p.operationalStatus, phase: current?.name ?? null, otherProjects: projects.length - 1 },
+      phases: phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })),
+      milestones: milestones.map((t) => ({ name: t.name, date: t.startDate })),
+      processes: { inScope: scoped.length, total: processes.length },
+      tasks: Object.fromEntries([...byType.entries()].map(([type, list]) => [type, { total: list.length, byStatus: tally(list.map((t) => statusLabel(t.status))) }])),
+      defects: { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) },
+      features: { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) },
+      testCases: { manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length, testPlans: testPlans.map((t) => ({ id: t.displayId, title: t.title })) },
+      testResults: tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))),
+      documents: documents.map((d) => ({ id: d.displayId, title: d.title, type: documentType(d.documentTypeCode) })),
+      tags: tally(tasks.flatMap((t) => t.tags)),
+      gaps: { untested, openRequirementsAndStories: reqs.length, noProcess, orphanTestCases: orphans },
+      notes: footnotes,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -884,8 +903,22 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     (await pool(featured, PARALLEL, async (f) => [f.id, (await calm.getFeature(f.id)).transports] as const)),
   );
   const lines = [`Trace of ${head}`];
-  const describe = (taskId: string, indent: string) => {
+  const nodes: Record<string, unknown>[] = [];
+  const describe = (taskId: string, indent: string, parent: string | null = null) => {
     const t = n.taskOf(taskId);
+    const tcsAll = n.testCases.filter((x) => x.taskIds.includes(taskId));
+    nodes.push({
+      id: t?.displayId ?? taskId,
+      type: typeLabel(t?.type ?? null),
+      title: t?.title ?? null,
+      status: t ? taskStatus(t) : null,
+      under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
+      processes: (processLinks.get(taskId) ?? []).map(n.process),
+      features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
+      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || "not run" })),
+      documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
+      ...(t?.type === "CALMDEF" ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null } : {}),
+    });
     const out = [`${indent}${n.task(taskId)}${t?.tags.length ? ` #${t.tags.join(" #")}` : ""}`];
     const sub = `${" ".repeat(indent.length)}  `;
     // From a process, every task has that process: name only the others.
@@ -908,7 +941,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
   };
   for (const [reqId, kids] of groups) {
     lines.push(...describe(reqId, "- "));
-    for (const kid of kids) lines.push(...describe(kid, "    - "));
+    for (const kid of kids) lines.push(...describe(kid, "    - ", reqId));
   }
   if (!groups.size) lines.push("No linked tasks.");
   if (ref.kind === "test case" && n.defectsKnown) {
@@ -920,41 +953,67 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     if (tcs.length) lines.push(`Document's own test cases: ${tcs.map(n.testCase).join("; ")}`);
     if (ref.document.processIds.length) lines.push(`Document's processes: ${ref.document.processIds.map(n.process).join("; ")}`);
   }
-  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases", "processLinks"]));
-  return lines.join("\n");
+  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks"]);
+  lines.push(...footnotes);
+  return { text: lines.join("\n"), data: { start: { id: input.id, kind: ref.kind, label: head }, nodes, notes: footnotes } };
 }
 
 // ---------------------------------------------------------------------------
 // calm_gaps
 // ---------------------------------------------------------------------------
 
-export const GAP_CHECKS = ["untested", "failed_tests", "no_process", "no_feature", "features", "orphan_tests", "unprepared_tests"] as const;
+export const GAP_CHECKS = ["untested", "failed_tests", "no_process", "no_feature", "features", "orphan_tests", "unprepared_tests", "coverage"] as const;
 export type GapCheck = (typeof GAP_CHECKS)[number];
+/** Checked when none is named; `coverage` is a full matrix, asked for by name. */
+const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
+
+type GapItem = { id: string | null; type: string; title: string | null; status?: string | null; note?: string; testCases?: { id: string | null; result: string }[] };
 
 export async function gaps(
   calm: CloudAlm,
-  input: { projectId?: string; checks?: GapCheck[]; max?: number },
+  input: { projectId?: string; checks?: GapCheck[]; max?: number; offset?: number; includeClosed?: boolean },
   o: ViewOptions = {},
 ) {
-  const checks = new Set(input.checks?.length ? input.checks : GAP_CHECKS);
+  const checks = new Set(input.checks?.length ? input.checks : DEFAULT_CHECKS);
   const max = Math.min(Math.max(input.max ?? 20, 1), 200);
+  const offset = Math.max(input.offset ?? 0, 0);
   const snap = await snapshotFor(calm, input.projectId, o);
   const n = await namer(snap, [
     "tasks",
     "features",
     "testCases",
     "processLinks",
-    ...(checks.has("failed_tests") ? (["testResults", "defects"] as const) : []),
+    ...(checks.has("failed_tests") || checks.has("coverage") ? (["testResults", "defects"] as const) : []),
   ]);
   const { tasks, features, testCases, processLinks, results } = n;
-  const open = tasks.filter((t) => isOpen(t.status));
-  const reqs = open.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
+  const scope = input.includeClosed ? tasks : tasks.filter((t) => isOpen(t.status));
+  const reqs = scope.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
   const tested = new Set(testCases.flatMap((t) => t.taskIds));
   const featured = new Set(features.flatMap((f) => f.taskIds));
-  const lines = [`Gaps in ${snap.project.name ?? "the project"} (open requirements and user stories only):`];
-  const section = (title: string, items: string[], hint?: string) => {
-    lines.push("", `${title}: ${items.length}${items.length && hint ? ` — ${hint}` : ""}`);
-    lines.push(...capped(items, (x) => x, max));
+  const lines = [`Gaps in ${snap.project.name ?? "the project"} (${input.includeClosed ? "all" : "open"} requirements and user stories${input.includeClosed ? "" : "; includeClosed: true for all"}):`];
+  const sections: { check: GapCheck; title: string; total: number; items: GapItem[] }[] = [];
+  const taskItem = (t: TaskSummary, note?: string): GapItem & { line: string } => ({
+    id: t.displayId,
+    type: typeLabel(t.type),
+    title: t.title,
+    status: taskStatus(t),
+    ...(note ? { note } : {}),
+    line: `${taskLine(t)}${note ? ` — ${note}` : ""}`,
+  });
+  const section = (check: GapCheck, title: string, all: (GapItem & { line: string })[], hint?: string) => {
+    const page = all.slice(offset, offset + max);
+    lines.push("", `${title}: ${all.length}${all.length && hint ? ` — ${hint}` : ""}`);
+    lines.push(...page.map((x) => `- ${x.line}`));
+    if (offset + page.length < all.length) lines.push(`- … ${all.length - offset - page.length} more (offset ${offset + page.length})`);
+    sections.push({ check, title, total: all.length, items: page.map(({ line: _, ...x }) => x) });
+  };
+  const latestWord = (id: string) => {
+    const r = results.get(id) ?? [];
+    if (!r.length) return "not run";
+    if (r.some((x) => /fail/i.test(x.status))) return "failed";
+    if (r.every((x) => /pass/i.test(x.status))) return "passed";
+    if (r.some((x) => /progress/i.test(x.status))) return "in progress";
+    return "not run";
   };
   if (checks.has("untested")) {
     const missing = reqs.filter((t) => !tested.has(t.id));
@@ -963,50 +1022,78 @@ export async function gaps(
     const kidsOf = new Map(
       await pool(lookups, PARALLEL, async (t) => [t.id, (await snap.relations(t.id)).filter((r) => r.type === "0").map((r) => r.taskId)] as const),
     );
-    const items = missing.map((t) => {
-      const kids = kidsOf.get(t.id) ?? [];
-      const covered = kids.filter((k) => tested.has(k)).length;
-      return `${taskLine(t)}${kids.length ? ` (user stories under it with a test case: ${covered} of ${kids.length})` : ""}`;
-    });
-    section("Without a test case", items, "calm_get shows a task's description to draft one");
+    section(
+      "untested",
+      "Without a test case",
+      missing.map((t) => {
+        const kids = kidsOf.get(t.id) ?? [];
+        return taskItem(t, kids.length ? `user stories under it with a test case: ${kids.filter((k) => tested.has(k)).length} of ${kids.length}` : undefined);
+      }),
+      "calm_get shows a task's description to draft one",
+    );
   }
   if (checks.has("failed_tests")) {
     const failed = testCases.filter((t) => results.get(t.id)?.some((r) => /fail/i.test(r.status)));
-    const defectNote = (t: SnapTestCase) => {
-      if (!n.defectsKnown) return "";
-      const raised = n.defectsOf(t.id);
-      return raised.length ? ` — ${raised.map(n.defect).join("; ")}` : " — no defect raised";
-    };
     if (snap.unavailable.has("testResults") || snap.failed.has("testResults"))
       lines.push("", "Test cases whose latest run failed: unknown — test results need the key's analytics and test scopes (calm-api.analytics.read, calm-api.tests.read).");
-    else section(
-      "Test cases whose latest run failed",
-      failed.sort(byDisplayId).map((t) => `${testCaseLine(t, results.get(t.id))}${t.taskIds.length ? ` — covers ${t.taskIds.map((id) => { const k = n.taskOf(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; }).join(", ")}` : ""}${defectNote(t)}`),
-    );
+    else
+      section(
+        "failed_tests",
+        "Test cases whose latest run failed",
+        failed.sort(byDisplayId).map((t) => {
+          const covers = t.taskIds.map((id) => { const k = n.taskOf(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; });
+          const raised = n.defectsKnown ? n.defectsOf(t.id) : [];
+          const note = [covers.length ? `covers ${covers.join(", ")}` : "covers no task", n.defectsKnown ? (raised.length ? raised.map(n.defect).join("; ") : "no defect raised") : ""].filter(Boolean).join(" — ");
+          return { id: t.displayId, type: `${t.kind} test case`, title: t.title, status: "failed", note, line: `${testCaseLine(t, results.get(t.id))} — ${note}` };
+        }),
+      );
   }
   if (checks.has("no_process"))
-    section("Requirements without a solution process", reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).map(taskLine));
+    section("no_process", "Requirements without a solution process", reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).map((t) => taskItem(t)));
   if (checks.has("no_feature"))
-    section("Without a feature (not planned for delivery)", reqs.filter((t) => !featured.has(t.id)).map(taskLine));
+    section("no_feature", "Without a feature (not planned for delivery)", reqs.filter((t) => !featured.has(t.id)).map((t) => taskItem(t)));
   if (checks.has("features")) {
-    const items: string[] = [];
+    const items: (GapItem & { line: string })[] = [];
     for (const f of features) {
-      if (!f.taskIds.length) items.push(`${featureLine(f)} — delivers no requirement or user story`);
+      const base = { id: f.displayId, type: "feature", title: f.title, status: featureStatus(f.statusCode) };
+      if (!f.taskIds.length) items.push({ ...base, note: "delivers no requirement or user story", line: `${featureLine(f)} — delivers no requirement or user story` });
       else {
         const untested = f.taskIds.filter((id) => !tested.has(id));
-        if (untested.length && ["IN_TESTING", "IN_REALIZATION", "SUCCESSFULLY_TESTED"].includes(f.statusCode ?? ""))
-          items.push(`${featureLine(f)} — ${untested.length} of ${f.taskIds.length} tasks it delivers have no test case: ${untested.map((id) => n.taskOf(id)?.displayId ?? id).join(", ")}`);
+        if (untested.length && ["IN_TESTING", "IN_REALIZATION", "SUCCESSFULLY_TESTED"].includes(f.statusCode ?? "")) {
+          const note = `${untested.length} of ${f.taskIds.length} tasks it delivers have no test case: ${untested.map((id) => n.taskOf(id)?.displayId ?? id).join(", ")}`;
+          items.push({ ...base, note, line: `${featureLine(f)} — ${note}` });
+        }
       }
     }
-    section("Features with a gap", items);
+    section("features", "Features with no task, or untested tasks", items);
   }
+  const testItem = (t: SnapTestCase): GapItem & { line: string } => ({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", line: testCaseLine(t) });
   if (checks.has("orphan_tests"))
-    section("Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map((t) => testCaseLine(t)));
+    section("orphan_tests", "Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testItem));
   if (checks.has("unprepared_tests"))
-    section("Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map((t) => testCaseLine(t)));
+    section("unprepared_tests", "Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map(testItem));
+  if (checks.has("coverage")) {
+    // Every requirement and user story, its test cases and their latest results.
+    const rows = reqs.sort(byDisplayId).map((t) => {
+      const cases = testCases.filter((c) => c.taskIds.includes(t.id)).sort(byDisplayId);
+      const words = cases.map((c) => latestWord(c.id));
+      const verdict = !cases.length ? "no test" : words.includes("failed") ? "failed" : words.every((w) => w === "passed") ? "passed" : words.includes("in progress") ? "in progress" : "not run";
+      return {
+        ...taskItem(t, verdict),
+        testCases: cases.map((c, i) => ({ id: c.displayId, result: words[i] ?? "not run" })),
+        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}`).join(", ")}` : ""}`,
+      };
+    });
+    const tally = counts(rows.map((r) => r.note ?? ""));
+    section("coverage", `Coverage: requirements and user stories × test cases × latest result (${tally})`, rows);
+  }
   lines.push("", "Links counted: test case → task (Test Management), feature → task, task → solution process. Direct links only.");
-  lines.push(...footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "defects"]));
-  return lines.join("\n");
+  const footnotes = footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "defects"]);
+  lines.push(...footnotes);
+  return {
+    text: lines.join("\n"),
+    data: { project: { id: snap.project.id, name: snap.project.name }, scope: input.includeClosed ? "all" : "open", offset, sections, notes: footnotes },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1154,12 +1241,23 @@ export async function analytics(
       for (const c of numeric.filter((c) => !groupBy.includes(c) && !NOT_SUMMED.test(c))) acc[c] = (acc[c] ?? 0) + Number(r[c] ?? 0);
       groups.set(key, acc);
     }
-    return [
+    const shownGroups = [...groups.entries()].slice(0, input.limit ?? 50);
+    const text = [
       `${dataset} by ${groupBy.join(", ")}${latest && !groupBy.includes("date") ? `, as of ${latest}` : ""} (${day.length} rows${dates.length > 1 && !groupBy.includes("date") ? `, the latest of ${dates.length} daily snapshots` : ""}${result.truncated ? "; cut at 200 rows" : ""}):`,
       ...notes,
-      ...[...groups.entries()].slice(0, input.limit ?? 50).map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
+      ...shownGroups.map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
       FRESHNESS,
     ].join("\n");
+    return {
+      text,
+      data: {
+        dataset,
+        groupBy,
+        asOf: groupBy.includes("date") ? null : (latest ?? null),
+        totalGroups: groups.size,
+        groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, k.split(" · ")[i] ?? null])), values: v })),
+      },
+    };
   }
   const cols = result.columns.filter((c) => rows.some((r) => r[c] !== null && r[c] !== ""));
   // Columns equal on every row are printed once, not per row.
@@ -1168,7 +1266,7 @@ export async function analytics(
   const cell = (v: unknown) => short(String(v), 60);
   const when = latest ? (dates.length > 1 ? `, daily snapshots ${dates[0]} to ${latest}` : `, as of ${latest}`) : "";
   const shown = Math.min(rows.length, input.limit ?? 10);
-  return [
+  const text = [
     `${dataset}: ${rows.length} rows${when}${result.truncated ? " (cut at 200)" : ""}${varying.length && shown < rows.length ? `; showing ${shown} (pass limit for more)` : ""}. Use groupBy to count${info.columns ? ` (e.g. ${info.columns.filter((c) => result.columns.includes(c)).slice(0, 3).join(", ")}, or date for a daily series)` : ""}.`,
     ...notes,
     same.length ? `All rows: ${same.map((c) => `${c}=${cell(rows[0]?.[c])}`).join("; ")}` : "",
@@ -1177,6 +1275,10 @@ export async function analytics(
   ]
     .filter(Boolean)
     .join("\n");
+  return {
+    text,
+    data: { dataset, total: rows.length, columns: cols, rows: rows.slice(0, input.limit ?? 10).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))) },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,8 +1311,19 @@ export async function landscape(calm: CloudAlm) {
     const openEvents = events.items.filter((e) => isOpenEvent(e.status));
     lines.push("", `Service status events: ${openEvents.length} open, ${events.items.length - openEvents.length} closed (${counts(events.items.map((e) => e.type ?? "?"))})`);
     const recent = [...events.items].sort((x, y) => (y.startTime ?? "").localeCompare(x.startTime ?? ""));
+    const now = new Date().toISOString();
+    const upcoming = events.items.filter((e) => (e.startTime ?? "") > now);
+    lines.push(upcoming.length ? `Announced for later: ${upcoming.length} (listed below)` : "Nothing announced for later: no event starts after now. SAP announces maintenance here once it is planned.");
     for (const e of [...openEvents, ...recent.filter((e) => !isOpenEvent(e.status)).slice(0, Math.max(0, 10 - openEvents.length))])
       lines.push(`- ${e.status ?? "?"} · ${e.type ?? "?"} · ${(e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName || "?"} · ${e.startTime?.slice(0, 10) ?? ""}${e.endTime ? `–${e.endTime.slice(0, 10)}` : ""} · ${eventText(e)}`);
   }
-  return lines.join("\n");
+  return {
+    text: lines.join("\n"),
+    data: {
+      objects: objects.items.map((o) => ({ name: label(o), type: o.objectType, system: o.systemNumber, role: o.role })),
+      events: events
+        ? events.items.map((e) => ({ status: e.status, type: e.type, service: (e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName, start: e.startTime, end: e.endTime, text: eventText(e) }))
+        : null,
+    },
+  };
 }

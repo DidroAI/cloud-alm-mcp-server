@@ -60,3 +60,30 @@ export const GET_OUT = z.object({
   ),
   errors: z.array(z.object({ id: z.string(), error: z.string() })),
 });
+
+export const GAPS_OUT = z.object({
+  project,
+  scope: z.enum(["open", "all"]),
+  offset: z.number().int(),
+  sections: z.array(
+    z.object({
+      check: z.string(),
+      title: z.string(),
+      total: z.number().int(),
+      items: z.array(
+        z.looseObject({
+          id: str,
+          type: z.string(),
+          title: str,
+          status: str.optional(),
+          note: z.string().optional(),
+          testCases: z.array(z.object({ id: str, result: z.string() })).optional(),
+        }),
+      ),
+    }),
+  ),
+  notes: z.array(z.string()),
+});
+
+/** Loose answers: the text says it all; the data carries the numbers and ids. */
+export const LOOSE_OUT = z.looseObject({});

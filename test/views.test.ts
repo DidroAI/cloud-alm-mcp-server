@@ -227,7 +227,7 @@ describe("snapshot cache", () => {
     const { overview } = await import("../src/views/tools.js");
     await expect(overview(calm, {})).rejects.toThrow("503");
     fail = false;
-    expect(await overview(calm, {})).toContain("Features: 1");
+    expect((await overview(calm, {})).text).toContain("Features: 1");
   });
 });
 
