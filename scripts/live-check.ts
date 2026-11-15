@@ -10,9 +10,8 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { clientCredentials, parseServiceKey } from "../src/calm/index.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createHttpHandler } from "../src/http.js";
 
 const keyPath = process.env.CALM_SERVICE_KEY;

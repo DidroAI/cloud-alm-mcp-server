@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { CARD_URI, cardHtml, clearPending, META_KEY, propose, take } from "../src/approval.js";
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
@@ -44,7 +42,7 @@ async function connect(kind: ClientKind, options: ServerOptions) {
   const client = new Client({ name: "test", version: "0" }, { capabilities: capabilities as never });
   const prompts: string[] = [];
   if (kind.startsWith("elicit"))
-    client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    client.setRequestHandler('elicitation/create', async (request) => {
       prompts.push(String(request.params.message));
       return kind === "elicit-accept" ? { action: "accept", content: { approve: true } } : { action: "decline" };
     });

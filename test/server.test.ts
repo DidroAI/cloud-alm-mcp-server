@@ -2,9 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, StreamableHTTPClientTransport, InMemoryTransport } from "@modelcontextprotocol/client";
 import { CloudAlm } from "../src/calm/index.js";
 import { createHttpHandler } from "../src/http.js";
 import {

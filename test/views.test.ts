@@ -3,8 +3,7 @@
  * analytics, defect links, tags, ids from titles, parallel reads, cache).
  */
 import { describe, expect, test } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { CloudAlm } from "../src/calm/index.js";
 import { looksInternal, readAnswer } from "../src/calm/transport.js";
 import { createServer, type ServerOptions } from "../src/server.js";

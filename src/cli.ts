@@ -9,11 +9,11 @@
  */
 import { createServer as createHttpServer } from "node:http";
 import { text } from "node:stream/consumers";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { COMMANDS, runCommand } from "./cli/main.js";
 import { createHttpHandler } from "./http.js";
 import { toNodeListener } from "./node-http.js";
-import { stdioServer } from "./stdio.js";
+import { stdioFactory } from "./stdio.js";
 
 const mode = process.argv[2] ?? "stdio";
 
@@ -30,7 +30,8 @@ if (COMMANDS.includes(mode)) {
   );
 } else if (mode === "stdio") {
   try {
-    await stdioServer().connect(new StdioServerTransport());
+    // Serves 2026-07-28 clients and, on the same pipe, 2025-era ones.
+    serveStdio(stdioFactory(), { onerror: (e) => console.error(e.message) });
   } catch (error) {
     // stdout carries the protocol; messages go to stderr.
     console.error(error instanceof Error ? error.message : "Could not start.");

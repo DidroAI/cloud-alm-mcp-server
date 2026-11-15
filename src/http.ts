@@ -5,7 +5,7 @@ import {
   CloudAlmError,
   type CloudAlmOptions,
 } from "./calm/index.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { createMcpHandler, isLegacyRequest, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { CloudAlmWriter } from "./calm/writer.js";
 import { createServer, type ServerOptions, serverOptionsFromEnv } from "./server.js";
 
@@ -51,6 +51,36 @@ function refuse(
 export function createHttpHandler(options: HttpOptions = {}) {
   const maxBody = options.maxBodyBytes ?? 256 * 1024;
   const serverOptions = options.server ?? serverOptionsFromEnv();
+  const writes = serverOptions.writeMode && serverOptions.writeMode !== "off";
+  // One server per request, for both protocol eras (2026-07-28 and the
+  // 2025 handshake, served statelessly). Nothing outlives the request.
+  const make = (token: string, baseUrl: string) => {
+    const grant = { accessToken: token, baseUrl };
+    return createServer(new CloudAlm(grant, options.reader ?? {}), {
+      ...serverOptions,
+      ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
+      // Stateless: no 2025-era dialog can be sent; approvals arrive in a
+      // later request (card or chat), and only from the same token.
+      approvalDialog: false,
+      approvalSubject: subjectOf(token),
+    });
+  };
+  const mcp = createMcpHandler(({ authInfo }) => make(authInfo?.token ?? "", String(authInfo?.extra?.baseUrl ?? "")), {
+    responseMode: "json",
+    maxRequestBodySize: maxBody,
+    legacy: "reject",
+  });
+  /** A 2025-era request: one server, answered as plain JSON, as before. */
+  const legacy = async (request: Request, token: string, baseUrl: string) => {
+    const server = make(token, baseUrl);
+    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
+    await server.connect(transport);
+    try {
+      return await transport.handleRequest(request);
+    } finally {
+      await server.close().catch(() => undefined);
+    }
+  };
   return async (request: Request): Promise<Response> => {
     if (request.method !== "POST")
       return refuse(
@@ -80,29 +110,10 @@ export function createHttpHandler(options: HttpOptions = {}) {
           : "Bad Cloud ALM API address.",
       );
     }
-    const calm = new CloudAlm(
-      { accessToken: match[1], baseUrl },
-      options.reader ?? {},
-    );
-    const grant = { accessToken: match[1], baseUrl };
-    const writes = serverOptions.writeMode && serverOptions.writeMode !== "off";
-    const server = createServer(calm, {
-      ...serverOptions,
-      ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
-      // Stateless: no dialog can be sent; approvals arrive in a later request
-      // (card or chat), and only from the same token.
-      approvalDialog: false,
-      approvalSubject: subjectOf(match[1]),
+    if (await isLegacyRequest(request, undefined, { maxRequestBodySize: maxBody })) return legacy(request, match[1], baseUrl);
+    // 2026-07-28: the token and API root ride the request to the factory.
+    return mcp.fetch(request, {
+      authInfo: { token: match[1], clientId: "bearer", scopes: [], extra: { baseUrl } },
     });
-    // No session id generator: stateless, one server per request.
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      enableJsonResponse: true,
-    });
-    await server.connect(transport);
-    try {
-      return await transport.handleRequest(request);
-    } finally {
-      await server.close().catch(() => undefined);
-    }
   };
 }

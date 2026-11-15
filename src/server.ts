@@ -8,15 +8,24 @@ import {
   registerAppResource,
   registerAppTool,
 } from "@modelcontextprotocol/ext-apps/server";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  acceptedContent,
+  CLIENT_CAPABILITIES_META_KEY,
+  createRequestStateCodec,
+  inputRequired,
+  McpServer,
+} from "@modelcontextprotocol/server";
+import type { CallToolResult, ClientCapabilities, ServerContext } from "@modelcontextprotocol/server";
+import { randomBytes } from "node:crypto";
 import {
   APPROVAL_MODES,
+  TTL_MS,
   ApprovalError,
   type ApprovalMode,
   CARD_URI,
   cardHtml,
   META_KEY,
+  peek,
   propose,
   take,
 } from "./approval.js";
@@ -148,13 +157,20 @@ const INSTRUCTIONS =
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
  * Every tool is read-only; the server holds no credentials of its own.
  */
+/** Process-wide: a dialog's retry reaches the process that asked. */
+const STATE_KEY = randomBytes(32);
+
 export function createServer(
   calm: CloudAlm,
   options: ServerOptions = {},
 ): McpServer {
+  const subject = options.approvalSubject ?? "local";
+  // Signs the proposal id that rides the client's confirm dialog (2026-07-28).
+  const stateCodec = createRequestStateCodec<{ id: string }>({ key: STATE_KEY, ttlSeconds: TTL_MS / 1000, bind: () => subject });
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
+      requestState: { verify: stateCodec.verify },
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
           ? options.approval && options.approval !== "off"
@@ -170,20 +186,42 @@ export function createServer(
   const writeMode = options.writeMode ?? "off";
   const approval: ApprovalMode =
     options.writer && writeMode === "on" ? (options.approval ?? "off") : "off";
-  const subject = options.approvalSubject ?? "local";
   /** Write tools by name, so an approval can run the stored call. */
   const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
 
-  type Extra = { requestId: string | number; signal: AbortSignal };
+  type Extra = ServerContext;
+  const approveSchema = z.object({ approve: z.boolean().describe("Approve this change") });
+  /** The client's capabilities: per request in the 2026-07-28 era, from the handshake before. */
+  const capabilitiesOf = (ctx: Extra): ClientCapabilities | undefined =>
+    ctx.mcpReq.envelope
+      ? ((ctx.mcpReq.envelope as Record<string, unknown>)[CLIENT_CAPABILITIES_META_KEY] as ClientCapabilities | undefined)
+      : server.server.getClientCapabilities();
+  const runApproved = async (id: string, nonce: string | undefined, run: (args: Record<string, unknown>) => Promise<string>, args: Record<string, unknown>) => {
+    try {
+      take(id, subject, nonce, Date.now(), true);
+    } catch (error) {
+      if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] } as CallToolResult;
+      throw error;
+    }
+    return answer(() => run({ ...args, dryRun: false }));
+  };
   const gated = async (
     name: string,
     title: string,
     args: Record<string, unknown>,
     run: (args: Record<string, unknown>) => Promise<string>,
-    extra: Extra,
+    ctx: Extra,
   ): Promise<CallToolResult> => {
     // "Create a defect" rather than the tool's generic "Create a task".
     if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
+    // 2026-07-28: the retry after the client's confirm dialog carries the
+    // proposal id in the signed request state and the user's answer.
+    const state = ctx.mcpReq.envelope ? ctx.mcpReq.requestState<{ id: string }>() : undefined;
+    if (state && typeof state === "object" && state.id) {
+      if (acceptedContent(ctx.mcpReq.inputResponses, "approve", approveSchema)?.approve === true) return runApproved(state.id, undefined, run, args);
+      const kept = peek(state.id, subject);
+      if (kept) return proposalAnswer(name, title, kept.preview, { id: state.id, nonce: kept.nonce, expiresAt: kept.expiresAt });
+    }
     const preview = await answer(() => run({ ...args, dryRun: true }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
@@ -192,32 +230,33 @@ export function createServer(
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });
-    if (options.approvalDialog && server.server.getClientCapabilities()?.elicitation) {
-      const result = await server.server
+    if (options.approvalDialog && capabilitiesOf(ctx)?.elicitation) {
+      const message = `Cloud ALM: ${title}\n\n${text}`;
+      if (ctx.mcpReq.envelope)
+        return inputRequired({
+          inputRequests: { approve: inputRequired.elicit({ message, requestedSchema: approveSchema }) },
+          requestState: await stateCodec.mint({ id: p.id }),
+        }) as unknown as CallToolResult;
+      const result = await ctx.mcpReq
         .elicitInput(
           {
             mode: "form",
-            message: `Cloud ALM: ${title}\n\n${text}`,
+            message,
             requestedSchema: {
               type: "object",
               properties: { approve: { type: "boolean", title: "Approve this change", default: true } },
               required: ["approve"],
             },
           },
-          { relatedRequestId: extra.requestId, signal: extra.signal, timeout: 5 * 60_000 },
+          { signal: ctx.mcpReq.signal, timeout: 5 * 60_000 },
         )
         .catch(() => undefined);
-      if (result?.action === "accept" && result.content?.approve === true) {
-        try {
-          take(p.id, subject, p.nonce);
-        } catch (error) {
-          if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
-          throw error;
-        }
-        return answer(() => run({ ...args, dryRun: false }));
-      }
+      if (result?.action === "accept" && result.content?.approve === true) return runApproved(p.id, p.nonce, run, args);
       // Some clients decline without showing the dialog: keep the proposal.
     }
+    return proposalAnswer(name, title, text, p);
+  };
+  const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }): CallToolResult => {
     const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
@@ -227,7 +266,7 @@ export function createServer(
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
       // Some hosts show the model only structuredContent, so it repeats the
       // ask; the nonce stays in _meta.
-      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, expiresAt: p.expiresAt, chat: approval === "prefer", next: ask } },
+      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, expiresAt: new Date(p.expiresAt).toISOString(), chat: approval === "prefer", next: ask } },
       _meta: { [META_KEY]: { ...p, title, tool: name, preview: text, chat: approval === "prefer" } },
     };
   };
@@ -554,6 +593,7 @@ export function createServer(
       ((a: { id: string; nonce?: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
     );
     if (approval === "prefer")
+      /* @mcp-codemod-error Could not verify `inputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
       server.registerTool(
         "calm_confirm",
         {

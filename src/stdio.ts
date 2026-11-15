@@ -59,6 +59,18 @@ export function stdioServer(
   env: Record<string, string | undefined> = process.env,
   options: CloudAlmOptions = {},
 ) {
+  return stdioFactory(env, options)();
+}
+
+/**
+ * A factory for `serveStdio`: the key is read and its clients built once,
+ * so every server it makes (one per connection, and the 2026-07-28
+ * discovery probe) shares the token and the cached project reads.
+ */
+export function stdioFactory(
+  env: Record<string, string | undefined> = process.env,
+  options: CloudAlmOptions = {},
+) {
   const source = keySource(env, existsSync);
   if (!source)
     throw new Error(
@@ -66,10 +78,11 @@ export function stdioServer(
     );
   const serverOptions = serverOptionsFromEnv(env);
   const { reader, writer } = clientsFrom(loadServiceKey(source, env), options);
-  return createServer(reader, {
-    ...serverOptions,
-    ...(serverOptions.writeMode && serverOptions.writeMode !== "off"
-      ? { writer }
-      : {}),
-  });
+  return () =>
+    createServer(reader, {
+      ...serverOptions,
+      ...(serverOptions.writeMode && serverOptions.writeMode !== "off"
+        ? { writer }
+        : {}),
+    });
 }

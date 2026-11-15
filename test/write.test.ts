@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
 import { createServer, type ServerOptions, WRITE_TOOL_NAMES } from "../src/server.js";
