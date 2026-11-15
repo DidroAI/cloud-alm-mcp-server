@@ -525,7 +525,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref): Promi
     const [t, relations] = await Promise.all([calm.getTask(ref.task.id, { links: false }), snap.relations(ref.task.id)]);
     lines.push(
       `${t.displayId} ${typeLabel(t.type)} · ${taskStatus(t)}${t.priority !== null ? ` · priority ${priorityLabel(t.priority)}` : ""} · "${t.title}" [${t.id}]`,
-      [t.scopeName && `scope ${t.scopeName}`, t.timeboxName && `phase ${t.timeboxName}`, t.assigneeName && `assignee ${t.assigneeName}`, t.dueDate && `due ${t.dueDate}`, t.tags.length && `tags ${t.tags.join(", ")}`, t.createdAt && `created ${t.createdAt.slice(0, 10)}`]
+      [t.scopeName && `scope ${t.scopeName}`, t.timeboxName && `phase ${t.timeboxName}`, `assignee ${t.assigneeName ?? "none"}`, `due ${t.dueDate ?? "none"}`, t.tags.length && `tags ${t.tags.join(", ")}`, t.createdAt && `created ${t.createdAt.slice(0, 10)}`]
         .filter(Boolean)
         .join(" · "),
     );

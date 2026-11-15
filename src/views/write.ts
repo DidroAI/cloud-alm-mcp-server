@@ -419,6 +419,9 @@ export async function createTask(
     description?: string;
     priority?: number;
     requirement?: string;
+    assignee?: string;
+    startDate?: string;
+    dueDate?: string;
     tags?: string[];
     projectId?: string;
     dryRun?: boolean;
@@ -426,6 +429,9 @@ export async function createTask(
   o: WriteOptions,
 ) {
   for (const t of input.tags ?? []) checkTag(t);
+  for (const field of ["startDate", "dueDate"] as const)
+    if (input[field] && !/^\d{4}-\d{2}-\d{2}$/.test(input[field] as string))
+      throw new CloudAlmError("bad_request", `${field} must be YYYY-MM-DD`);
   const snap = await snapshot(calm, input.projectId, o);
   const tasks = await snap.tasks();
   requireComplete(snap);
@@ -449,10 +455,13 @@ export async function createTask(
     title,
     ...(input.description ? { description: textToHtml(input.description) } : {}),
     priorityId: input.priority ?? 30,
+    ...(input.assignee ? { assigneeId: input.assignee } : {}),
+    ...(input.startDate ? { startDate: input.startDate } : {}),
+    ...(input.dueDate ? { dueDate: input.dueDate } : {}),
     ...(scopeId ? { scopeId } : {}),
     ...(parent ? { parentId: parent.id } : {}),
   };
-  const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
+  const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.assignee ? `, assigned to ${input.assignee}` : ""}${input.startDate ? `, start ${input.startDate}` : ""}${input.dueDate ? `, due ${input.dueDate}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
   if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.`;
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
   if (!created?.id)
