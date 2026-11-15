@@ -11,7 +11,8 @@ import {
   loadServiceKey,
   SERVICE_KEY_ENV,
 } from "./cli/key.js";
-import { createServer, serverOptionsFromEnv } from "./server.js";
+import { tokenScopes, writeToolsFor } from "./cli/scopes.js";
+import { createServer, serverOptionsForKey } from "./server.js";
 
 export { SERVICE_KEY_ENV };
 
@@ -19,12 +20,13 @@ export { SERVICE_KEY_ENV };
 function clientsFrom(
   key: ReturnType<typeof loadServiceKey>,
   options: CloudAlmOptions,
-): { reader: CloudAlm; writer: CloudAlmWriter } {
+): { reader: CloudAlm; writer: CloudAlmWriter; grants: ReturnType<typeof serviceKeyGrants> } {
   const fetcher = options.fetch;
   const grants = serviceKeyGrants(key, fetcher ? { fetch: fetcher } : {});
   return {
     reader: new CloudAlm(grants, options),
     writer: new CloudAlmWriter(grants, options),
+    grants,
   };
 }
 
@@ -33,10 +35,11 @@ export function clientsFromKeyFile(
   path: string,
   options: CloudAlmOptions = {},
 ): { reader: CloudAlm; writer: CloudAlmWriter } {
-  return clientsFrom(
+  const { reader, writer } = clientsFrom(
     loadServiceKey({ kind: "file", path: expandHome(path), label: path }, {}),
     options,
   );
+  return { reader, writer };
 }
 
 /**
@@ -52,8 +55,8 @@ export function readerFromKeyFile(
 
 /**
  * The MCP server for stdio mode. The key comes from `CALM_SERVICE_KEY` (a
- * file path or the JSON itself), else from the file `init` saved. Tool
- * options (`CALM_WRITE`, `CALM_TOOLS`, `CALM_PROJECT`) come from `env`.
+ * file path or the JSON itself), else from the file `init` saved. The key
+ * decides the rest: write tools when its scopes allow them.
  */
 export function stdioServer(
   env: Record<string, string | undefined> = process.env,
@@ -65,7 +68,9 @@ export function stdioServer(
 /**
  * A factory for `serveStdio`: the key is read and its clients built once,
  * so every server it makes (one per connection, and the 2026-07-28
- * discovery probe) shares the token and the cached project reads.
+ * discovery probe) shares the token and the cached project reads. The
+ * token's scopes, read once, say which write tools to offer; when no token
+ * can be had, the read tools are offered and answer with the error.
  */
 export function stdioFactory(
   env: Record<string, string | undefined> = process.env,
@@ -76,13 +81,13 @@ export function stdioFactory(
     throw new Error(
       `No Cloud ALM service key: run \`cloud-alm-mcp-server init\`, or set ${SERVICE_KEY_ENV} to the key file's path (or its JSON).`,
     );
-  const serverOptions = serverOptionsFromEnv(env);
-  const { reader, writer } = clientsFrom(loadServiceKey(source, env), options);
-  return () =>
-    createServer(reader, {
-      ...serverOptions,
-      ...(serverOptions.writeMode && serverOptions.writeMode !== "off"
-        ? { writer }
-        : {}),
-    });
+  const { reader, writer, grants } = clientsFrom(loadServiceKey(source, env), options);
+  let writeTools: Promise<string[]> | undefined;
+  return async () => {
+    writeTools ??= grants().then(
+      (g) => writeToolsFor(tokenScopes(g.accessToken)),
+      () => [],
+    );
+    return createServer(reader, serverOptionsForKey(writer, await writeTools));
+  };
 }

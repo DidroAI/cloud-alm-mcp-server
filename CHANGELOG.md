@@ -6,6 +6,15 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- No settings: the key decides. A read-only key gets the read tools; a key
+  with write scopes also gets the write tools those scopes allow, each
+  write waiting for the user's approval (card or chat). `CALM_WRITE`,
+  `CALM_APPROVAL`, `CALM_APPROVAL_DIALOG`, `CALM_TOOLS` and `CALM_PROJECT`
+  are gone; projects are named per call.
+- No confirm dialog (MCP elicitation): some clients decline it unseen.
+
 ## [0.1.0-beta.1] - 2026-11-15
 
 ### Changed

@@ -8,7 +8,7 @@ import { createHttpHandler } from "../src/http.js";
 import {
   createServer,
   type ServerOptions,
-  serverOptionsFromEnv,
+  serverOptionsForKey,
   TOOL_NAMES,
 } from "../src/server.js";
 import { readerFromKeyFile, stdioServer } from "../src/stdio.js";
@@ -164,12 +164,14 @@ describe("tools", () => {
   test("allow list and default project", async () => {
     const { client } = await connect(TENANT, { tools: ["calm_overview", "calm_get"] });
     expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["calm_overview", "calm_get"]);
-    expect(serverOptionsFromEnv({ CALM_PROJECT: PROJECT_ID, CALM_TOOLS: "calm_list, calm_get" })).toEqual({
-      defaultProject: PROJECT_ID,
-      tools: ["calm_list", "calm_get"],
-    });
-    expect(() => serverOptionsFromEnv({ CALM_TOOLS: "calm_drop" })).toThrow("unknown tools calm_drop");
-    expect(() => serverOptionsFromEnv({ CALM_PROJECT: "x" })).toThrow("GUID");
+    // The key decides: no write scopes, no write tools; some, those only.
+    expect(serverOptionsForKey(undefined, ["calm_create_task"])).toEqual({});
+    expect(serverOptionsForKey({} as never, [])).toEqual({});
+    const w = serverOptionsForKey({} as never, ["calm_comment"]);
+    expect(w.writeMode).toBe("on");
+    expect(w.approval).toBe("prefer");
+    expect(w.tools).toContain("calm_comment");
+    expect(w.tools).not.toContain("calm_delete");
   });
 
   test("a tenant with several projects asks for one", async () => {

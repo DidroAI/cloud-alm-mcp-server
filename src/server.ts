@@ -8,24 +8,14 @@ import {
   registerAppResource,
   registerAppTool,
 } from "@modelcontextprotocol/ext-apps/server";
+import { McpServer } from "@modelcontextprotocol/server";
+import type { CallToolResult, ServerContext } from "@modelcontextprotocol/server";
 import {
-  acceptedContent,
-  CLIENT_CAPABILITIES_META_KEY,
-  createRequestStateCodec,
-  inputRequired,
-  McpServer,
-} from "@modelcontextprotocol/server";
-import type { CallToolResult, ClientCapabilities, ServerContext } from "@modelcontextprotocol/server";
-import { randomBytes } from "node:crypto";
-import {
-  APPROVAL_MODES,
-  TTL_MS,
   ApprovalError,
   type ApprovalMode,
   CARD_URI,
   cardHtml,
   META_KEY,
-  peek,
   propose,
   take,
 } from "./approval.js";
@@ -145,17 +135,11 @@ export type ServerOptions = ViewOptions & {
    * environment defaults to prefer), prefer or required. See approval.ts.
    */
   approval?: ApprovalMode;
-  /**
-   * Also ask in the client's confirm dialog (MCP elicitation) when it
-   * declares one. Off by default: only terminal clients show it reliably;
-   * others decline unseen. Never over stateless HTTP.
-   */
-  approvalDialog?: boolean;
   /** Who may approve a pending write: a hash of the caller's token, or "local". */
   approvalSubject?: string;
 };
 
-/** Tools of the approval flow; offered with approval on, outside CALM_TOOLS. */
+/** Tools of the approval flow; offered whenever writes wait for approval. */
 export const APPROVAL_TOOL_NAMES = ["calm_approve", "calm_confirm"] as const;
 
 /** A dry run's answer without its "nothing sent" lead, for the user. */
@@ -168,28 +152,22 @@ const INSTRUCTIONS =
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
  * Every tool is read-only; the server holds no credentials of its own.
  */
-/** Process-wide: a dialog's retry reaches the process that asked. */
-const STATE_KEY = randomBytes(32);
-
 export function createServer(
   calm: CloudAlm,
   options: ServerOptions = {},
 ): McpServer {
   const subject = options.approvalSubject ?? "local";
-  // Signs the proposal id that rides the client's confirm dialog (2026-07-28).
-  const stateCodec = createRequestStateCodec<{ id: string }>({ key: STATE_KEY, ttlSeconds: TTL_MS / 1000, bind: () => subject });
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
-      requestState: { verify: stateCodec.verify },
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
           ? options.approval && options.approval !== "off"
             ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${options.approval === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
             : "Write tools are on: confirm with the user before each write (show the dryRun preview); calm_delete cannot be undone, and features cannot be deleted at all."
           : options.writer && options.writeMode === "dry-run"
-            ? "Write tools are in dry-run mode, set by the operator (CALM_WRITE=dry-run): they only preview, even with dryRun false. Tell the user what would be written."
-            : "Read-only: no write tools."
+            ? "Write tools are in dry-run mode, set by whoever embeds this server: they only preview, even with dryRun false. Tell the user what would be written."
+            : "Read-only: the service key has no write scopes, so there are no write tools. To change something, the user asks for a key with write scopes."
       }`,
     },
   );
@@ -201,21 +179,6 @@ export function createServer(
   const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
 
   type Extra = ServerContext;
-  const approveSchema = z.object({ approve: z.boolean().describe("Approve this change") });
-  /** The client's capabilities: per request in the 2026-07-28 era, from the handshake before. */
-  const capabilitiesOf = (ctx: Extra): ClientCapabilities | undefined =>
-    ctx.mcpReq.envelope
-      ? ((ctx.mcpReq.envelope as Record<string, unknown>)[CLIENT_CAPABILITIES_META_KEY] as ClientCapabilities | undefined)
-      : server.server.getClientCapabilities();
-  const runApproved = async (id: string, nonce: string | undefined, run: (args: Record<string, unknown>) => Promise<string>, args: Record<string, unknown>) => {
-    try {
-      take(id, subject, nonce, Date.now(), true);
-    } catch (error) {
-      if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] } as CallToolResult;
-      throw error;
-    }
-    return answer(() => run({ ...args, dryRun: false }));
-  };
   const gated = async (
     name: string,
     title: string,
@@ -225,14 +188,6 @@ export function createServer(
   ): Promise<CallToolResult> => {
     // "Create a defect" rather than the tool's generic "Create a task".
     if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
-    // 2026-07-28: the retry after the client's confirm dialog carries the
-    // proposal id in the signed request state and the user's answer.
-    const state = ctx.mcpReq.envelope ? ctx.mcpReq.requestState<{ id: string }>() : undefined;
-    if (state && typeof state === "object" && state.id) {
-      if (acceptedContent(ctx.mcpReq.inputResponses, "approve", approveSchema)?.approve === true) return runApproved(state.id, undefined, run, args);
-      const kept = peek(state.id, subject);
-      if (kept) return proposalAnswer(name, title, kept.preview, { id: state.id, nonce: kept.nonce, expiresAt: kept.expiresAt });
-    }
     const preview = await answer(() => run({ ...args, dryRun: true }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
@@ -241,30 +196,6 @@ export function createServer(
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });
-    if (options.approvalDialog && capabilitiesOf(ctx)?.elicitation) {
-      const message = `Cloud ALM: ${title}\n\n${text}`;
-      if (ctx.mcpReq.envelope)
-        return inputRequired({
-          inputRequests: { approve: inputRequired.elicit({ message, requestedSchema: approveSchema }) },
-          requestState: await stateCodec.mint({ id: p.id }, ctx),
-        }) as unknown as CallToolResult;
-      const result = await ctx.mcpReq
-        .elicitInput(
-          {
-            mode: "form",
-            message,
-            requestedSchema: {
-              type: "object",
-              properties: { approve: { type: "boolean", title: "Approve this change", default: true } },
-              required: ["approve"],
-            },
-          },
-          { signal: ctx.mcpReq.signal, timeout: 5 * 60_000 },
-        )
-        .catch(() => undefined);
-      if (result?.action === "accept" && result.content?.approve === true) return runApproved(p.id, p.nonce, run, args);
-      // Some clients decline without showing the dialog: keep the proposal.
-    }
     return proposalAnswer(name, title, text, p);
   };
   const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }): CallToolResult => {
@@ -687,43 +618,13 @@ export function createServer(
 }
 
 /**
- * Server options from the environment: `CALM_PROJECT` (default project
- * GUID), `CALM_TOOLS` (comma-separated tool names to offer), `CALM_WRITE`
- * (off, on, dry-run).
+ * Server options from the key: write tools when its scopes allow them (a
+ * read-only key gets read tools only), every write waiting for the user's
+ * approval. There is nothing else to configure.
  */
-export function serverOptionsFromEnv(
-  env: Record<string, string | undefined> = process.env,
-): ServerOptions {
-  const options: ServerOptions = {};
-  const project = env.CALM_PROJECT?.trim();
-  if (project) {
-    if (!GUID.test(project)) throw new Error("CALM_PROJECT must be a project GUID.");
-    options.defaultProject = project;
-  }
-  const write = env.CALM_WRITE?.trim().toLowerCase();
-  if (write) {
-    if (!["off", "on", "dry-run"].includes(write)) throw new Error("CALM_WRITE must be off, on or dry-run.");
-    options.writeMode = write as "off" | "on" | "dry-run";
-  }
-  const approval = env.CALM_APPROVAL?.trim().toLowerCase();
-  if (approval) {
-    if (!(APPROVAL_MODES as string[]).includes(approval))
-      throw new Error("CALM_APPROVAL must be off, prefer or required.");
-    options.approval = approval as ApprovalMode;
-  } else if (options.writeMode === "on") options.approval = "prefer";
-  const dialog = env.CALM_APPROVAL_DIALOG?.trim().toLowerCase();
-  if (dialog) {
-    if (!["on", "off"].includes(dialog)) throw new Error("CALM_APPROVAL_DIALOG must be on or off.");
-    options.approvalDialog = dialog === "on";
-  }
-  const tools = env.CALM_TOOLS?.split(",").map((t) => t.trim()).filter(Boolean);
-  if (tools?.length) {
-    const known = [...TOOL_NAMES, ...WRITE_TOOL_NAMES] as readonly string[];
-    const unknown = tools.filter((t) => !known.includes(t));
-    if (unknown.length) throw new Error(`CALM_TOOLS: unknown tools ${unknown.join(", ")}; known: ${known.join(", ")}.`);
-    options.tools = tools;
-  }
-  return options;
+export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[]): ServerOptions {
+  if (!writer || !writeTools.length) return {};
+  return { writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...writeTools] };
 }
 
 /** Write tools, offered only when writing is on. */

@@ -203,22 +203,11 @@ describe("doctor", () => {
     expect(all).not.toContain(SECRET);
   });
 
-  test("in write mode, checks the write tools' scopes and the default project", async () => {
-    const t = io({
-      fetch: fakeFetch().fetcher,
-      env: { CALM_SERVICE_KEY: KEY_TEXT, CALM_WRITE: "on", CALM_PROJECT: "99999999-0000-4000-8000-000000000000" },
-    });
-    expect(await runCommand(t.io, ["doctor"])).toBe(1);
-    const all = t.all();
-    expect(all).toContain("✓ Mode    write on, approval prefer; all tools; default project 99999999");
-    expect(all).toContain("✗ calm_create_task: needs calm-api.tasks.write");
-    expect(all).toContain("✗ Project CALM_PROJECT 99999999-0000-4000-8000-000000000000 is not a project");
-  });
-
-  test("a bad CALM_WRITE fails the doctor", async () => {
-    const t = io({ fetch: fakeFetch().fetcher, env: { CALM_SERVICE_KEY: KEY_TEXT, CALM_WRITE: "yes" } });
-    expect(await runCommand(t.io, ["doctor"])).toBe(1);
-    expect(t.all()).toContain("CALM_WRITE must be");
+  test("the key decides: a key without write scopes reads only", async () => {
+    const t = io({ fetch: fakeFetch().fetcher, env: { CALM_SERVICE_KEY: KEY_TEXT, CALM_WRITE: "on" } });
+    expect(await runCommand(t.io, ["doctor"])).toBe(0);
+    expect(t.all()).toContain("✓ Writes  off: the key has no write scopes");
+    expect(t.all()).not.toContain("Mode");
   });
 
   test("takes CALM_SERVICE_KEY as inline JSON", async () => {
@@ -303,6 +292,26 @@ describe("key handling", () => {
   test("the stdio server starts from an inline key", () => {
     expect(() => stdioServer({ CALM_SERVICE_KEY: KEY_TEXT })).not.toThrow();
     expect(() => stdioServer({ CALM_CONFIG_DIR: join(dir, "none") })).toThrow("init");
+  });
+
+  test("the key decides the tools: write tools only for write scopes", async () => {
+    const { Client, InMemoryTransport } = await import("@modelcontextprotocol/client");
+    const names = async (scope: string[]) => {
+      const server = await stdioServer({ CALM_SERVICE_KEY: KEY_TEXT }, { fetch: fakeFetch({ scope }).fetcher });
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(b);
+      const client = new Client({ name: "t", version: "0" });
+      await client.connect(a);
+      return (await client.listTools()).tools.map((t) => t.name);
+    };
+    const read = await names(ALL_READ);
+    expect(read).toContain("calm_list");
+    expect(read).not.toContain("calm_create_task");
+    const write = await names([...ALL_READ, "x!b1.calm-api.tasks.write"]);
+    expect(write).toContain("calm_create_task");
+    expect(write).toContain("calm_comment");
+    expect(write).toContain("calm_confirm");
+    expect(write).not.toContain("calm_create_test_case");
   });
 
   test("redact removes known secrets, bearer values and long opaque strings", () => {

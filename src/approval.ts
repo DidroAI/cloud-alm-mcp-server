@@ -11,8 +11,6 @@
  *   (it travels in the result's `_meta` only);
  * - in the chat (mode `prefer` only, as it trusts the agent to ask): the
  *   user says yes and the agent calls `calm_confirm`;
- * - in the client's confirm dialog, when the operator opts in
- *   (CALM_APPROVAL_DIALOG=on; reliable in terminal clients only).
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -80,8 +78,6 @@ export function take(
   subject: string,
   nonce: string | undefined,
   now = Date.now(),
-  /** The client's own confirm dialog answered: neither nonce nor chat needed. */
-  dialog = false,
 ): Pending {
   const p = pending.get(id);
   if (!p || p.expiresAt <= now) {
@@ -89,7 +85,7 @@ export function take(
     throw new ApprovalError("This approval is unknown or expired; nothing was written. Propose the change again and ask the user.");
   }
   if (p.subject !== subject) throw new ApprovalError("This approval belongs to another session; nothing was written.");
-  if (nonce === undefined && !p.allowChat && !dialog)
+  if (nonce === undefined && !p.allowChat)
     throw new ApprovalError("This change can only be approved in the approval card; nothing was written.");
   if (nonce !== undefined) {
     const given = Buffer.from(nonce, "base64url");
@@ -98,13 +94,6 @@ export function take(
   }
   pending.delete(id);
   return p;
-}
-
-/** A pending write, left in place (a declined dialog keeps it open). */
-export function peek(id: string, subject: string, now = Date.now()) {
-  const p = pending.get(id);
-  if (!p || p.expiresAt <= now || p.subject !== subject) return undefined;
-  return { preview: p.preview, nonce: p.nonce.toString("base64url"), expiresAt: p.expiresAt };
 }
 
 /** Forget every pending write (tests). */

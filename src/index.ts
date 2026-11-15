@@ -6,7 +6,7 @@ export {
   SERVER_VERSION,
   TOOL_NAMES,
   WRITE_TOOL_NAMES,
-  serverOptionsFromEnv,
+  serverOptionsForKey,
   type ServerOptions,
 } from "./server.js";
 export { readerFromKeyFile, SERVICE_KEY_ENV, stdioServer } from "./stdio.js";

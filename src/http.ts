@@ -7,7 +7,8 @@ import {
 } from "./calm/index.js";
 import { createMcpHandler, isLegacyRequest, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
 import { CloudAlmWriter } from "./calm/writer.js";
-import { createServer, type ServerOptions, serverOptionsFromEnv } from "./server.js";
+import { tokenScopes, writeToolsFor } from "./cli/scopes.js";
+import { createServer, type ServerOptions, serverOptionsForKey } from "./server.js";
 
 export type HttpOptions = {
   /**
@@ -19,7 +20,7 @@ export type HttpOptions = {
   reader?: CloudAlmOptions;
   /** Largest accepted request body. Default 256 KB. */
   maxBodyBytes?: number;
-  /** Tool options (default project, allowed tools). Default: from the environment. */
+  /** Tool options for tests and embedding. Default: from each caller's token, as the key decides. */
   server?: ServerOptions;
 };
 
@@ -50,18 +51,19 @@ function refuse(
  */
 export function createHttpHandler(options: HttpOptions = {}) {
   const maxBody = options.maxBodyBytes ?? 256 * 1024;
-  const serverOptions = options.server ?? serverOptionsFromEnv();
-  const writes = serverOptions.writeMode && serverOptions.writeMode !== "off";
+
   // One server per request, for both protocol eras (2026-07-28 and the
   // 2025 handshake, served statelessly). Nothing outlives the request.
   const make = (token: string, baseUrl: string) => {
     const grant = { accessToken: token, baseUrl };
+    const writer = new CloudAlmWriter(grant, options.reader ?? {});
+    // The caller's token decides: write tools when its scopes allow them.
+    const serverOptions = options.server
+      ? { ...options.server, ...(options.server.writeMode && options.server.writeMode !== "off" ? { writer } : {}) }
+      : serverOptionsForKey(writer, writeToolsFor(tokenScopes(token)));
     return createServer(new CloudAlm(grant, options.reader ?? {}), {
       ...serverOptions,
-      ...(writes ? { writer: new CloudAlmWriter(grant, options.reader ?? {}) } : {}),
-      // Stateless: no 2025-era dialog can be sent; approvals arrive in a
-      // later request (card or chat), and only from the same token.
-      approvalDialog: false,
+      // Approvals arrive in a later request (card or chat), and only from the same token.
       approvalSubject: subjectOf(token),
     });
   };

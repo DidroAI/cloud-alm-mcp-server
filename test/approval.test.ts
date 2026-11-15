@@ -6,7 +6,7 @@ import { CARD_URI, cardHtml, clearPending, META_KEY, propose, take } from "../sr
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
 import { createHttpHandler } from "../src/http.js";
-import { createServer, type ServerOptions, serverOptionsFromEnv } from "../src/server.js";
+import { createServer, type ServerOptions } from "../src/server.js";
 import { BASE_URL, TENANT } from "./tenant.js";
 
 /** The fake tenant; POSTs are recorded and answered like Cloud ALM. */
@@ -102,7 +102,7 @@ describe("approval of writes", () => {
     expect(posts).toEqual([]);
   });
 
-  test("every write is a proposal, whatever the client declares; the dialog is opt-in", async () => {
+  test("every write is a proposal, whatever the client declares; no dialog is sent", async () => {
     const { call, posts, prompts } = await connect("elicit-accept", { approval: "prefer" });
     const r = await call("calm_create_task", NEW_DEFECT);
     expect(prompts).toEqual([]);
@@ -116,23 +116,6 @@ describe("approval of writes", () => {
     expect(r.structured?.approval?.next).toContain("calm_confirm");
     expect(r.structured?.approval?.title).toBe("Create a defect");
     expect(r.text).toMatch(/valid until \d\d:\d\d UTC/);
-  });
-
-  test("with the dialog on, a dialog client is asked, and an accept writes", async () => {
-    const { call, posts, prompts } = await connect("elicit-accept", { approval: "required", approvalDialog: true });
-    const r = await call("calm_create_task", NEW_DEFECT);
-    expect(prompts[0]).toContain("Credit check skipped");
-    expect(r.error).toBe(false);
-    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
-  });
-
-  test("a declined dialog writes nothing and keeps the proposal (some clients decline unseen)", async () => {
-    const { call, posts } = await connect("elicit-decline", { approval: "prefer", approvalDialog: true });
-    const r = await call("calm_create_task", NEW_DEFECT);
-    expect(posts).toEqual([]);
-    const id = /calm_confirm with id "([0-9a-f]{12})"/.exec(r.text)?.[1];
-    expect((await call("calm_confirm", { id })).error).toBe(false);
-    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
   });
 
   test("a card whose host dropped the nonce approves by id in prefer, not in required", async () => {
@@ -240,15 +223,6 @@ describe("pending store", () => {
     expect(() => take(q.id, "s", q.nonce, 1)).toThrow("unknown");
   });
 
-  test("CALM_APPROVAL defaults to prefer when writing is on", () => {
-    expect(serverOptionsFromEnv({ CALM_WRITE: "on" }).approval).toBe("prefer");
-    expect(serverOptionsFromEnv({ CALM_WRITE: "on", CALM_APPROVAL: "off" }).approval).toBe("off");
-    expect(serverOptionsFromEnv({}).approval).toBeUndefined();
-    expect(serverOptionsFromEnv({ CALM_WRITE: "on" }).approvalDialog).toBeUndefined();
-    expect(serverOptionsFromEnv({ CALM_APPROVAL_DIALOG: "on" }).approvalDialog).toBe(true);
-    expect(() => serverOptionsFromEnv({ CALM_APPROVAL_DIALOG: "yes" })).toThrow("CALM_APPROVAL_DIALOG");
-    expect(() => serverOptionsFromEnv({ CALM_APPROVAL: "maybe" })).toThrow("CALM_APPROVAL");
-  });
 
   test("the card renders text, never HTML from the preview", () => {
     expect(cardHtml()).toContain('$("p").textContent = a.preview');
@@ -264,47 +238,3 @@ test("a change that changes nothing asks for no approval", async () => {
   expect(r.meta?.[META_KEY]).toBeUndefined();
 });
 
-describe("2026-07-28: the confirm dialog rides input_required", () => {
-  async function modern(answer: "accept" | "decline") {
-    const fake = fakeTenant();
-    const grant = { accessToken: "t", baseUrl: BASE_URL };
-    const handler = createMcpHandler(() =>
-      createServer(new CloudAlm(grant, { fetch: fake.fetcher }), {
-        writer: new CloudAlmWriter(grant, { fetch: fake.fetcher }),
-        writeMode: "on",
-        approval: "required",
-        approvalDialog: true,
-      }),
-    );
-    const prompts: string[] = [];
-    const client = new Client(
-      { name: "test", version: "0" },
-      { versionNegotiation: { mode: "auto" }, capabilities: { elicitation: { form: {} } } },
-    );
-    client.setRequestHandler("elicitation/create", async (request) => {
-      prompts.push(String(request.params.message));
-      return answer === "accept" ? { action: "accept", content: { approve: true } } : { action: "decline" };
-    });
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), { fetch: (u, i) => handler.fetch(new Request(u, i)) }),
-    );
-    expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
-    const r = (await client.callTool({ name: "calm_create_task", arguments: NEW_DEFECT })) as { content: { text: string }[]; _meta?: Record<string, unknown> };
-    return { r, prompts, posts: fake.posts };
-  }
-
-  test("accepted: written once, after one dialog", async () => {
-    const { r, prompts, posts } = await modern("accept");
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("Credit check skipped");
-    expect(r.content[0]?.text).toContain("Created 3-99");
-    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
-  });
-
-  test("declined: nothing written, the proposal stays open", async () => {
-    const { r, posts } = await modern("decline");
-    expect(posts).toEqual([]);
-    expect(r.content[0]?.text).toContain("Approval needed");
-    expect(r._meta?.[META_KEY]).toBeDefined();
-  });
-});

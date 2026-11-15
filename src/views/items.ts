@@ -203,7 +203,7 @@ export const dry = (o: WriteOptions, dryRun?: boolean) => o.writeMode === "dry-r
 /** Why nothing was sent: the call's dryRun, or the server's mode. */
 export const dryNote = (o: WriteOptions) =>
   o.writeMode === "dry-run"
-    ? "Dry run (the server is in dry-run mode, CALM_WRITE=dry-run; only its operator can turn writing on), nothing sent."
+    ? "Dry run (the server is in dry-run mode, set by whoever embeds it), nothing sent."
     : "Dry run, nothing sent.";
 
 /**

@@ -5,9 +5,10 @@ description: Find what is untested in an SAP Cloud ALM project and write manual 
 
 # Test design in SAP Cloud ALM
 
-Needs the `cloud-alm` MCP server. Creating and linking needs write mode
-(`CALM_WRITE=on`, or `dry-run` to preview); without it, draft the test
-case in the answer instead.
+Needs the `cloud-alm` MCP server. Creating and linking needs a service key
+with write scopes (the write tools appear only then, and each write waits
+for the user's approval); without them, draft the test case in the answer
+instead.
 
 ## 1. Find the gap
 

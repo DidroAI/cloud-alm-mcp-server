@@ -125,3 +125,14 @@ export function coverage(scopes: string[], tools: string[]): ToolCoverage[] {
     };
   });
 }
+
+/**
+ * The write tools a token's scopes allow. The key decides: a read-only key
+ * gets read tools only; a key with write scopes gets the write tools those
+ * scopes cover, each change still waiting for the user's approval.
+ */
+export function writeToolsFor(scopes: string[] | undefined): string[] {
+  if (!scopes) return [];
+  const writes = Object.entries(TOOL_SCOPES).filter(([, v]) => v.write).map(([k]) => k);
+  return coverage(scopes, writes).filter((c) => c.status !== "none").map((c) => c.tool);
+}

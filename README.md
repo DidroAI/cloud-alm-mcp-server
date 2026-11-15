@@ -6,10 +6,12 @@ requirements, user stories, defects, features, documents, test cases and
 test plans, processes, landscape, cross-library, analytics and service
 status events.
 
-**Read-only by default.** The read tools are annotated `readOnlyHint` and
-the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
-Writing (create, change, link, tag, comment, delete) is opt-in
-with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
+**The key decides, and the user approves.** Nothing to configure: a
+read-only service key gets the read tools only; a key with write scopes
+also gets the write tools those scopes allow (create, change, link, tag,
+comment, delete), and every write waits for the user's approval
+([Writes: the key decides](#writes-the-key-decides)). Reads are GET requests
+only, to `*.alm.cloud.sap` hosts only.
 
 Speaks MCP 2026-07-28 (stateless) and serves 2025-era clients on the same
 endpoint; read tools return structured output; write approval works through
@@ -189,37 +191,36 @@ this key"); the rest still answers. Errors are short text with a code
 (`unauthorized`, `forbidden`, `not_found`, `rate_limited`, `unavailable`,
 `bad_request`) and never carry a token.
 
-### Modes and governance
+### Writes: the key decides
 
-| Variable | Effect |
-| --- | --- |
-| `CALM_WRITE` | `off` (default): read tools only. `dry-run`: write tools are offered but only preview. `on`: write tools write. The key also needs the write scopes. |
-| `CALM_TOOLS` | Comma-separated tool names to offer, e.g. `calm_overview,calm_list,calm_get`. Default: all (of the current mode). |
-| `CALM_APPROVAL` | With `CALM_WRITE=on`: `prefer` (default) has the user approve each write in the card or the chat, `required` in the card only, `off` writes at once. |
-| `CALM_APPROVAL_DIALOG` | `on` also asks in the client's confirm dialog (MCP elicitation), where it declares one. Off by default: only terminal clients show it reliably. |
-| `CALM_PROJECT` | Project GUID used when a call names none. Without it, a tenant with one project uses that one; with several, tools ask for `projectId`. |
+There are no settings. The only one is the key (`CALM_SERVICE_KEY`, or the
+file `init` saved):
 
-In HTTP mode the same variables apply to every request; the bearer token
-decides what Cloud ALM allows.
+- a key with read scopes only: the agent reads, and no write tool exists;
+- a key with write scopes: the write tools those scopes cover are offered
+  (`tasks.write` gives create task, update, comment, tag, link…), and each
+  write is a proposal the user approves (below).
+
+To keep a team read-only, give it a read-only key; `doctor` says which
+tools a key gets. In HTTP mode each caller's token decides for its own
+requests. A tenant with several projects needs no default: the agent names
+the project (`projectId` takes an id or a name).
 
 ### Approving writes
 
-With approval on, a write tool only proposes the change: it runs as a dry
-run and answers with the preview; nothing is sent to Cloud ALM until the
-user approves. Every answer carries the same proposal, whatever the client
+A write tool only proposes the change: it runs as a dry run and answers
+with the preview; nothing is sent to Cloud ALM until the user approves. Every answer carries the same proposal, whatever the client
 says it supports, and the user approves it in one of these ways:
 
 | Where | How | Clients (Nov 2026) |
 | --- | --- | --- |
 | the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, VS Code, Goose |
-| the chat (`prefer` only) | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` | every client |
-| the client's dialog (`CALM_APPROVAL_DIALOG=on`) | the client's own confirm dialog | Claude Code and Codex in a terminal |
+| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` | every client |
 
 The card's button calls `calm_approve`, a tool visible to the card only,
 with a one-time token that travels in the result's `_meta`, never in the
 text the model reads. If the host drops `_meta` (some do, e.g. on reload),
-the card falls back to the id in `structuredContent`, which approves only
-in `prefer`. If the host does not pass the card's calls to the server
+the card falls back to the id in `structuredContent`. If the host does not pass the card's calls to the server
 (it does not declare `serverTools`; the Claude Code tab is one, see
 anthropics/claude-code#106708), the card shows the change without
 buttons and asks the user to reply yes in the chat; a failed call does
@@ -227,10 +228,9 @@ the same. An approval is single-use, expires after 60
 minutes (the card then shows it as expired) and, over HTTP, must come with the same bearer token as the
 request that proposed it. `dryRun: true` previews without asking.
 
-Why the dialog is off by default: some clients declare a confirm dialog
-and answer "decline" without showing it (the Claude desktop app, for one),
-and some draw the card without declaring MCP Apps. With the dialog on, a
-declined or failed dialog keeps the proposal open for the card or chat.
+The server sends no confirm dialog (MCP elicitation): some clients declare
+one and answer "decline" without showing it, which would cancel a change
+the user never saw.
 
 Scopes (`calm-api.` …): `projects.read`, `tasks.read`, `features.read`,
 `documents.read`, `testcases.read`, `testplans.read`,
