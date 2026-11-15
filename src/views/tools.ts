@@ -448,6 +448,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         });
   }
   libraryKinds.forEach((kind, i) => {
+    if (library[i]?.nextOffset != null) notes.push(`${kind}: only the first 200 in the library were searched`);
     for (const item of library[i]?.items ?? [])
       if (match(item.title, item.objectId, item.description))
         rows.push({
@@ -1378,7 +1379,7 @@ export async function landscape(calm: CloudAlm) {
       throw e;
     }),
   ]);
-  const lines = [`Landscape: ${objects.items.length} objects registered in this tenant (${counts(objects.items.map((o) => o.objectType ?? "?"))}); systems not registered in Cloud ALM are not listed`];
+  const lines = [`Landscape: ${objects.nextOffset != null ? "more than " : ""}${objects.items.length} objects registered in this tenant (${counts(objects.items.map((o) => o.objectType ?? "?"))}); systems not registered in Cloud ALM are not listed`];
   const label = (o: (typeof objects.items)[number]) =>
     o.serviceType && o.objectType === "CloudService" ? o.serviceType : (o.name ?? o.id);
   for (const o of objects.items.slice(0, 60))
