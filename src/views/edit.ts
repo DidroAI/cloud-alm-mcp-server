@@ -29,6 +29,8 @@ import {
   tasksByRef,
   textToHtml,
   type WriteOptions,
+  type Change,
+  changeItem,
 } from "./items.js";
 import type { Snapshot } from "./snapshot.js";
 import { documentType, featureStatus, short, statusLabel, typeLabel } from "./text.js";
@@ -496,7 +498,52 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
     }
   }
   if (failed && failed === plans.length && !partial) throw firstError;
+  if (isDry) {
+    // The same plan as the text, as data for the approval card.
+    const change: Change = {
+      kind: "update",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: plans.map((p) => {
+        const todo = p.parts.filter((part) => changed(p.before, part));
+        const planned: Row = { ...p.before, ...Object.assign({}, ...todo.map((part) => part.body)) };
+        return {
+          ...changeItem(p.item),
+          op: "update" as const,
+          fields: [
+            ...todo.map((part) => {
+              const before = cardValue(part.show(p.before));
+              return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: cardValue(part.show(planned)) };
+            }),
+            ...(p.extra ? [extraField(p.extra.line)] : []),
+          ],
+          ...(p.notes.length ? { note: p.notes.join(" ") } : {}),
+        };
+      }),
+    };
+    return { text: lines.join("\n"), data: { change } };
+  }
   return lines.join("\n");
+}
+
+/** Field names as the Cloud ALM UI shows them. */
+const FIELD_NAMES: Record<string, string> = {
+  title: "Title",
+  description: "Description",
+  status: "Status",
+  priority: "Priority",
+  assignee: "Assignee",
+  startDate: "Start date",
+  dueDate: "Due date",
+  timebox: "Timebox",
+  obsolete: "Obsolete",
+  prepared: "Prepared",
+};
+/** A value for the card: no priority codes ("10 very high" → "very high"), nothing for none. */
+const cardValue = (v: string) => (/^(none|empty|—|-)$/i.test(v.trim()) ? "" : v.replace(/^\d{2} (very high|high|medium|low)$/, "$1"));
+/** The step after the fields (a comment, a new activity) as one added value. */
+function extraField(line: string): { field: string; after: string } {
+  const comment = /^comment: "([\s\S]*)"$/.exec(line);
+  return comment ? { field: "New comment", after: comment[1] ?? "" } : { field: "Then", after: line };
 }
 
 // ---- calm_delete -----------------------------------------------------------
@@ -546,8 +593,23 @@ export async function remove(
     if (fromTests) warnings.push(`${fromTests} of them record a failed test (their test case loses its defect)`);
     warnings.push(`soft: true marks ${hardTasks.length === 1 ? "it" : "them"} obsolete instead, which can be undone (SAP recommends it)`);
   }
-  if (dry(o, input.dryRun))
-    return [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`), ...(warnings.length ? [`Warning: ${warnings.join("; ")}.`] : [])].join("\n");
+  if (dry(o, input.dryRun)) {
+    const text = [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`), ...(warnings.length ? [`Warning: ${warnings.join("; ")}.`] : [])].join("\n");
+    const soft = input.soft === true;
+    const change: Change = {
+      kind: soft ? "update" : "delete",
+      irreversible: !soft,
+      project: { id: snap.project.id, name: snap.project.name },
+      items: plans.map((p) => ({
+        ...changeItem(p.item),
+        op: soft ? ("update" as const) : ("delete" as const),
+        ...(soft ? { fields: [{ field: "obsolete", before: "no", after: "yes" }] } : {}),
+        note: p.line,
+      })),
+      ...(warnings.length ? { warnings } : {}),
+    };
+    return { text, data: { change } };
+  }
   const lines: string[] = [];
   let failed = 0;
   let firstError: unknown;
@@ -671,7 +733,15 @@ export async function comment(
   if (!task) throw new CloudAlmError("not_found", `${input.task} not found`);
   const text = input.text.trim();
   if (!text) throw new CloudAlmError("bad_request", "the comment is empty");
-  if (dry(o, input.dryRun)) return `${dryNote(o)} Would add to ${label(task)} the comment:\n${text.length > 4000 ? `${text.slice(0, 3999)}…` : text}`;
+  if (dry(o, input.dryRun)) {
+    const shown = text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
+    const change: Change = {
+      kind: "update",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{ id: task.displayId, type: typeLabel(task.type), title: task.title, op: "update", fields: [{ field: "New comment", after: shown }] }],
+    };
+    return { text: `${dryNote(o)} Would add to ${label(task)} the comment:\n${shown}`, data: { change } };
+  }
   const created = (await needing("tasks.write", () =>
     writer.post(`${PATHS.tasks}/${task.id}/comments`, { text: textToHtml(text) }),
   )) as { id?: string } | null;

@@ -246,3 +246,33 @@ export async function gone(read: () => Promise<unknown>): Promise<boolean | stri
     return `could not check (${error instanceof CloudAlmError ? error.code : "unexpected error"})`;
   }
 }
+
+/** A change as the approval card shows it: per item, field before → after. */
+export type Change = {
+  kind: "create" | "update" | "delete";
+  irreversible?: boolean;
+  project?: { id: string; name: string | null };
+  items: {
+    id?: string | null;
+    type?: string;
+    title?: string | null;
+    op?: "create" | "update" | "delete";
+    fields?: { field: string; before?: string; after?: string }[];
+    note?: string;
+  }[];
+  warnings?: string[];
+};
+
+/** An item's id, type and title for a change. */
+export function changeItem(item: Item): { id: string | null; type: string; title: string | null } {
+  switch (item.kind) {
+    case "task":
+      return { id: item.task.displayId, type: typeLabel(item.task.type), title: item.task.title };
+    case "feature":
+      return { id: item.feature.displayId, type: "feature", title: item.feature.title };
+    case "testCase":
+      return { id: item.testCase.displayId, type: `${item.testCase.kind} test case`, title: item.testCase.title };
+    case "document":
+      return { id: item.document.displayId, type: "document", title: item.document.title };
+  }
+}

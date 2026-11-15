@@ -25,6 +25,7 @@ import {
   tasksByRef,
   textToHtml,
   type WriteOptions,
+  type Change,
 } from "./items.js";
 import { short, statusLabel, typeLabel } from "./text.js";
 
@@ -509,7 +510,27 @@ export async function createTask(
   };
   const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.assignee ? `, assigned to ${input.assignee}` : ""}${input.startDate ? `, start ${input.startDate}` : ""}${input.dueDate ? `, due ${input.dueDate}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
   const extra = `${description ? `\nDescription: ${description.length > 600 ? `${description.slice(0, 600)} …` : description}` : ""}${warnings.length ? `\nNote: ${warnings.join("; ")}.` : ""}`;
-  if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.${extra}`;
+  if (dry(o, input.dryRun)) {
+    const fields = [
+      ["Scope", scopeName],
+      ["Under", parent ? label(parent) : null],
+      ["Priority", PRIORITY_NAMES[input.priority ?? 30]],
+      ["Assignee", input.assignee],
+      ["Start", input.startDate],
+      ["Due", input.dueDate],
+      ["Tags", input.tags?.length ? input.tags.join(", ") : null],
+      ["Description", description ? (description.length > 600 ? `${description.slice(0, 600)} …` : description) : null],
+    ]
+      .filter(([, v]) => !!v)
+      .map(([field, after]) => ({ field: field as string, after: after as string }));
+    const change: Change = {
+      kind: "create",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{ type: input.type.replace("_", " "), title, op: "create", fields }],
+      ...(warnings.length ? { warnings } : {}),
+    };
+    return { text: `${dryNote(o)} Would create ${plan}.${extra}`, data: { change } };
+  }
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
   if (!created?.id)
     return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;

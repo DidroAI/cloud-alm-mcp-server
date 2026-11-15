@@ -229,9 +229,14 @@ describe("pending store", () => {
 
 
   test("the card renders text, never HTML from the preview", () => {
-    expect(cardHtml()).toContain('$("p").textContent = a.preview');
-    expect(cardHtml()).not.toContain("innerHTML = a.");
-    expect(cardHtml()).toContain("This approval expired");
+    const html = cardHtml();
+    expect(html).toContain('$("p").textContent = text');
+    expect(html).not.toContain("innerHTML");
+    expect(html).toContain("This approval expired");
+    // The bundle and the theme helpers are in; no marker is left.
+    expect(html).not.toContain("__APP_BUNDLE__");
+    expect(html).not.toContain("__META_KEY__");
+    expect(html).toContain("const applyDocumentTheme = ");
   });
 });
 
@@ -242,3 +247,13 @@ test("a change that changes nothing asks for no approval", async () => {
   expect(r.meta?.[META_KEY]).toBeUndefined();
 });
 
+
+test("a proposal carries the change field by field for the card", async () => {
+  const { call } = await connect("ui", { approval: "prefer" });
+  const r = await call("calm_create_task", { ...NEW_DEFECT, priority: 20 });
+  const change = (r.structured?.approval as { change?: { kind: string; items: { title?: string; fields?: { field: string; after?: string }[] }[] } })?.change;
+  expect(change?.kind).toBe("create");
+  expect(change?.items[0]?.title).toBe("Credit check skipped");
+  expect(change?.items[0]?.fields?.find((f) => f.field === "Priority")?.after).toBe("high");
+  expect((r.meta?.[META_KEY] as { change?: unknown }).change).toEqual(change);
+});

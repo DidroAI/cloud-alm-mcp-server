@@ -15,12 +15,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { CARD_TEMPLATE } from "./approval-card.js";
 
 /** off: write at once; prefer: approve in the card or the chat; required: in the card (or an opted-in dialog) only. */
 export type ApprovalMode = "off" | "prefer" | "required";
 export const APPROVAL_MODES: ApprovalMode[] = ["off", "prefer", "required"];
 
-export const CARD_URI = "ui://cloud-alm/approve-v1.html";
+export const CARD_URI = "ui://cloud-alm/approve-v2.html";
 export const META_KEY = "cloud-alm/approval";
 /** Long enough for a user who answers a turn later; still single-use and bound to one change. */
 export const TTL_MS = 60 * 60_000;
@@ -121,7 +122,13 @@ function appBundle(): string {
     .map((s) => s.trim().split(/\s+as\s+/))
     .find(([, name]) => name === "App")?.[0];
   if (!exports || !local) throw new Error("ext-apps bundle has an unexpected shape");
-  appJs = `${source.slice(0, exports.index)}\nconst App = ${local};\n`;
+  // The card also themes itself from the host: expose those helpers too.
+  const pairs = (exports[1] ?? "").split(",").map((s) => s.trim().split(/\s+as\s+/));
+  const helper = (name: string) => pairs.find(([, n]) => n === name)?.[0] ?? pairs.find(([n, alias]) => !alias && n === name)?.[0];
+  const theme = (["applyDocumentTheme", "applyHostStyleVariables"] as const)
+    .map((name) => `const ${name} = ${helper(name) ?? "() => {}"};`)
+    .join("\n");
+  appJs = `${source.slice(0, exports.index)}\nconst App = ${local};\n${theme}\n`;
   return appJs;
 }
 
@@ -130,117 +137,5 @@ function appBundle(): string {
  * model or the tenant: text only), and Approve / Reject.
  */
 export function cardHtml(): string {
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-:root{color-scheme:light dark;--fg:#1b1b1f;--muted:#5d5d66;--bg:#fff;--line:#d9d9de;--ok:#0a7d38;--no:#a1260d;--accent:#0b57d0}
-@media (prefers-color-scheme:dark){:root{--fg:#ececf1;--muted:#a0a0aa;--bg:#1e1e22;--line:#3a3a42;--ok:#3fbf73;--no:#ef6b55;--accent:#8ab4f8}}
-body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--fg);background:var(--bg)}
-.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;max-width:720px}
-.k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-h1{font-size:15px;margin:2px 0 10px}
-pre{white-space:pre-wrap;word-break:break-word;margin:0 0 12px;padding:10px;border-radius:8px;background:color-mix(in srgb,var(--line) 35%,transparent);font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;max-height:340px;overflow:auto}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-button{font:inherit;border-radius:8px;padding:7px 14px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
-button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
-button:disabled{opacity:.5;cursor:default}
-#m{color:var(--muted);margin:10px 0 0}
-#m.done{color:var(--ok)}#m.err{color:var(--no)}
-</style></head><body>
-<div class="card">
-<div class="k">Cloud ALM · approval needed</div>
-<h1 id="t">Preparing the change…</h1>
-<pre id="p" hidden></pre>
-<div class="row"><button id="ok" class="ok" disabled>Approve</button><button id="no" disabled>Reject</button><span id="x" class="k"></span></div>
-<p id="m"></p>
-</div>
-<script type="module">
-${appBundle()}
-const KEY = ${JSON.stringify(META_KEY)};
-const $ = (id) => document.getElementById(id);
-const say = (text, cls = "") => { $("m").className = cls; $("m").textContent = text; };
-const buttons = (on) => { $("ok").disabled = $("no").disabled = !on; };
-const app = new App({ name: "cloud-alm-approval", version: "2" });
-let pending;
-let done = false;
-/**
- * The pending change, from wherever this host put it: the result's _meta
- * (with the nonce), structuredContent, or the text (some hosts drop the
- * others, e.g. on reload); the last two carry no nonce.
- */
-function pendingFrom(result) {
-  const meta = result?._meta?.[KEY];
-  if (meta?.id) return meta;
-  // Only what the server attached: never an id read from the text, which
-  // a dry run or tenant data could forge.
-  const sc = result?.structuredContent?.approval;
-  if (sc?.id) return sc;
-  return undefined;
-}
-const chatHint = () => pending?.chat !== false ? " To approve, reply \u201cyes\u201d in the chat." : "";
-app.ontoolinput = () => { if (!pending && !done) $("t").textContent = "Preparing the change…"; };
-app.ontoolcancelled = () => { if (!pending) { $("t").textContent = "Cancelled; nothing was written."; buttons(false); } };
-app.ontoolresult = (result) => {
-  const a = pendingFrom(result);
-  if (!a) {
-    const text = (result?.content ?? []).map((c) => c?.text ?? "").join("\\n").trim();
-    $("t").textContent = result?.isError ? "Not proposed" : /calm_confirm/.test(text) ? "Approve in the chat" : "Nothing waits for approval here.";
-    if (text) { $("p").textContent = text; $("p").hidden = false; }
-    buttons(false);
-    return;
-  }
-  pending = a;
-  $("t").textContent = a.title || "Change waiting for approval";
-  $("p").textContent = a.preview || "";
-  $("p").hidden = !a.preview;
-  if (a.expiresAt) $("x").textContent = "expires " + new Date(a.expiresAt).toLocaleTimeString();
-  if (!a.nonce && a.chat === false) {
-    say("This app did not pass the approval to the card. Open the change in an app that shows approval cards.", "err");
-    return;
-  }
-  if (expired()) return;
-  if (!canCall()) {
-    say(pending.chat !== false
-      ? "This app does not pass answers from cards to the server. To approve, reply \u201cyes\u201d in the chat."
-      : "This app does not pass answers from cards to the server. Open the change in an app that does.", "err");
-    return;
-  }
-  buttons(true);
-  if (a.expiresAt) setTimeout(expired, Math.min(a.expiresAt - Date.now() + 500, 2 ** 31 - 1));
-};
-/** Hosts that forward a card's tool calls declare serverTools (the Claude Code tab, for one, does not). */
-const canCall = () => !app.getHostCapabilities || !!app.getHostCapabilities()?.serverTools;
-/** Past the expiry the server refuses the approval; say so instead of offering dead buttons. */
-function expired() {
-  if (done || !pending?.expiresAt || Date.now() < pending.expiresAt) return false;
-  done = true;
-  buttons(false);
-  $("x").textContent = "expired " + new Date(pending.expiresAt).toLocaleTimeString();
-  say("This approval expired; nothing was written. Ask again in the chat to get a new one.", "err");
-  return true;
-}
-async function decide(decision) {
-  if (!pending || done || expired()) return;
-  buttons(false);
-  say(decision === "approve" ? "Writing…" : "Rejecting…");
-  let r;
-  try {
-    const args = { id: pending.id, decision };
-    if (pending.nonce) args.nonce = pending.nonce;
-    r = await app.callServerTool({ name: "calm_approve", arguments: args });
-  } catch (e) {
-    say("This app could not send your answer to the server (" + (e?.message ?? e) + ")." + chatHint(), "err");
-    return;
-  }
-  const text = (r?.content ?? []).map((c) => c?.text ?? "").join("\\n");
-  done = !r?.isError || /unknown or expired|already/.test(text);
-  if (!done) buttons(true);
-  say(text || (r?.isError ? "Refused." : "Done."), r?.isError ? "err" : "done");
-  const note = "Approval card for " + (pending.tool ?? "a change") + " (id " + pending.id + "): the user chose " + decision + ". Server answer: " + text;
-  await app.updateModelContext({ content: [{ type: "text", text: note }] }).catch(() => {});
-}
-$("ok").onclick = () => decide("approve");
-$("no").onclick = () => decide("reject");
-await app.connect();
-</script></body></html>`;
+  return CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
 }
