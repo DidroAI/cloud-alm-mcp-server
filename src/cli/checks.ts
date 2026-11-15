@@ -81,11 +81,10 @@ export async function keyChecks(
         usable === 0
           ? "the key has none of the scopes the tools need: it can read nothing"
           : `${usable} of ${rows.length} tools usable, ${full} with every part`,
-      lines: rows.map((r) =>
-        r.status === "full"
-          ? `  ${mark.full} ${r.tool}`
-          : `  ${mark[r.status]} ${r.tool}: ${r.status === "none" ? "needs" : "parts need"} ${r.missing.join(", ")}`,
-      ),
+      // Only the tools that lack a scope; a full key needs no list.
+      lines: rows
+        .filter((r) => r.status !== "full")
+        .map((r) => `  ${mark[r.status]} ${r.tool}: ${r.status === "none" ? "needs" : "parts need"} ${r.missing.join(", ")}`),
     });
     // The key decides whether writing is on.
     const writable = writeToolsFor(scopes);
