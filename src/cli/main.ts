@@ -1,5 +1,8 @@
+import { randomBytes } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
+  realpathSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -113,11 +116,20 @@ function permissionCheck(path: string, platform: NodeJS.Platform): Check {
     : { name: "Key", status: "ok", detail: path };
 }
 
+/** The tenant a key opens, for messages: its token host and API host. */
+const tenantOf = (key: ServiceKey) => `${new URL(key.uaa.url).hostname} → ${new URL(key.endpoints.Api).hostname}`;
+
+/** A temp name nobody can guess, next to the target. */
+const tempName = (path: string) => `${path}.${randomBytes(6).toString("hex")}.tmp`;
+
 /** Write a file only the user can read, atomically. */
 export function writeSecretFile(path: string, text: string) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, text, { mode: 0o600 });
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") chmodSync(dir, 0o700);
+  const tmp = tempName(path);
+  // "wx": fails if anything (a planted symlink) is there already.
+  writeFileSync(tmp, text, { mode: 0o600, flag: "wx" });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 }
@@ -128,7 +140,7 @@ function parseFlags(args: string[], command = "init"): Flags {
   const flags: Flags = { positional: [], force: false, skipCheck: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
-    if (arg === "--force" && command === "init") flags.force = true;
+    if (arg === "--force") flags.force = true;
     else if (arg === "--skip-check") flags.skipCheck = true;
     else if (command === "setup" && (arg === "--client" || arg.startsWith("--client="))) {
       const value = arg.includes("=") ? arg.slice(9) : args[++i];
@@ -225,7 +237,8 @@ async function setup(io: Io, args: string[]): Promise<number> {
   const arg = flags.positional[0];
   if (arg) input = await readKeyInput(io, arg);
   else {
-    const found = findDownloadedKey([join(e.home, "Downloads"), process.cwd()]);
+    // Downloads only: a key planted in a cloned repository is never picked up.
+    const found = findDownloadedKey([join(e.home, "Downloads")]);
     if (found) {
       io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
       input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
@@ -239,6 +252,24 @@ async function setup(io: Io, args: string[]): Promise<number> {
     }
   }
 
+  // Say which tenant the key opens; a key found on its own may replace a
+  // saved key of the same tenant (a rotation), not one of another tenant.
+  const key = parseServiceKeyText(input.text, input.origin);
+  const tenant = tenantOf(key);
+  io.out(`Tenant: ${tenant}`);
+  if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(new URL(key.uaa.url).hostname))
+    io.err(`! The key's token address ${new URL(key.uaa.url).hostname} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
+  const saved = savedKeyPath(io.env);
+  if (!arg && !flags.force && existsSync(saved)) {
+    let before: string | undefined;
+    try {
+      before = tenantOf(parseServiceKeyText(readFileSync(saved, "utf8"), saved));
+    } catch {}
+    if (before && before !== tenant) {
+      io.err(`A key for another tenant (${before}) is saved. Name the file to switch tenants (setup <file>) or pass --force.`);
+      return 1;
+    }
+  }
   const target = await checkAndSave(io, input, { replace: true, skipCheck: flags.skipCheck });
   if (!target) return 1;
 
@@ -274,10 +305,15 @@ async function setup(io: Io, args: string[]): Promise<number> {
 
 /** Write a client's config file, keeping its directory. */
 function writeConfigFile(path: string, text: string) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, text);
-  renameSync(tmp, path);
+  // Write through a symlinked dotfile, keep the file's mode, keep a backup.
+  const real = existsSync(path) ? realpathSync(path) : path;
+  mkdirSync(dirname(real), { recursive: true });
+  const mode = existsSync(real) ? statSync(real).mode & 0o777 : 0o600;
+  if (existsSync(real)) copyFileSync(real, `${real}.bak`);
+  const tmp = tempName(real);
+  writeFileSync(tmp, text, { mode, flag: "wx" });
+  chmodSync(tmp, mode);
+  renameSync(tmp, real);
 }
 
 function printSnippets(io: Io, keyPath: string) {

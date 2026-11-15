@@ -13,11 +13,15 @@ import { SERVER_KEY } from "./clients.js";
 export type ExecResult = { code: number; stdout: string; stderr: string };
 export type Exec = (command: string, args: string[]) => Promise<ExecResult>;
 
+/** Quote one argument for cmd.exe (Windows runs the .cmd shims through it). */
+export const cmdQuote = (arg: string) => (/^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '""')}"`);
+
 /** Run a program without a shell (Windows needs one for .cmd shims). */
 export const defaultExec: Exec = (command, args) =>
   new Promise((done) => {
-    const child = spawn(command, args, {
-      shell: process.platform === "win32",
+    const win = process.platform === "win32";
+    const child = spawn(command, win ? args.map(cmdQuote) : args, {
+      shell: win,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 60_000,
     });
@@ -35,7 +39,7 @@ const MAX_KEY_BYTES = 64 * 1024;
 const RECENT_MS = 7 * 24 * 3600_000;
 
 /**
- * The newest JSON file in ~/Downloads (then the current directory) that is
+ * The newest JSON file in ~/Downloads that is
  * a Cloud ALM API service key, downloaded in the last week.
  */
 export function findDownloadedKey(

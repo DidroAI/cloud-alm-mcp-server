@@ -134,10 +134,14 @@ describe("approval of writes", () => {
   test("prefer, with neither card nor dialog: the agent asks in chat and confirms by id", async () => {
     const { call, posts } = await connect("plain", { approval: "prefer" });
     const r = await call("calm_create_task", NEW_DEFECT);
-    const id = /calm_confirm with id "([0-9a-f]{12})"/.exec(r.text)?.[1];
+    const id = /calm_confirm with id "([0-9a-f]{12})" and tool "calm_create_task"/.exec(r.text)?.[1];
     expect(id).toBeDefined();
     expect(posts).toEqual([]);
-    expect((await call("calm_confirm", { id })).error).toBe(false);
+    // The tool named must be the one that proposed it.
+    expect((await call("calm_confirm", { id, tool: "calm_delete" })).error).toBe(true);
+    expect(posts).toEqual([]);
+    const again = /calm_confirm with id "([0-9a-f]{12})"/.exec((await call("calm_create_task", NEW_DEFECT)).text)?.[1];
+    expect((await call("calm_confirm", { id: again, tool: "calm_create_task" })).error).toBe(false);
     expect(posts).toEqual(["calm-tasks/v1/tasks"]);
   });
 

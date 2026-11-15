@@ -24,7 +24,9 @@ export const CARD_URI = "ui://cloud-alm/approve-v1.html";
 export const META_KEY = "cloud-alm/approval";
 /** Long enough for a user who answers a turn later; still single-use and bound to one change. */
 export const TTL_MS = 60 * 60_000;
-const MAX_PENDING = 200;
+const MAX_PENDING = 1000;
+/** Per approver, so one HTTP caller cannot push out everyone else's. */
+const MAX_PER_SUBJECT = 50;
 
 /** A write waiting for the user. Holds the tool name and its arguments, not a client. */
 type Pending = {
@@ -55,6 +57,8 @@ export function propose(
   now = Date.now(),
 ): Proposal {
   for (const [id, p] of pending) if (p.expiresAt <= now) pending.delete(id);
+  const own = [...pending].filter(([, p]) => p.subject === entry.subject);
+  while (own.length >= MAX_PER_SUBJECT) pending.delete(own.shift()![0]);
   while (pending.size >= MAX_PENDING) {
     const oldest = pending.keys().next().value;
     if (oldest === undefined) break;
@@ -78,6 +82,7 @@ export function take(
   subject: string,
   nonce: string | undefined,
   now = Date.now(),
+  tool?: string,
 ): Pending {
   const p = pending.get(id);
   if (!p || p.expiresAt <= now) {
@@ -85,6 +90,8 @@ export function take(
     throw new ApprovalError("This approval is unknown or expired; nothing was written. Propose the change again and ask the user.");
   }
   if (p.subject !== subject) throw new ApprovalError("This approval belongs to another session; nothing was written.");
+  if (tool !== undefined && tool !== p.tool)
+    throw new ApprovalError(`This approval is for ${p.tool}, not ${tool}; nothing was written.`);
   if (nonce === undefined && !p.allowChat)
     throw new ApprovalError("This change can only be approved in the approval card; nothing was written.");
   if (nonce !== undefined) {
@@ -164,23 +171,11 @@ let done = false;
 function pendingFrom(result) {
   const meta = result?._meta?.[KEY];
   if (meta?.id) return meta;
+  // Only what the server attached: never an id read from the text, which
+  // a dry run or tenant data could forge.
   const sc = result?.structuredContent?.approval;
   if (sc?.id) return sc;
-  const text = (result?.content ?? []).map((c) => c?.text ?? "").join("\\n");
-  try {
-    const parsed = JSON.parse(text)?.approval;
-    if (parsed?.id) return parsed;
-  } catch {}
-  const id = /id "([0-9a-f]{12})"/.exec(text)?.[1];
-  if (!id) return undefined;
-  const body = text.slice(text.indexOf("\\n\\n") + 2);
-  const head = /^([^\\n]{1,80}):\\n/.exec(body);
-  return {
-    id,
-    title: head ? head[1] : "Change waiting for approval",
-    preview: head ? body.slice(head[0].length) : body,
-    chat: /calm_confirm/.test(text),
-  };
+  return undefined;
 }
 const chatHint = () => pending?.chat !== false ? " To approve, reply \u201cyes\u201d in the chat." : "";
 app.ontoolinput = () => { if (!pending && !done) $("t").textContent = "Preparing the change…"; };
@@ -189,7 +184,7 @@ app.ontoolresult = (result) => {
   const a = pendingFrom(result);
   if (!a) {
     const text = (result?.content ?? []).map((c) => c?.text ?? "").join("\\n").trim();
-    $("t").textContent = result?.isError ? "Not proposed" : "Nothing waits for approval here.";
+    $("t").textContent = result?.isError ? "Not proposed" : /calm_confirm/.test(text) ? "Approve in the chat" : "Nothing waits for approval here.";
     if (text) { $("p").textContent = text; $("p").hidden = false; }
     buttons(false);
     return;

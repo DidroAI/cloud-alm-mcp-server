@@ -446,3 +446,36 @@ describe("setup", () => {
     expect(await runCommand(t.io, ["setup", "--client", "vim"])).toBe(2);
   });
 });
+
+describe("setup safety", () => {
+  test("a key of another tenant found in Downloads does not replace the saved one without --force", async () => {
+    const home = join(dir, "home2");
+    mkdirSync(join(home, "Downloads"), { recursive: true });
+    const exec = async () => ({ code: 127, stdout: "", stderr: "" });
+    const first = io({ fetch: fakeFetch().fetcher });
+    await runCommand(first.io, ["init", keyFile()]);
+    const other = { ...KEY, uaa: { ...KEY.uaa, url: "https://other.authentication.eu10.hana.ondemand.com" } };
+    writeFileSync(join(home, "Downloads", "k.json"), JSON.stringify(other));
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = { home, exec, execPath: join(dir, "node"), env: {} };
+    expect(await runCommand(t.io, ["setup", "--client", "none"])).toBe(1);
+    expect(t.all()).toContain("A key for another tenant");
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8")).uaa.url).toBe(KEY.uaa.url);
+    expect(await runCommand(t.io, ["setup", "--client", "none", "--force"])).toBe(0);
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8")).uaa.url).toBe(other.uaa.url);
+  });
+
+  test("a client config keeps its mode and gets a backup", async () => {
+    const home = join(dir, "home3");
+    mkdirSync(join(home, "Downloads"), { recursive: true });
+    mkdirSync(join(home, ".cursor"), { recursive: true });
+    const cfg = join(home, ".cursor", "mcp.json");
+    writeFileSync(cfg, '{"mcpServers":{}}', { mode: 0o600 });
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = { home, exec: async () => ({ code: 127, stdout: "", stderr: "" }), execPath: join(dir, "node"), env: {} };
+    expect(await runCommand(t.io, ["setup", keyFile(), "--client", "cursor"])).toBe(0);
+    expect(statSync(cfg).mode & 0o777).toBe(0o600);
+    expect(readFileSync(`${cfg}.bak`, "utf8")).toBe('{"mcpServers":{}}');
+    expect(t.all()).toContain("Tenant: example.authentication.eu20.hana.ondemand.com");
+  });
+});

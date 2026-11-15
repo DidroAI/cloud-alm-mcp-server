@@ -29,7 +29,7 @@ async function connect(options: ServerOptions = { writeMode: "on" }, forbid: str
   const calm = new CloudAlm(grant, { fetch: fake.fetcher });
   const writer = new CloudAlmWriter(grant, { fetch: fake.fetcher });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await createServer(calm, { writer, ...options }).connect(serverSide);
+  await createServer(calm, { writer, approval: "off", ...options }).connect(serverSide);
   const client = new Client({ name: "test", version: "0" });
   await client.connect(clientSide);
   const call = async (name: string, args: Record<string, unknown>) => {

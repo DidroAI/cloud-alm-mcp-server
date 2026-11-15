@@ -250,7 +250,7 @@ says it supports, and the user approves it in one of these ways:
 | Where | How | Clients (Nov 2026) |
 | --- | --- | --- |
 | the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, VS Code, Goose |
-| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` | every client |
+| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name | every client |
 
 The card's button calls `calm_approve`, a tool visible to the card only,
 with a one-time token that travels in the result's `_meta`, never in the
@@ -262,6 +262,14 @@ buttons and asks the user to reply yes in the chat; a failed call does
 the same. An approval is single-use, expires after 60
 minutes (the card then shows it as expired) and, over HTTP, must come with the same bearer token as the
 request that proposed it. `dryRun: true` previews without asking.
+
+Approving in the chat trusts the agent: the server cannot see the user's
+reply. It names the change in `calm_confirm` (id and tool), which hosts
+show in their permission prompt; keep that prompt on for `calm_confirm`
+(do not "always allow" it) if text in Cloud ALM could come from people you
+do not trust. Before writing, the server runs the change as a dry run again
+and refuses if it no longer matches the preview the user saw. Text from
+Cloud ALM reaches the agent fenced as data.
 
 The server sends no confirm dialog (MCP elicitation): some clients declare
 one and answer "decline" without showing it, which would cancel a change

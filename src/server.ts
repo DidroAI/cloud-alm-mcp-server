@@ -150,7 +150,8 @@ const INSTRUCTIONS =
 
 /**
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
- * Every tool is read-only; the server holds no credentials of its own.
+ * Read tools only read; write tools only propose, and a change runs after
+ * the user approves it. The server holds no credentials of its own.
  */
 export function createServer(
   calm: CloudAlm,
@@ -174,7 +175,8 @@ export function createServer(
   const allowed = options.tools ? new Set(options.tools) : null;
   const writeMode = options.writeMode ?? "off";
   const approval: ApprovalMode =
-    options.writer && writeMode === "on" ? (options.approval ?? "off") : "off";
+    // Writes wait for approval unless the embedder turns it off by name.
+    options.writer && writeMode === "on" ? (options.approval ?? "prefer") : "off";
   /** Write tools by name, so an approval can run the stored call. */
   const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
 
@@ -202,7 +204,7 @@ export function createServer(
     const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
-        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" (valid ${ttl}). Do not call ${name} again for this change.`
+        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" and tool "${name}" (valid ${ttl}). Do not call ${name} again for this change.`
         : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid ${ttl}); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
     return {
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
@@ -572,12 +574,22 @@ export function createServer(
       { description: "Approve or reject a change to SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
       async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: cardHtml() }] }),
     );
-    const decide = async (id: string, nonce: string | undefined, approve: boolean): Promise<CallToolResult> => {
+    const decide = async (id: string, nonce: string | undefined, approve: boolean, tool?: string): Promise<CallToolResult> => {
       try {
-        const p = take(id, subject, nonce);
+        const p = take(id, subject, nonce, Date.now(), tool);
         if (!approve) return { content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);
         if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
+        // The user approved a preview: write only if the change still reads
+        // the same (ids and names are resolved again, and items may have
+        // changed since).
+        const again = await answer(() => write.run({ ...p.args, dryRun: true }));
+        const now = previewText(String((again.content[0] as { text?: string })?.text ?? ""));
+        if (again.isError || now !== p.preview)
+          return {
+            isError: true,
+            content: [{ type: "text", text: `Not written: the change no longer matches what the user approved. It would now be:\n${now}\nPropose it again and ask the user.` }],
+          };
         return answer(() => write.run({ ...p.args, dryRun: false }));
       } catch (error) {
         if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
@@ -603,17 +615,21 @@ export function createServer(
       ((a: { id: string; nonce?: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
     );
     if (approval === "prefer")
-      /* @mcp-codemod-error Could not verify `inputSchema` is a schema object. Raw shapes are deprecated in v2 — pass a Standard Schema object (e.g. z.object({ … })); no change is needed if it already is one. */
       server.registerTool(
         "calm_confirm",
         {
           title: "Confirm a change the user approved in the chat",
           description:
             "Runs a change a write tool proposed, after the user said yes in the chat. Only call it when the user approved that exact change.",
-          inputSchema: { id: z.string().regex(/^[0-9a-f]{12}$/) } as never,
-          annotations: { ...WRITE, title: "Confirm" },
+          inputSchema: {
+            id: z.string().regex(/^[0-9a-f]{12}$/),
+            // Named so the host's permission prompt shows what will run.
+            tool: z.string().regex(/^calm_[a-z_]+$/).describe("The write tool that proposed the change, e.g. calm_update"),
+            change: z.string().max(200).optional().describe("The change in a few words, as shown to the user"),
+          } as never,
+          annotations: { ...WRITE, destructiveHint: true, title: "Confirm" },
         },
-        ((a: { id: string }) => decide(a.id, undefined, true)) as never,
+        ((a: { id: string; tool: string }) => decide(a.id, undefined, true, a.tool)) as never,
       );
   }
 }

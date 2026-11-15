@@ -1,8 +1,7 @@
 name: Release
 
-# Publishes to npm when a v* tag is pushed. Inert until the repository has
-# an NPM_TOKEN secret: without it the publish job is skipped. Publishing is
-# a maintainer decision; adding the secret is the switch.
+# Publishes to npm when a v* tag on main is pushed. Inert until the
+# repository has an NPM_TOKEN secret: without it the publish job is skipped.
 
 on:
   push:
@@ -30,47 +29,56 @@ jobs:
       - run: bun run test
       - run: bun run build
 
+  # The token is looked at here only; later steps get it only where they
+  # publish, so installs, tests and builds never see it.
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.token.outputs.set }}
+    steps:
+      - id: token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then echo "set=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::NPM_TOKEN is not set; nothing published."; fi
+
   publish:
-    needs: check
+    needs: [check, gate]
+    if: needs.gate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # npm provenance
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
-      - name: Skip without NPM_TOKEN
-        if: env.NPM_TOKEN == ''
-        run: echo "::notice::NPM_TOKEN is not set; nothing published."
-      - if: env.NPM_TOKEN != ''
-        uses: actions/checkout@v4
-      - if: env.NPM_TOKEN != ''
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: Tag matches package.json version
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
-      - if: env.NPM_TOKEN != ''
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - if: env.NPM_TOKEN != ''
-        run: bun install --frozen-lockfile
-      - name: Tag matches package.json version
-        if: env.NPM_TOKEN != ''
-        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      # prepublishOnly runs typecheck, tests and build again.
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # Checked by the check job; no scripts run with the token.
       # A prerelease version (0.1.0-beta.0) goes out under the beta tag.
-      - if: env.NPM_TOKEN != ''
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           tag=latest
           case "$(node -p 'require("./package.json").version')" in *-*) tag=beta ;; esac
-          npm publish --provenance --access public --tag "$tag"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish --provenance --access public --tag "$tag" --ignore-scripts
       # Until a release exists, latest follows the newest beta, so a bare
       # `npx cloud-alm-mcp-server` gets it.
       - name: Point latest at the beta while there is no release
-        if: env.NPM_TOKEN != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
