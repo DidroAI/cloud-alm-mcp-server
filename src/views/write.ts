@@ -14,6 +14,7 @@ import {
   dry,
   dryNote,
   NOTHING_TO_DO,
+  similarTitles,
   type Item,
   itemsByRef,
   label,
@@ -114,12 +115,23 @@ export async function createTestCase(
     })),
   };
   const steps = input.activities.reduce((n, a) => n + a.steps.length, 0);
-  const plan = `test case "${body.title}" in scope "${scopeName}" with ${input.activities.length} activities and ${steps} steps${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
+  const plan = `test case "${body.title}" in scope "${scopeName}" with ${input.activities.length} ${input.activities.length === 1 ? "activity" : "activities"} and ${steps} step${steps === 1 ? "" : "s"}${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
   const outline = input.activities
     .flatMap((a, i) => [`${i + 1}. ${a.title}`, ...a.steps.map((st, j) => `   ${i + 1}.${j + 1} ${st.title} — do: ${st.description} — expect: ${st.expected}${st.evidence ? " [evidence]" : ""}`)])
     .join("\n");
+  const allCases = await snap.testCases();
+  const testedAlready = covered.flatMap((t) => {
+    const cases = allCases.filter((c) => c.taskIds.includes(t.id));
+    return cases.length ? [`${t.displayId} already has ${cases.map((c) => `${c.displayId} "${short(c.title, 50)}"`).join(", ")}`] : [];
+  });
+  const near = similarTitles(body.title, allCases.map((c) => ({ id: c.displayId, title: c.title })));
+  const notes = [
+    ...testedAlready.map((x) => `${x}; check the new one adds a case they do not cover`),
+    ...(near.length ? [`similar test cases exist: ${near.join("; ")}`] : []),
+    "test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope",
+  ];
   if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\n${outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline}\nNote: test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope.`;
+    return `${dryNote(o)} Would create ${plan}.\n${outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline}\nNote: ${notes.join("; ")}.`;
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
     uuid?: string;
     displayId?: string;
@@ -472,6 +484,8 @@ export async function createTask(
     if (open.length) warnings.push(`an open defect already exists for ${tc.displayId}: ${open.map((t) => label(t)).join(", ")}; check it is not the same problem`);
     warnings.push(`Cloud ALM's API cannot link a defect to a test case: the description names ${tc.displayId}`);
   }
+  const near = similarTitles(title, tasks.filter((t) => t.type === TASK_TYPES[input.type] || (parent && t.type === "CALMUS")).map((t) => ({ id: t.displayId, title: t.title })));
+  if (near.length) warnings.push(`similar titles exist: ${near.join("; ")}; check it is not already there`);
   const description = [found, input.description?.trim()].filter(Boolean).join("\n\n");
   const body = {
     projectId: snap.project.id,

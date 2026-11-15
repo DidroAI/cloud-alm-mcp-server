@@ -15,6 +15,7 @@ import {
   dry,
   dryNote,
   NOTHING_TO_DO,
+  similarTitles,
   etagOf,
   gone,
   type Item,
@@ -533,7 +534,7 @@ export async function remove(
     const links = await snap.defects().catch(() => null);
     const fromTests = hardTasks.filter((i) => links?.byDefect.has(i.task.id.toLowerCase())).length;
     if (fromTests) warnings.push(`${fromTests} of them record a failed test (their test case loses its defect)`);
-    if (hardTasks.length >= 3 || warnings.length) warnings.push("soft: true marks them obsolete instead, which can be undone");
+    warnings.push(`soft: true marks ${hardTasks.length === 1 ? "it" : "them"} obsolete instead, which can be undone (SAP recommends it)`);
   }
   if (dry(o, input.dryRun))
     return [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`), ...(warnings.length ? [`Warning: ${warnings.join("; ")}.`] : [])].join("\n");
@@ -586,7 +587,7 @@ async function deletePlan(
       throw new CloudAlmError("bad_request", `${name} is approved; Cloud ALM does not delete approved requirements. Use soft: true to mark it obsolete`);
     return {
       item,
-      line: `delete ${name} (status ${statusLabel(str(row.status))}) with its comments and links; cannot be undone (soft: true marks it obsolete instead, which SAP recommends)`,
+      line: `delete ${name} (status ${statusLabel(str(row.status))}) with its comments and links; cannot be undone`,
       run: async () => {
         await needing("tasks.write", () => writer.delete(path));
         return goneNote(name, () => readRow(calm, path));
@@ -692,8 +693,16 @@ export async function createFeature(
     priorityCode: input.priority ?? 30,
   };
   const plan = `feature "${title}" (${featureStatus(statusCode)}, priority ${priorityText(body.priorityCode)})${tasks.length ? ` linked to ${tasks.map(label).join("; ")}` : ""}`;
+  // A task another feature already delivers: worth a look, since features cannot be deleted.
+  const already = tasks.flatMap((t) => features.filter((f) => f.taskIds.includes(t.id)).map((f) => `${t.displayId} is delivered by ${f.displayId} "${short(f.title, 60)}"`));
+  const similar = similarTitles(title, features.map((f) => ({ id: f.displayId, title: f.title })));
+  const notes = [
+    "features cannot be deleted through the Cloud ALM API",
+    ...(already.length ? [`${already.join("; ")}: check this is not the same delivery`] : []),
+    ...(similar.length ? [`similar features exist: ${similar.join("; ")}`] : []),
+  ];
   if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\nNote: features cannot be deleted through the Cloud ALM API.`;
+    return `${dryNote(o)} Would create ${plan}.\nNote: ${notes.join("; ")}.`;
   const created = (await needing("features.write", () => writer.post(PATHS.features, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
   if (!id)

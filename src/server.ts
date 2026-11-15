@@ -415,7 +415,7 @@ export function createServer(
   tool(
     "calm_gaps",
     "Find gaps",
-    "What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared. Check coverage (asked by name): every requirement × test cases × latest result, for audits.",
+    "What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with no task or untested tasks (check features); test cases linked to nothing or not prepared. Check coverage (asked by name): every requirement × test cases × latest result, for audits.",
     {
       checks: z.array(z.enum(GAP_CHECKS)).optional().describe("Default: all but coverage"),
       includeClosed: z.boolean().optional().describe("Also closed requirements and user stories (default: open only)"),
@@ -473,7 +473,7 @@ export function createServer(
     const step = z.object({
       title: z.string().min(1).max(500),
       description: z.string().min(1).max(4000).describe("What to do; required by Cloud ALM"),
-      expected: z.string().min(1).max(4000),
+      expected: z.string().min(1).max(4000).describe("Expected result; required by Cloud ALM"),
       evidence: z.boolean().optional(),
     });
     tool(

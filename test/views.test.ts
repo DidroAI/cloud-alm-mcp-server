@@ -338,3 +338,15 @@ describe("calm_api", () => {
     expect(tasks.data?.results[0].rows).toBeGreaterThan(0);
   });
 });
+
+describe("near duplicates and process names", () => {
+  test("similar titles are found, exact ones and unrelated ones are not", async () => {
+    const { similarTitles } = await import("../src/views/items.js");
+    const items = [
+      { id: "3-1", title: "[demo] REQ-01 Credit check on order release" },
+      { id: "3-2", title: "Export billing documents" },
+    ];
+    expect(similarTitles("Credit check on order release for key accounts", items)).toEqual(['3-1 "[demo] REQ-01 Credit check on order release"']);
+    expect(similarTitles("Unrelated cutover rehearsal", items)).toEqual([]);
+  });
+});

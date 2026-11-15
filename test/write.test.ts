@@ -313,9 +313,9 @@ describe("calm_delete", () => {
     expect(r.text).toBe(
       [
         "Dry run, nothing sent. Would:",
-        '- delete 3-4 defect "Credit block not set for export orders" (status open) with its comments and links; cannot be undone (soft: true marks it obsolete instead, which SAP recommends)',
+        '- delete 3-4 defect "Credit block not set for export orders" (status open) with its comments and links; cannot be undone',
         '- delete 7-1 document "Credit design" (solution design, with its 3 links); cannot be undone',
-        "Warning: 1 of them record a failed test (their test case loses its defect); soft: true marks them obsolete instead, which can be undone.",
+        "Warning: 1 of them record a failed test (their test case loses its defect); soft: true marks it obsolete instead, which can be undone (SAP recommends it).",
       ].join("\n"),
     );
     const f = await call("calm_delete", { ids: ["3-4", "6-1"] });
@@ -445,5 +445,5 @@ test("deleting defects raised from tests warns, and points to soft", async () =>
   const ids = [...all.text.matchAll(/- (3-\d+) · defect/g)].map((m) => m[1]);
   const r = await call("calm_delete", { ids, dryRun: true });
   expect(r.text).toContain("record a failed test");
-  expect(r.text).toContain("soft: true marks them obsolete instead");
+  expect(r.text).toContain("obsolete instead, which can be undone");
 });

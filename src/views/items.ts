@@ -170,6 +170,32 @@ export async function afterWrite<T>(what: string, step: () => Promise<T>): Promi
   }
 }
 
+/** Words of a title, without codes, brackets and short words. */
+const words = (title: string | null) =>
+  new Set(
+    (title ?? "")
+      .toLowerCase()
+      .replace(/\[[^\]]*\]|\b[a-z]{1,6}-\d+\b/g, " ")
+      .split(/[^a-z0-9äöüß]+/)
+      .filter((w) => w.length > 3),
+  );
+
+/** Titles that share most words with `title`: a near duplicate is worth a look before creating. */
+export function similarTitles(title: string, items: { id: string | null; title: string | null }[], max = 3): string[] {
+  const mine = words(title);
+  if (mine.size < 2) return [];
+  return items
+    .map((x) => {
+      const theirs = words(x.title);
+      const shared = [...mine].filter((w) => theirs.has(w)).length;
+      return { x, score: shared / Math.max(1, Math.min(mine.size, theirs.size)) };
+    })
+    .filter((s) => s.score >= 0.6 && (s.x.title ?? "").trim().toLowerCase() !== title.trim().toLowerCase())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, max)
+    .map((s) => `${s.x.id} "${short(s.x.title, 60)}"`);
+}
+
 /** Starts a write's answer when nothing would change: no proposal, no approval. */
 export const NOTHING_TO_DO = "Nothing to do:";
 

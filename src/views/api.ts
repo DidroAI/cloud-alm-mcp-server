@@ -91,7 +91,14 @@ export async function api(calm: CloudAlm, input: { requests?: ApiRequest[]; path
         return { path, query: r.query ?? {}, rows: rows?.length ?? null, shown, count: count ?? null, truncated, body: JSON.parse(truncated && !rows ? "null" : json) as unknown, raw: json };
       } catch (error) {
         if (!(error instanceof CloudAlmError)) throw error;
-        return { path, error: `${error.code}: ${error.reason}${error.code === "forbidden" ? " (or an unknown path: this gateway answers 403 to both)" : ""}` };
+        let hint = error.code === "forbidden" ? " (or an unknown path: this gateway answers 403 to both)" : "";
+        // A property OData does not know: name the ones a row has.
+        if (error.code === "bad_request" && /propert/i.test(error.reason)) {
+          const sample = await calm.operation(async (s) => s.get(path, { $top: "1" })).catch(() => null);
+          const row = Array.isArray((sample as { value?: unknown[] } | null)?.value) ? (sample as { value: Record<string, unknown>[] }).value[0] : null;
+          if (row) hint = `. Properties of a row: ${Object.keys(row).filter((k) => !k.startsWith("@")).join(", ")}`;
+        }
+        return { path, error: `${error.code}: ${error.reason}${hint}` };
       }
     }),
   );
