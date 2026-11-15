@@ -23,6 +23,17 @@ Pick the tool by the question, not by the object:
 | "Is a service down?", "which systems?", planned maintenance | `calm_landscape` |
 | Anything the tools above do not cover | `calm_api` (no path: the list of APIs and their query options) |
 
+## Workflows with their own skill
+
+For a whole task rather than a question, follow the matching skill (also
+offered as a prompt by the server): `cloud-alm-fit-gap` (fit-to-standard,
+gap list), `cloud-alm-workshop-prep` (agenda and open questions for a
+workshop), `cloud-alm-backlog-from-notes` (minutes into requirements and
+tasks), `cloud-alm-status-report` (steering committee update),
+`cloud-alm-test-readiness` (SIT/UAT entry and exit, go-live),
+`cloud-alm-defect-triage`, `cloud-alm-test-design` (test cases for
+untested items).
+
 ## How Cloud ALM is laid out
 
 - A **project** moves through phases (Discover, Prepare, Explore, Realize,

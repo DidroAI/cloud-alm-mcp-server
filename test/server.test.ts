@@ -356,3 +356,15 @@ test("analytics takes a project by name and leaves out blank groups", async () =
   expect(r.error).toBe(false);
   expect(r.text).toContain(`Project: ${name} only`);
 });
+
+test("the skills are offered as prompts", async () => {
+  const { client } = await connect();
+  const { prompts } = await client.listPrompts();
+  const names = prompts.map((p) => p.name);
+  expect(names).toContain("cloud-alm-fit-gap");
+  expect(names).toContain("cloud-alm-status-report");
+  const p = await client.getPrompt({ name: "cloud-alm-fit-gap", arguments: { request: "Order to Cash" } });
+  const text = (p.messages[0]?.content as { text: string }).text;
+  expect(text).toContain("Fit-gap analysis in SAP Cloud ALM");
+  expect(text).toContain("My request: Order to Cash");
+});

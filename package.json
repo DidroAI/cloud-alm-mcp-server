@@ -43,6 +43,7 @@
     "README.md",
     "CHANGELOG.md",
     "scopes",
+    "skills",
     "LICENSE"
   ],
   "engines": {
