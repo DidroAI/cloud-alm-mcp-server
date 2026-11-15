@@ -22,7 +22,7 @@ server, `cloud-alm-mcp-server`.
 <img src="docs/images/update-light.png" alt="Approval card: priority very high → high, due date, new comment, Approve / Reject" width="49%">
 </p>
 
-> Beta (0.1.0-beta.2). MIT licence. An independent open-source project, not
+> Beta (0.1.0-beta.3). MIT licence. An independent open-source project, not
 > affiliated with or endorsed by SAP. SAP and SAP Cloud ALM are trademarks of
 > SAP SE.
 

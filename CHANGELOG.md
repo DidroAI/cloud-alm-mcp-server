@@ -6,6 +6,8 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.3] - 2026-11-15
+
 ### Added
 
 - Approval card redesigned (SAP Horizon look, light and dark, host
