@@ -76,7 +76,7 @@ describe("tools", () => {
     const credit = await call("calm_list", { query: "credit" });
     expect(credit.text).toStartWith("6 matches");
     expect(credit.text).toContain(
-      '- 3-1 · requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release" · #Wave 1',
+      '- 3-1 · requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release" · unassigned · #Wave 1',
     );
     expect(credit.text).toContain('- 3-4 · defect · open (new) · priority very high · "Credit block not set for export orders"');
     const alt = await call("calm_list", { query: "worklist | regression" });
@@ -122,7 +122,7 @@ describe("tools", () => {
     expect(text).toContain("Test cases linked to no task: 2");
     expect(text).toContain("Test cases not prepared: 1");
     expect(text).toContain(
-      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · failed, 1 of 2 steps passed in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "[demo] REQ-01 Credit check on order release" — defect 3-4 "Credit block not set for export orders" (open (new), priority very high)',
+      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · prepared · failed, 1 of 2 steps passed in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "[demo] REQ-01 Credit check on order release" — defect 3-4 "Credit block not set for export orders" (open (new), priority very high)',
     );
   });
 

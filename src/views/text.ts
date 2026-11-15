@@ -102,7 +102,7 @@ export const taskLine = (t: TaskSummary) =>
     taskStatus(t),
     t.priority !== null ? `priority ${priorityLabel(t.priority)}` : null,
     `"${short(t.title)}"`,
-    t.assigneeName ? `@${t.assigneeName}` : null,
+    t.assigneeName ? `@${t.assigneeName}` : "unassigned",
     t.dueDate ? `due ${t.dueDate}` : null,
     t.tags.length ? `#${t.tags.join(" #")}` : null,
   ]
@@ -127,7 +127,7 @@ export const resultText = (results: TestResult[] | undefined) =>
 
 export const testCaseLine = (t: SnapTestCase, results?: TestResult[]) => {
   const result = resultText(results);
-  return `${t.displayId ?? "?"} · ${t.kind} test case${t.prepared === false ? " · not prepared" : ""}${result ? ` · ${result}` : ""} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
+  return `${t.displayId ?? "?"} · ${t.kind} test case · ${t.prepared === false ? "not prepared" : "prepared"} · ${result || "not run"} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
 };
 
 export const documentLine = (d: SnapDocument) =>

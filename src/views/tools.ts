@@ -237,6 +237,7 @@ type Row = {
     assignee?: string | null;
     dueDate?: string | null;
     tags?: string[];
+    createdAt?: string | null;
     changedAt?: string | null;
     result?: string | null;
   };
@@ -379,7 +380,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         sort: `1${t.type}`,
         displayId: t.displayId,
         line: taskLine(t),
-        data: { id: t.displayId, uuid: t.id, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, changedAt: t.changedAt },
+        data: { id: t.displayId, uuid: t.id, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, createdAt: t.createdAt ?? null, changedAt: t.changedAt },
       });
     }
   }
@@ -456,15 +457,21 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee and dueBefore filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
   if (query && !input.searchText) notes.push("words matched titles and tags; searchText: true also reads descriptions and document content");
+  if (!rows.length && want.tasks && tasks.length) {
+    if (input.dueBefore) notes.push(`${tasks.filter((t) => t.dueDate).length} of ${tasks.length} tasks have a due date`);
+    if (assignee && !unassigned) notes.push(`${tasks.filter((t) => t.assigneeName).length} of ${tasks.length} tasks have an assignee`);
+  }
   const range = shown.length
     ? `showing ${offset + 1}–${offset + shown.length}${nextOffset !== null ? `; next page: offset ${nextOffset}` : ""}`
-    : `offset ${offset} is past the end`;
+    : rows.length
+      ? `offset ${offset} is past the end`
+      : "";
   const lines = [
     `${rows.length} match${rows.length === 1 ? "" : "es"} in ${snap.project.name ?? "the project"}${rows.length && (offset > 0 || nextOffset !== null) ? ` (${range})` : ""}${notes.length ? ` (${notes.join("; ")})` : ""}`,
     ...shown.map((h) => `- ${h.line}`),
   ];
   if (shown.length) lines.push("calm_get takes these ids (up to 10 at once) for details; calm_trace follows an item's links.");
-  if (!input.types?.length && !query && !status && !tag) lines.push('Solution processes are listed with types ["process"].');
+  if (!input.types?.length && !query && !status && !tag && !taskOnly && priority === undefined && !input.changedSince) lines.push('Solution processes are listed with types ["process"].');
   const footnotes = footer(snap, parts);
   lines.push(...footnotes);
   return {
@@ -915,7 +922,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
-      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || "not run" })),
+      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || "not run", defects: n.defectsOf(x.id).map((d) => d.displayId) })),
       documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
       ...(t?.type === "CALMDEF" ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null } : {}),
     });
@@ -955,7 +962,9 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
   }
   const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks"]);
   lines.push(...footnotes);
-  return { text: lines.join("\n"), data: { start: { id: input.id, kind: ref.kind, label: head }, nodes, notes: footnotes } };
+  const startId =
+    ref.kind === "task" ? ref.task.displayId : ref.kind === "feature" ? ref.feature.displayId : ref.kind === "test case" ? ref.testCase.displayId : ref.kind === "document" ? ref.document.displayId : ref.kind === "process" ? ref.id : input.id;
+  return { text: lines.join("\n"), data: { start: { id: startId, asked: input.id, kind: ref.kind, label: head }, nodes, notes: footnotes } };
 }
 
 // ---------------------------------------------------------------------------
@@ -967,7 +976,17 @@ export type GapCheck = (typeof GAP_CHECKS)[number];
 /** Checked when none is named; `coverage` is a full matrix, asked for by name. */
 const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
 
-type GapItem = { id: string | null; type: string; title: string | null; status?: string | null; note?: string; testCases?: { id: string | null; result: string }[] };
+type GapItem = {
+  id: string | null;
+  type: string;
+  title: string | null;
+  status?: string | null;
+  priority?: string | null;
+  note?: string;
+  covers?: (string | null)[];
+  defects?: (string | null)[];
+  testCases?: { id: string | null; result: string; prepared: boolean | null }[];
+};
 
 export async function gaps(
   calm: CloudAlm,
@@ -997,6 +1016,7 @@ export async function gaps(
     type: typeLabel(t.type),
     title: t.title,
     status: taskStatus(t),
+    priority: priorityLabel(t.priority),
     ...(note ? { note } : {}),
     line: `${taskLine(t)}${note ? ` — ${note}` : ""}`,
   });
@@ -1044,7 +1064,16 @@ export async function gaps(
           const covers = t.taskIds.map((id) => { const k = n.taskOf(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; });
           const raised = n.defectsKnown ? n.defectsOf(t.id) : [];
           const note = [covers.length ? `covers ${covers.join(", ")}` : "covers no task", n.defectsKnown ? (raised.length ? raised.map(n.defect).join("; ") : "no defect raised") : ""].filter(Boolean).join(" — ");
-          return { id: t.displayId, type: `${t.kind} test case`, title: t.title, status: "failed", note, line: `${testCaseLine(t, results.get(t.id))} — ${note}` };
+          return {
+            id: t.displayId,
+            type: `${t.kind} test case`,
+            title: t.title,
+            status: "failed",
+            note,
+            covers: t.taskIds.map((id) => n.taskOf(id)?.displayId ?? id),
+            ...(n.defectsKnown ? { defects: raised.map((d) => d.displayId) } : {}),
+            line: `${testCaseLine(t, results.get(t.id))} — ${note}`,
+          };
         }),
       );
   }
@@ -1077,11 +1106,22 @@ export async function gaps(
     const rows = reqs.sort(byDisplayId).map((t) => {
       const cases = testCases.filter((c) => c.taskIds.includes(t.id)).sort(byDisplayId);
       const words = cases.map((c) => latestWord(c.id));
-      const verdict = !cases.length ? "no test" : words.includes("failed") ? "failed" : words.every((w) => w === "passed") ? "passed" : words.includes("in progress") ? "in progress" : "not run";
+      // A test that is not prepared does not count as ready, whatever it shows.
+      const verdict = !cases.length
+        ? "no test"
+        : words.includes("failed")
+          ? "failed"
+          : words.every((w) => w === "passed")
+            ? "passed"
+            : words.includes("in progress")
+              ? "in progress"
+              : cases.some((c) => c.prepared === false)
+                ? "not prepared"
+                : "not run";
       return {
         ...taskItem(t, verdict),
-        testCases: cases.map((c, i) => ({ id: c.displayId, result: words[i] ?? "not run" })),
-        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}`).join(", ")}` : ""}`,
+        testCases: cases.map((c, i) => ({ id: c.displayId, result: words[i] ?? "not run", prepared: c.prepared })),
+        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}`,
       };
     });
     const tally = counts(rows.map((r) => r.note ?? ""));
@@ -1132,7 +1172,7 @@ export const DATASETS: Record<AnalyticsDataset, DatasetInfo> = {
   },
   Features: {
     about: "features, one row per feature and requirement",
-    columns: ["statusText", "priority", "workstream", "release", "scopeName"],
+    columns: ["statusText", "priority", "workstream", "scopeName"],
     status: "statusText",
   },
   ConfigurationItems: { about: "configuration and security analysis items" },
@@ -1175,7 +1215,11 @@ export async function analytics(
   const remote: Record<string, string> = {};
   for (const [key, value] of Object.entries(input.filters ?? {})) {
     if (key.toLowerCase() === "status" && info.status) local[info.status] = value;
-    else remote[key] = value;
+    else {
+      remote[key] = value;
+      // Cloud ALM may ignore a filter it cannot apply: apply it here too.
+      local[key] = value;
+    }
   }
   let result: Awaited<ReturnType<CloudAlm["queryAnalytics"]>>;
   try {
@@ -1204,9 +1248,18 @@ export async function analytics(
   }
   const unfiltered = rows;
   for (const [column, value] of Object.entries(local)) {
+    if (!result.columns.includes(column)) continue;
     const v = value.trim().toLowerCase();
     rows = rows.filter((r) => String(r[column] ?? "").toLowerCase() === v);
   }
+  // Rows of deleted items come back with every dimension empty: leave them out.
+  const ghosts = rows.filter((r) => result.columns.filter((c) => c !== "date" && typeof r[c] !== "number").every((c) => r[c] === null || r[c] === "")).length;
+  if (ghosts) {
+    rows = rows.filter((r) => !result.columns.filter((c) => c !== "date" && typeof r[c] !== "number").every((c) => r[c] === null || r[c] === ""));
+    notes.push(`${ghosts} empty rows (deleted items) left out.`);
+  }
+  if (Object.keys(input.filters ?? {}).length)
+    notes.push(`Filters applied: ${Object.entries(input.filters ?? {}).map(([k, v]) => `${k}=${v}`).join(", ")}.`);
   // A filter that matches nothing: name the values there are.
   if (!rows.length && unfiltered.length) {
     const values = Object.keys(local).map((c) => `${c}: ${[...new Set(unfiltered.map((r) => String(r[c] ?? "—")))].slice(0, 15).join(", ")}`);
@@ -1243,7 +1296,7 @@ export async function analytics(
     }
     const shownGroups = [...groups.entries()].slice(0, input.limit ?? 50);
     const text = [
-      `${dataset} by ${groupBy.join(", ")}${latest && !groupBy.includes("date") ? `, as of ${latest}` : ""} (${day.length} rows${dates.length > 1 && !groupBy.includes("date") ? `, the latest of ${dates.length} daily snapshots` : ""}${result.truncated ? "; cut at 200 rows" : ""}):`,
+      `${dataset} by ${groupBy.join(", ")}${latest && !groupBy.includes("date") ? `, as of ${latest}` : ""}: ${groups.size} group${groups.size === 1 ? "" : "s"} from ${day.length} rows${dates.length > 1 && !groupBy.includes("date") ? ` (the latest of ${dates.length} daily snapshots)` : ""}${groups.size > shownGroups.length ? `; showing ${shownGroups.length}, pass limit for more` : ""}${result.truncated ? "; rows cut at 200" : ""}:`,
       ...notes,
       ...shownGroups.map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
       FRESHNESS,
@@ -1299,7 +1352,7 @@ export async function landscape(calm: CloudAlm) {
       throw e;
     }),
   ]);
-  const lines = [`Landscape: ${objects.items.length} objects (${counts(objects.items.map((o) => o.objectType ?? "?"))})`];
+  const lines = [`Landscape: ${objects.items.length} objects registered in this tenant (${counts(objects.items.map((o) => o.objectType ?? "?"))}); systems not registered in Cloud ALM are not listed`];
   const label = (o: (typeof objects.items)[number]) =>
     o.serviceType && o.objectType === "CloudService" ? o.serviceType : (o.name ?? o.id);
   for (const o of objects.items.slice(0, 60))
@@ -1322,8 +1375,18 @@ export async function landscape(calm: CloudAlm) {
     data: {
       objects: objects.items.map((o) => ({ name: label(o), type: o.objectType, system: o.systemNumber, role: o.role })),
       events: events
-        ? events.items.map((e) => ({ status: e.status, type: e.type, service: (e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName, start: e.startTime, end: e.endTime, text: eventText(e) }))
+        ? [...events.items]
+            .sort((x, y) => (y.startTime ?? "").localeCompare(x.startTime ?? ""))
+            .map((e) => ({ status: e.status, type: e.type, service: (e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName, start: e.startTime, end: e.endTime, text: eventText(e) }))
         : null,
+      eventCounts: events
+        ? {
+            open: events.items.filter((e) => !/closed|resolved|completed/i.test(e.status ?? "")).length,
+            closed: events.items.filter((e) => /closed|resolved|completed/i.test(e.status ?? "")).length,
+            upcoming: events.items.filter((e) => (e.startTime ?? "") > new Date().toISOString()).length,
+          }
+        : null,
+      note: "Only systems and services registered in this Cloud ALM tenant are listed.",
     },
   };
 }

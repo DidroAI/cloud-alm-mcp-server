@@ -237,7 +237,7 @@ export function createServer(
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
     // Nothing would change: say so, and ask nobody to approve it.
-    if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }] };
+    if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }], structuredContent: { nothingToDo: true, text } };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });

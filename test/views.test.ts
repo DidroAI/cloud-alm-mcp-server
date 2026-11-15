@@ -90,7 +90,7 @@ describe("calm_list", () => {
     const { call } = await connect();
     const failed = await call("calm_list", { status: "failed", types: ["test_case"] });
     expect(failed.text).toStartWith("1 match");
-    expect(failed.text).toContain("8-1-1 · manual test case · failed, 1 of 2 steps passed");
+    expect(failed.text).toContain("8-1-1 · manual test case · prepared · failed, 1 of 2 steps passed");
     const anyType = await call("calm_list", { status: "passed" });
     expect(anyType.text).toStartWith("1 match");
     expect(anyType.text).toContain("8-1-2");
@@ -248,7 +248,7 @@ describe("calm_analytics", () => {
   test("groupBy counts the latest day, not the sum of daily snapshots", async () => {
     const { call } = await connect(tests30);
     const { text } = await call("calm_analytics", { dataset: "Tests", period: "C30D", groupBy: ["status"] });
-    expect(text).toContain("Tests by status, as of 2026-11-13 (3 rows, the latest of 3 daily snapshots)");
+    expect(text).toContain("Tests by status, as of 2026-11-13: 2 groups from 3 rows (the latest of 3 daily snapshots)");
     expect(text).toContain("- Failed: total 2, allActions 8, passedActions 4, failedActions 2");
     expect(text).toContain("- Passed: total 1, allActions 2, passedActions 2");
     // Averages, progress and ids are never summed.
