@@ -838,6 +838,8 @@ export const DATASETS: Record<AnalyticsDataset, DatasetInfo> = {
 
 /** Averages, ratios and ids are not summed when grouping. */
 const NOT_SUMMED = /avg|average|progress|percent|ratio|rate$|id$/i;
+/** Datasets fed by monitored systems: empty may mean nothing is connected. */
+const MONITORED = new Set<AnalyticsDataset>(["Exceptions", "Jobs", "Metrics", "Requests", "ServiceLevels", "ScenarioExecutions", "MonitoringEvents", "Messages", "ConfigurationItems"]);
 const FRESHNESS = "Analytics is refreshed daily and tenant-wide; calm_overview and calm_find give one project's live state.";
 
 export async function analytics(
@@ -846,7 +848,7 @@ export async function analytics(
 ) {
   if (!input.dataset)
     return [
-      "Datasets (pass one as dataset; groupBy counts by columns, on the latest day; `status` means the dataset's status column; rows are tenant-wide):",
+      "Datasets (pass one as dataset; groupBy counts by columns on the latest day, or per day when groupBy includes date; `status` means the dataset's status column; rows are tenant-wide):",
       ...Object.entries(DATASETS).map(([k, v]) => `- ${k}: ${v.about}${v.columns ? ` · group by: ${v.columns.join(", ")}` : ""}`),
     ].join("\n");
   const dataset = input.dataset;
@@ -884,23 +886,36 @@ export async function analytics(
     if (ignored.length)
       notes.push(`Filter ${ignored.join(", ")} ignored: not a column of ${dataset} (columns: ${result.columns.join(", ")}). Rows are unfiltered by it.`);
   }
+  const unfiltered = rows;
   for (const [column, value] of Object.entries(local)) {
     const v = value.trim().toLowerCase();
     rows = rows.filter((r) => String(r[column] ?? "").toLowerCase() === v);
   }
-  if (!rows.length)
+  // A filter that matches nothing: name the values there are.
+  if (!rows.length && unfiltered.length) {
+    const values = Object.keys(local).map((c) => `${c}: ${[...new Set(unfiltered.map((r) => String(r[c] ?? "—")))].slice(0, 15).join(", ")}`);
+    return [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
+  }
+  if (!result.rows.length)
     return [
-      `${dataset}: no rows${input.period ? "" : " (default period; try period C30D)"}${Object.keys(local).length ? ` with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}` : ""}.`,
+      `${dataset}: no rows${input.period ? "" : " (default period; try period C30D)"}${Object.keys(remote).length ? ` with ${Object.entries(remote).map(([c, v]) => `${c}=${v}`).join(", ")}` : ""}.`,
+      MONITORED.has(dataset)
+        ? "No rows does not mean none happened: this dataset only has rows when a monitored system sends them (calm_landscape lists the systems). Say that it is empty, not that there were none."
+        : "",
       ...notes,
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   const dates = [...new Set(rows.map((r) => r.date).filter((d): d is string => typeof d === "string" && !!d))].sort();
   const latest = dates.at(-1);
   const numeric = result.columns.filter((c) => rows.every((r) => r[c] === null || typeof r[c] === "number"));
   if (input.groupBy?.length) {
     const groupBy = input.groupBy.map((g) => columnOf(g) ?? g);
     const unknown = groupBy.filter((g) => !result.columns.includes(g));
-    if (unknown.length)
-      return `Unknown columns ${unknown.join(", ")}.${info.columns ? ` Group by: ${info.columns.join(", ")}.` : ""} All columns: ${result.columns.join(", ")}`;
+    if (unknown.length) {
+      const groupable = (info.columns ?? []).filter((c) => result.columns.includes(c));
+      return `Not a column of ${dataset} on this tenant: ${unknown.join(", ")}.${groupable.length ? ` Group by: ${groupable.join(", ")}, date.` : ""} All columns: ${result.columns.join(", ")}`;
+    }
     // Rows are daily snapshots: count the latest day only, never sum days.
     const day = dates.length > 1 && !groupBy.includes("date") ? rows.filter((r) => r.date === latest) : rows;
     const groups = new Map<string, Record<string, number>>();
@@ -923,8 +938,9 @@ export async function analytics(
   const varying = cols.filter((c) => !same.includes(c));
   const cell = (v: unknown) => short(String(v), 60);
   const when = latest ? (dates.length > 1 ? `, daily snapshots ${dates[0]} to ${latest}` : `, as of ${latest}`) : "";
+  const shown = Math.min(rows.length, input.limit ?? 10);
   return [
-    `${dataset}: ${rows.length} rows${when}${result.truncated ? " (cut)" : ""}. Use groupBy to count${info.columns ? ` (e.g. ${info.columns.slice(0, 3).join(", ")})` : ""}.`,
+    `${dataset}: ${rows.length} rows${when}${result.truncated ? " (cut at 200)" : ""}${varying.length && shown < rows.length ? `; showing ${shown} (pass limit for more)` : ""}. Use groupBy to count${info.columns ? ` (e.g. ${info.columns.filter((c) => result.columns.includes(c)).slice(0, 3).join(", ")}, or date for a daily series)` : ""}.`,
     ...notes,
     same.length ? `All rows: ${same.map((c) => `${c}=${cell(rows[0]?.[c])}`).join("; ")}` : "",
     ...(varying.length ? rows.slice(0, input.limit ?? 10).map((r) => `- ${varying.map((c) => `${c}=${cell(r[c])}`).join("; ")}`) : []),

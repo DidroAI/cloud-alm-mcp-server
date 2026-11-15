@@ -259,7 +259,7 @@ describe("pending store", () => {
 });
 
 test("a change that changes nothing asks for no approval", async () => {
-  const { call } = await connect("none", { approval: "prefer" });
+  const { call } = await connect("plain", { approval: "prefer" });
   const r = await call("calm_update", { ids: ["3-3"], priority: 20 });
   expect(r.text).toStartWith("Nothing to do:");
   expect(r.meta?.[META_KEY]).toBeUndefined();

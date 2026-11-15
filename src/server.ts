@@ -333,7 +333,7 @@ export function createServer(
   tool(
     "calm_analytics",
     "Analytics",
-    "Cloud ALM analytics, refreshed daily, tenant-wide: tasks, defects, test runs, jobs, exceptions, integration messages… Without dataset: the list and the columns to group by. groupBy counts on the latest day; `status` means the dataset's status column.",
+    "Cloud ALM analytics, refreshed daily, tenant-wide: tasks, defects, test runs, jobs, exceptions, integration messages… Without dataset: the list and the columns to group by. groupBy counts on the latest day, or per day when groupBy includes date; `status` means the dataset's status column.",
     {
       dataset: z.enum(ANALYTICS_DATASETS).optional(),
       groupBy: z.array(z.string().max(60)).max(4).optional(),
