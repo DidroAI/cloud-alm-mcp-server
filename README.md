@@ -284,6 +284,26 @@ features and documents are written through the Tasks API), and to delete
 test cases and documents (or unlink a test case from a task)
 `testcases.delete`, `testcases.force-delete`, `documents.delete`.
 
+## Skills and prompts
+
+`skills/` holds agent skills for the work of a functional consultant; the
+server also offers each one as an MCP prompt (pick it from your client's
+prompt or slash-command menu):
+
+| Skill | For |
+| --- | --- |
+| `cloud-alm-explore` | answering questions: which tool for which question |
+| `cloud-alm-fit-gap` | fit-to-standard: fit, configuration or gap per requirement and process |
+| `cloud-alm-workshop-prep` | agenda, open questions and decisions for a workshop |
+| `cloud-alm-backlog-from-notes` | minutes or a transcript into requirements, user stories, tasks and comments |
+| `cloud-alm-status-report` | a steering committee or weekly status report |
+| `cloud-alm-test-readiness` | SIT/UAT entry and exit, go-live readiness, go / no-go |
+| `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
+| `cloud-alm-test-design` | test cases for what is untested |
+
+For Claude Code, copy a skill's folder to `~/.claude/skills/`; for other
+agents, use the prompts or point the agent to the SKILL.md.
+
 ## Two ways to run it
 
 ### stdio, with your own key (default)

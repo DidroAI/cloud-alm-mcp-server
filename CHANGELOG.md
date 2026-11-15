@@ -6,6 +6,8 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-11-15
+
 ### Added
 
 - `setup`: one command finds the service key downloaded to `~/Downloads`,
@@ -15,6 +17,17 @@ All notable changes to this package. The format follows
   has a prompt that lets an agent run the setup.
 - `scopes/read-only.json` and `scopes/read-write.json`: the parameters to
   paste when creating the "SAP Cloud ALM API" instance.
+- Skills for functional consultants: fit-gap analysis, workshop
+  preparation, notes to backlog, status report, test and go-live
+  readiness, defect triage. The server also offers every skill as an MCP
+  prompt.
+- Requirements show their fit/gap classification and approval state;
+  `calm_list` filters by `classification`.
+- `calm_trace` on a defect names what it blocks (the items its test case
+  covers, with their features).
+- `calm_analytics` takes `projectId` (id or name).
+- Open-source files: security policy, contributing guide, code of conduct,
+  issue and pull request templates, Dependabot.
 
 ### Changed
 
@@ -24,6 +37,38 @@ All notable changes to this package. The format follows
   `CALM_APPROVAL`, `CALM_APPROVAL_DIALOG`, `CALM_TOOLS` and `CALM_PROJECT`
   are gone; projects are named per call.
 - No confirm dialog (MCP elicitation): some clients decline it unseen.
+- Test results use one vocabulary everywhere: "not run" is in a test plan
+  and not executed, "not in a test plan" is in none (also a `calm_list`
+  status). List rows carry `prepared` and per-plan `results` as data, and
+  no longer the GUID.
+- `calm_confirm` takes the tool's name with the id; `doctor` and `setup`
+  list only the tools a key lacks scopes for.
+
+### Fixed
+
+- Test results and defect links read only the project's analytics rows,
+  every page; before, a busy tenant could hide results past 200 rows.
+- A write whose follow-up step fails (a comment, a new activity, the next
+  task's tags) reports what was already written.
+- Server guidance in errors is no longer cut at 200 characters; a write
+  timeout says the outcome is unknown; an offline start retries the write
+  tools later; document type names agree; `dueBefore` includes the day.
+
+### Security
+
+- The approval card takes an approval only from what the server attached,
+  never from text a dry run could forge.
+- Before writing, an approved change is run as a dry run again and refused
+  if it no longer matches the preview the user saw.
+- Text from Cloud ALM cannot close its data fence.
+- Pending approvals are capped per approver; a library embedder gets
+  approval by default.
+- `setup` looks for keys in `~/Downloads` only, names the tenant, will not
+  switch tenants without a named file or `--force`, and keeps client
+  config files' mode and symlinks with a `.bak`; the key file is written
+  through an exclusive, unguessable temp file.
+- Release: the npm token reaches only the publish steps; the tag must be
+  on `main`.
 
 ## [0.1.0-beta.1] - 2026-11-15
 
