@@ -132,7 +132,7 @@ describe("init", () => {
     const all = t.all();
     expect(all).toContain("! Scopes  3 of 7 tools usable, 0 with every part");
     expect(all).toContain("✗ calm_overview: needs calm-api.tasks.read");
-    expect(all).toContain("~ calm_find: parts need calm-api.tasks.read");
+    expect(all).toContain("~ calm_list: parts need calm-api.tasks.read");
     expect(all).toContain("~ calm_landscape: parts need calm-api.bsm.read");
   });
 

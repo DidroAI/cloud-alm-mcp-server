@@ -116,7 +116,7 @@ too. Answers are compact text written for a model's context.
 | Tool | Answers |
 | --- | --- |
 | `calm_overview` | Start here: the project, its current phase, counts of requirements, user stories, defects, features, test cases and documents by status, latest test results, tags in use, gaps |
-| `calm_find` | Search or list items across types (tasks, features, documents, test cases, test plans, processes, library) by words in titles and tags (`a b \| c`), type, status, tag |
+| `calm_list` | Search or list items across types (tasks, features, documents, test cases, test plans, processes, library) by words in titles and tags (`a b \| c`), type, status, tag |
 | `calm_get` | Full content of 1–10 items at once: description, test steps and latest result, document text, feature transports, every link named |
 | `calm_trace` | An item's links both ways: requirement → user stories → features (status, transports), test cases (with results), documents, solution process |
 | `calm_gaps` | What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared |
@@ -179,7 +179,7 @@ this key"); the rest still answers. Errors are short text with a code
 | Variable | Effect |
 | --- | --- |
 | `CALM_WRITE` | `off` (default): read tools only. `dry-run`: write tools are offered but only preview. `on`: write tools write. The key also needs the write scopes. |
-| `CALM_TOOLS` | Comma-separated tool names to offer, e.g. `calm_overview,calm_find,calm_get`. Default: all (of the current mode). |
+| `CALM_TOOLS` | Comma-separated tool names to offer, e.g. `calm_overview,calm_list,calm_get`. Default: all (of the current mode). |
 | `CALM_APPROVAL` | With `CALM_WRITE=on`: `prefer` (default) has the user approve each write in the card or the chat, `required` in the card only, `off` writes at once. |
 | `CALM_APPROVAL_DIALOG` | `on` also asks in the client's confirm dialog (MCP elicitation), where it declares one. Off by default: only terminal clients show it reliably. |
 | `CALM_PROJECT` | Project GUID used when a call names none. Without it, a tenant with one project uses that one; with several, tools ask for `projectId`. |

@@ -164,7 +164,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
 }
 
 // ---------------------------------------------------------------------------
-// calm_find
+// calm_list
 // ---------------------------------------------------------------------------
 
 export const FIND_TYPES = [
@@ -203,7 +203,25 @@ const RESULT_STATUS: Record<string, string> = {
   blocked: "blocked",
 };
 
-type Hit = { sort: string; displayId: string | null; line: string };
+/** One row of `calm_list`: the text line and the same as data. */
+type Row = {
+  sort: string;
+  displayId: string | null;
+  line: string;
+  data: {
+    id: string | null;
+    uuid: string;
+    type: string;
+    title: string | null;
+    status?: string | null;
+    priority?: string | null;
+    assignee?: string | null;
+    dueDate?: string | null;
+    tags?: string[];
+    changedAt?: string | null;
+    result?: string | null;
+  };
+};
 
 /** `a b | c` → [[a,b],[c]]: all words of one alternative must match. */
 function matcher(query: string | undefined) {
@@ -220,23 +238,35 @@ function matcher(query: string | undefined) {
 }
 
 const LIBRARY_TYPE = /application|development|interface|configuration/;
+const PRIORITY_WORDS: Record<string, number> = { "very high": 10, high: 20, medium: 30, low: 40 };
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** Items whose own text `searchText` reads, at most (one request each). */
+const TEXT_SEARCH_MAX = 150;
 
-export async function find(
-  calm: CloudAlm,
-  input: {
-    query?: string;
-    types?: FindType[];
-    status?: string;
-    tag?: string;
-    projectId?: string;
-    limit?: number;
-    offset?: number;
-  },
-  o: ViewOptions = {},
-) {
-  const limit = Math.min(Math.max(input.limit ?? 30, 1), 100);
+export type ListInput = {
+  query?: string;
+  types?: FindType[];
+  status?: string;
+  tag?: string;
+  assignee?: string;
+  priority?: string;
+  changedSince?: string;
+  dueBefore?: string;
+  searchText?: boolean;
+  projectId?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}) {
+  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100);
   const offset = Math.max(input.offset ?? 0, 0);
   const query = input.query?.trim();
+  for (const [k, v] of [["changedSince", input.changedSince], ["dueBefore", input.dueBefore]] as const)
+    if (v && !DATE.test(v)) throw new CloudAlmError("bad_request", `${k} must be YYYY-MM-DD`);
+  const priority = input.priority ? (PRIORITY_WORDS[input.priority.toLowerCase().trim()] ?? Number(input.priority)) : undefined;
+  if (priority !== undefined && ![10, 20, 30, 40].includes(priority))
+    throw new CloudAlmError("bad_request", 'priority is one of "very high", "high", "medium", "low" (or 10, 20, 30, 40)');
   // Without types: project items; processes only when words are given
   // (a project has many, and their names rarely answer "list everything").
   const types = new Set<FindType>(
@@ -248,20 +278,25 @@ export async function find(
   const status = input.status?.toLowerCase().trim().replace(/\s+/g, " ");
   const resultStatus = status ? RESULT_STATUS[status] : undefined;
   const tag = input.tag?.toLowerCase().trim();
+  const assignee = input.assignee?.toLowerCase().trim();
+  const unassigned = assignee === "none" || assignee === "nobody" || assignee === "unassigned";
   const statusOk = (label: string, done: string[]) =>
     !status || (status === "open" ? !done.some((d) => label.startsWith(d)) : label.includes(status));
   const tagOk = (tags: string[]) => !tag || tags.some((x) => x.toLowerCase() === tag);
+  const since = (changed: string | null) => !input.changedSince || (!!changed && changed.slice(0, 10) >= input.changedSince);
+  // Filters only tasks have: other kinds are left out when one is given.
+  const taskOnly = !!(assignee || input.dueBefore);
   const snap = await snapshotFor(calm, input.projectId, o);
   const taskTypes = [...types].filter((t) => t in TASK_FIND);
   const want = {
     tasks: taskTypes.length > 0,
-    features: types.has("feature"),
-    documents: types.has("document") && !status && !tag,
-    testCases: types.has("test_case") && (!status || !!resultStatus),
-    testPlans: types.has("test_plan") && !status && !tag,
-    processes: types.has("process") && !status && !tag,
+    features: types.has("feature") && !taskOnly,
+    documents: types.has("document") && !status && !tag && !taskOnly && priority === undefined,
+    testCases: types.has("test_case") && (!status || !!resultStatus) && !taskOnly && !input.changedSince,
+    testPlans: types.has("test_plan") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
+    processes: types.has("process") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
   };
-  const libraryKinds = status || tag ? [] : LIBRARY_KINDS.filter((k) => types.has(k.replace(/s$/, "") as FindType));
+  const libraryKinds = status || tag || taskOnly || priority !== undefined || input.changedSince ? [] : LIBRARY_KINDS.filter((k) => types.has(k.replace(/s$/, "") as FindType));
   const none = <T>(v: T) => Promise.resolve(v);
   // Every list is its own operation: read them all at once.
   const [tasks, features, documents, testCases, results, testPlans, processes, library] = await Promise.all([
@@ -281,79 +316,142 @@ export async function find(
       ),
     ),
   ]);
+  const notes: string[] = [];
+  // With searchText, words may also be in an item's own text (description,
+  // document content): read it for the items that pass every other filter.
+  const textHits = new Set<string>();
+  const textOf = async (kind: "task" | "feature" | "document", id: string) => {
+    const t = kind === "task" ? (await calm.getTask(id, { links: false })).description : kind === "feature" ? (await calm.getFeature(id)).description : (await calm.getDocument(id)).content;
+    return t ?? "";
+  };
   const parts: Part[] = [];
-  const hits: Hit[] = [];
+  const candidates: { kind: "task" | "feature" | "document"; id: string; title: string | null; tags: string[] }[] = [];
+  const named = new Set(Object.values(TASK_FIND).flatMap((v) => v ?? []));
+  const taskPass = (t: TaskSummary) => {
+    const wanted = taskTypes.some((k) => {
+      const codes = TASK_FIND[k];
+      return codes ? codes.includes(t.type ?? "") : !named.has(t.type ?? "");
+    });
+    if (!wanted || !tagOk(t.tags) || !since(t.changedAt)) return false;
+    if (priority !== undefined && t.priority !== priority) return false;
+    if (assignee && (unassigned ? !!t.assigneeName : !(t.assigneeName ?? "").toLowerCase().includes(assignee))) return false;
+    if (input.dueBefore && !(t.dueDate && t.dueDate <= input.dueBefore)) return false;
+    return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status));
+  };
+  const featurePass = (f: SnapFeature) =>
+    tagOk(f.tags) && since(f.modifiedAt) && (priority === undefined || f.priorityCode === priority) && statusOk(featureStatus(f.statusCode), ["tested", "approved", "deployed", "confirmed", "not planned"]);
+  if (input.searchText && query) {
+    for (const t of tasks) if (taskPass(t) && !match(t.title, ...t.tags)) candidates.push({ kind: "task", id: t.id, title: t.title, tags: t.tags });
+    for (const f of features) if (featurePass(f) && !match(f.title, ...f.tags)) candidates.push({ kind: "feature", id: f.id, title: f.title, tags: f.tags });
+    for (const d of documents) if (since(d.modifiedAt) && !match(d.title)) candidates.push({ kind: "document", id: d.id, title: d.title, tags: [] });
+    if (candidates.length > TEXT_SEARCH_MAX) notes.push(`text searched in the first ${TEXT_SEARCH_MAX} of ${candidates.length} items; narrow with types, status or tag`);
+    await pool(candidates.slice(0, TEXT_SEARCH_MAX), PARALLEL, async (c) => {
+      const text = await textOf(c.kind, c.id).catch(() => "");
+      if (match(c.title, ...c.tags, plainText(text, 20_000))) textHits.add(c.id);
+    });
+  }
+  const hit = (id: string, ...texts: (string | null | undefined)[]) => match(...texts) || textHits.has(id);
+  const rows: Row[] = [];
   if (want.tasks) {
     parts.push("tasks");
-    const named = new Set(Object.values(TASK_FIND).flatMap((v) => v ?? []));
     for (const t of tasks) {
-      const wanted = taskTypes.some((k) => {
-        const codes = TASK_FIND[k];
-        return codes ? codes.includes(t.type ?? "") : !named.has(t.type ?? "");
+      if (!taskPass(t) || !hit(t.id, t.title, ...t.tags)) continue;
+      rows.push({
+        sort: `1${t.type}`,
+        displayId: t.displayId,
+        line: taskLine(t),
+        data: { id: t.displayId, uuid: t.id, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, changedAt: t.changedAt },
       });
-      if (!wanted || !match(t.title, ...t.tags) || !tagOk(t.tags)) continue;
-      if (status && !(status === "open" ? isOpen(t.status) : taskStatus(t).includes(status))) continue;
-      hits.push({ sort: `1${t.type}`, displayId: t.displayId, line: taskLine(t) });
     }
   }
   if (want.features) {
     parts.push("features");
     for (const f of features)
-      if (match(f.title, ...f.tags) && tagOk(f.tags) && statusOk(featureStatus(f.statusCode), ["tested", "approved", "deployed", "confirmed", "not planned"]))
-        hits.push({ sort: "2", displayId: f.displayId, line: featureLine(f) });
+      if (featurePass(f) && hit(f.id, f.title, ...f.tags))
+        rows.push({
+          sort: "2",
+          displayId: f.displayId,
+          line: featureLine(f),
+          data: { id: f.displayId, uuid: f.id, type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
+        });
   }
   if (want.documents) {
     parts.push("documents");
     for (const d of documents)
-      if (match(d.title)) hits.push({ sort: "3", displayId: d.displayId, line: documentLine(d) });
+      if (since(d.modifiedAt) && hit(d.id, d.title))
+        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, uuid: d.id, type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
   }
   if (want.testCases) {
     parts.push("testCases", "testResults");
     for (const t of testCases) {
-      if (!match(t.title, ...t.tags) || !tagOk(t.tags)) continue;
+      if (!match(t.title, ...t.tags) || !tagOk(t.tags) || (priority !== undefined && t.priority !== priority)) continue;
       const latest = results.get(t.id) ?? [];
       if (resultStatus === "not run" ? latest.some((r) => r.status.toLowerCase() !== "initial") : resultStatus && !latest.some((r) => r.status.toLowerCase() === resultStatus)) continue;
-      hits.push({ sort: "4", displayId: t.displayId, line: testCaseLine(t, results.get(t.id)) });
+      rows.push({
+        sort: "4",
+        displayId: t.displayId,
+        line: testCaseLine(t, latest),
+        data: { id: t.displayId, uuid: t.id, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", priority: priorityLabel(t.priority), tags: t.tags, result: resultText(latest) || "not run" },
+      });
     }
   }
   if (want.testPlans) {
     parts.push("testPlans");
     for (const t of testPlans)
       if (match(t.title))
-        hits.push({ sort: "5", displayId: t.displayId, line: `${t.displayId} · test plan · "${short(t.title)}"${t.startDate ? ` · ${t.startDate}–${t.endDate ?? ""}` : ""}` });
+        rows.push({
+          sort: "5",
+          displayId: t.displayId,
+          line: `${t.displayId} · test plan · "${short(t.title)}"${t.startDate ? ` · ${t.startDate}–${t.endDate ?? ""}` : ""}`,
+          data: { id: t.displayId, uuid: t.id, type: "test plan", title: t.title },
+        });
   }
   if (want.processes) {
     parts.push("processes");
     for (const p of processes)
-      if (match(p.name)) hits.push({ sort: "6", displayId: null, line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"` });
+      if (match(p.name))
+        rows.push({
+          sort: "6",
+          displayId: null,
+          line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
+          data: { id: p.id, uuid: p.id, type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+        });
   }
   libraryKinds.forEach((kind, i) => {
     for (const item of library[i]?.items ?? [])
       if (match(item.title, item.objectId, item.description))
-        hits.push({ sort: `7${kind}`, displayId: item.displayId, line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}` });
+        rows.push({
+          sort: `7${kind}`,
+          displayId: item.displayId,
+          line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}`,
+          data: { id: item.displayId ?? item.id, uuid: item.id, type: kind.replace(/s$/, ""), title: item.title },
+        });
   });
-  hits.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
-  const shown = hits.slice(offset, offset + limit);
-  const more = offset + shown.length < hits.length;
-  const range = shown.length
-    ? `showing ${offset + 1}–${offset + shown.length}${more ? `; more with offset ${offset + shown.length}` : ""}`
-    : `offset ${offset} is past the end of the results`;
-  const notes: string[] = [];
+  rows.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
+  const shown = rows.slice(offset, offset + limit);
+  const nextOffset = offset + shown.length < rows.length ? offset + shown.length : null;
   const asked = new Set(input.types ?? []);
-  if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType)))
-    notes.push("tags exist on tasks, features and test cases only");
-  if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType)))
-    notes.push("status filters tasks, features and test cases only");
-  if (status && asked.has("test_case") && !resultStatus)
-    notes.push("test cases filter by latest result: passed, failed, in progress, blocked, not run (never executed)");
+  if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("tags exist on tasks, features and test cases only");
+  if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features and test cases only");
+  if (status && asked.has("test_case") && !resultStatus) notes.push("test cases filter by latest result: passed, failed, in progress, blocked, not run");
+  if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee and dueBefore filter tasks only");
+  if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
+  if (query && !input.searchText) notes.push("words matched titles and tags; searchText: true also reads descriptions and document content");
+  const range = shown.length
+    ? `showing ${offset + 1}–${offset + shown.length}${nextOffset !== null ? `; next page: offset ${nextOffset}` : ""}`
+    : `offset ${offset} is past the end`;
   const lines = [
-    `${hits.length} match${hits.length === 1 ? "" : "es"} in ${snap.project.name ?? "the project"}${hits.length && (offset > 0 || more) ? ` (${range})` : ""}${notes.length ? ` (${notes.join("; ")})` : ""}`,
+    `${rows.length} match${rows.length === 1 ? "" : "es"} in ${snap.project.name ?? "the project"}${rows.length && (offset > 0 || nextOffset !== null) ? ` (${range})` : ""}${notes.length ? ` (${notes.join("; ")})` : ""}`,
     ...shown.map((h) => `- ${h.line}`),
   ];
-  if (shown.length) lines.push("calm_get takes these ids (several at once); calm_trace shows an item's links.");
+  if (shown.length) lines.push("calm_get takes these ids (up to 10 at once) for details; calm_trace follows an item's links.");
   if (!input.types?.length && !query && !status && !tag) lines.push('Solution processes are listed with types ["process"].');
-  lines.push(...footer(snap, parts));
-  return lines.join("\n");
+  const footnotes = footer(snap, parts);
+  lines.push(...footnotes);
+  return {
+    text: lines.join("\n"),
+    data: { project: { id: snap.project.id, name: snap.project.name }, total: rows.length, offset, nextOffset, items: shown.map((r) => r.data), notes: [...notes, ...footnotes] },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -971,7 +1069,7 @@ export const DATASETS: Record<AnalyticsDataset, DatasetInfo> = {
 const NOT_SUMMED = /avg|average|progress|percent|ratio|rate$|id$/i;
 /** Datasets fed by monitored systems: empty may mean nothing is connected. */
 const MONITORED = new Set<AnalyticsDataset>(["Exceptions", "Jobs", "Metrics", "Requests", "ServiceLevels", "ScenarioExecutions", "MonitoringEvents", "Messages", "ConfigurationItems"]);
-const FRESHNESS = "Analytics is refreshed daily and tenant-wide; calm_overview and calm_find give one project's live state.";
+const FRESHNESS = "Analytics is refreshed daily and tenant-wide; calm_overview and calm_list give one project's live state.";
 
 export async function analytics(
   calm: CloudAlm,

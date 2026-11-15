@@ -123,7 +123,7 @@ export async function createTestCase(
   } | null;
   const id = created?.uuid;
   if (!id)
-    return `Cloud ALM accepted the test case "${body.title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
+    return `Cloud ALM accepted the test case "${body.title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
   const linked: string[] = [];
   const failed: string[] = [];
   for (const t of covered) {
@@ -465,7 +465,7 @@ export async function createTask(
   if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.`;
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
   if (!created?.id)
-    return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
+    return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
   let tags = "";
   if (input.tags?.length) {
     const id = created.id;

@@ -25,8 +25,9 @@ async function connect(
     const result = (await client.callTool({ name, arguments: args })) as {
       isError?: boolean;
       content: { text: string }[];
+      structuredContent?: Record<string, any>;
     };
-    return { error: !!result.isError, text: result.content[0]?.text ?? "" };
+    return { error: !!result.isError, text: result.content[0]?.text ?? "", data: result.structuredContent };
   };
   /** Requests to Cloud ALM since `from` (token requests excluded). */
   const requests = (from = 0) => fake.seen.slice(from).filter((s) => !s.url.pathname.endsWith("/oauth/token"));
@@ -48,25 +49,38 @@ const day = (date: string, testcaseId: string, status: string, passed: number, a
   progress: status === "Initial" ? 0 : 100,
 });
 
-describe("calm_find", () => {
+describe("calm_list", () => {
+  test("rows as data, with paging and task filters", async () => {
+    const { call } = await connect();
+    const page = await call("calm_list", { query: "credit", limit: 4 });
+    expect(page.data?.total).toBe(6);
+    expect(page.data?.nextOffset).toBe(4);
+    expect(page.data?.items[0]).toMatchObject({ id: "3-4", type: "defect", priority: "very high" });
+    const high = await call("calm_list", { types: ["requirement", "user_story", "defect"], priority: "high" });
+    expect(high.data?.items.every((i: { priority: string }) => i.priority === "high")).toBe(true);
+    const nobody = await call("calm_list", { types: ["defect"], assignee: "none" });
+    expect(nobody.data?.items.every((i: { assignee: string | null }) => !i.assignee)).toBe(true);
+    expect((await call("calm_list", { changedSince: "13-11-2026" })).error).toBe(true);
+  });
+
   test("paging: no 'more' on the last page, a clear note past the end", async () => {
     const { call } = await connect();
-    const last = await call("calm_find", { query: "credit", limit: 4, offset: 4 });
+    const last = await call("calm_list", { query: "credit", limit: 4, offset: 4 });
     expect(last.text).toStartWith("6 matches in Rollout Example (showing 5–6)");
     expect(last.text).not.toContain("more with offset");
-    const first = await call("calm_find", { query: "credit", limit: 4 });
-    expect(first.text).toContain("(showing 1–4; more with offset 4)");
-    const beyond = await call("calm_find", { query: "credit", limit: 5, offset: 500 });
+    const first = await call("calm_list", { query: "credit", limit: 4 });
+    expect(first.text).toContain("(showing 1–4; next page: offset 4)");
+    const beyond = await call("calm_list", { query: "credit", limit: 5, offset: 500 });
     expect(beyond.text).toContain("offset 500 is past the end");
     expect(beyond.text).not.toContain("calm_get takes these ids");
   });
 
   test("tag filters features and test cases too", async () => {
     const { call } = await connect();
-    const features = await call("calm_find", { tag: "Wave 1", types: ["feature"] });
+    const features = await call("calm_list", { tag: "Wave 1", types: ["feature"] });
     expect(features.text).toStartWith("1 match");
     expect(features.text).toContain("6-1 · feature");
-    const tests = await call("calm_find", { tag: "wave 1", types: ["test_case"] });
+    const tests = await call("calm_list", { tag: "wave 1", types: ["test_case"] });
     expect(tests.text).toStartWith("1 match");
     expect(tests.text).toContain("8-1-2 · manual test case");
     expect(tests.text).not.toContain("tasks only");
@@ -74,27 +88,27 @@ describe("calm_find", () => {
 
   test("status failed/passed filters test cases by their latest result", async () => {
     const { call } = await connect();
-    const failed = await call("calm_find", { status: "failed", types: ["test_case"] });
+    const failed = await call("calm_list", { status: "failed", types: ["test_case"] });
     expect(failed.text).toStartWith("1 match");
     expect(failed.text).toContain("8-1-1 · manual test case · failed, 1 of 2 steps passed");
-    const anyType = await call("calm_find", { status: "passed" });
+    const anyType = await call("calm_list", { status: "passed" });
     expect(anyType.text).toStartWith("1 match");
     expect(anyType.text).toContain("8-1-2");
   });
 
   test("defect status words: new, and open still includes new", async () => {
     const { call } = await connect();
-    expect((await call("calm_find", { status: "new" })).text).toContain("3-4 · defect · open (new)");
-    expect((await call("calm_find", { types: ["defect"], status: "open" })).text).toStartWith("1 match");
+    expect((await call("calm_list", { status: "new" })).text).toContain("3-4 · defect · open (new)");
+    expect((await call("calm_list", { types: ["defect"], status: "open" })).text).toStartWith("1 match");
   });
 
   test("without types: no list of every solution process, unless asked or searched", async () => {
     const { call } = await connect();
-    const all = await call("calm_find");
+    const all = await call("calm_list");
     expect(all.text).not.toContain("solution process ·");
     expect(all.text).toContain('Solution processes are listed with types ["process"]');
-    expect((await call("calm_find", { types: ["process"] })).text).toContain("solution process · in scope");
-    expect((await call("calm_find", { query: "lead to cash" })).text).toContain("solution process");
+    expect((await call("calm_list", { types: ["process"] })).text).toContain("solution process · in scope");
+    expect((await call("calm_list", { query: "lead to cash" })).text).toContain("solution process");
   });
 });
 
@@ -175,7 +189,7 @@ describe("snapshot cache", () => {
     const { call, requests } = await connect();
     await call("calm_overview");
     const after = requests().length;
-    await call("calm_find", { query: "credit" });
+    await call("calm_list", { query: "credit" });
     await call("calm_gaps");
     const lists = requests(after).map((s) => s.url.pathname);
     // No list read twice: only per-item reads (relations) follow.

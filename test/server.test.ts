@@ -73,18 +73,18 @@ describe("tools", () => {
 
   test("find: words, alternatives, types and status", async () => {
     const { call } = await connect();
-    const credit = await call("calm_find", { query: "credit" });
+    const credit = await call("calm_list", { query: "credit" });
     expect(credit.text).toStartWith("6 matches");
     expect(credit.text).toContain(
       '- 3-1 · requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release" · #Wave 1',
     );
     expect(credit.text).toContain('- 3-4 · defect · open (new) · priority very high · "Credit block not set for export orders"');
-    const alt = await call("calm_find", { query: "worklist | regression" });
+    const alt = await call("calm_list", { query: "worklist | regression" });
     expect(alt.text).toContain("3-2 ·");
     expect(alt.text).toContain("8-1-3 ·");
-    const defects = await call("calm_find", { types: ["defect"], status: "open" });
+    const defects = await call("calm_list", { types: ["defect"], status: "open" });
     expect(defects.text).toStartWith("1 match");
-    const tagged = await call("calm_find", { tag: "wave 1" });
+    const tagged = await call("calm_list", { tag: "wave 1" });
     expect(tagged.text).toStartWith("3 matches");
   });
 
@@ -164,9 +164,9 @@ describe("tools", () => {
   test("allow list and default project", async () => {
     const { client } = await connect(TENANT, { tools: ["calm_overview", "calm_get"] });
     expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["calm_overview", "calm_get"]);
-    expect(serverOptionsFromEnv({ CALM_PROJECT: PROJECT_ID, CALM_TOOLS: "calm_find, calm_get" })).toEqual({
+    expect(serverOptionsFromEnv({ CALM_PROJECT: PROJECT_ID, CALM_TOOLS: "calm_list, calm_get" })).toEqual({
       defaultProject: PROJECT_ID,
-      tools: ["calm_find", "calm_get"],
+      tools: ["calm_list", "calm_get"],
     });
     expect(() => serverOptionsFromEnv({ CALM_TOOLS: "calm_drop" })).toThrow("unknown tools calm_drop");
     expect(() => serverOptionsFromEnv({ CALM_PROJECT: "x" })).toThrow("GUID");
@@ -182,7 +182,7 @@ describe("tools", () => {
     };
     const { call } = await connect(two);
     expect((await call("calm_overview")).text).toStartWith("2 projects. Pass projectId");
-    const find = await call("calm_find", { query: "credit" });
+    const find = await call("calm_list", { query: "credit" });
     expect(find.error).toBe(true);
     expect(find.text).toContain("pass projectId");
     const ok = await call("calm_get", { ids: ["3-1"], projectId: PROJECT_ID });

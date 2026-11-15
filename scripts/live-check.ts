@@ -104,9 +104,9 @@ const firstDisplayId = (text: string, prefix: string) =>
   new RegExp(`- (${prefix}-[0-9-]+) ·`).exec(text)?.[1];
 
 await call("calm_overview");
-const all = await call("calm_find", { limit: 100 });
-await call("calm_find", { query: "order | invoice", types: ["requirement", "user_story", "defect"] });
-await call("calm_find", { types: ["application", "development", "interface", "configuration"] });
+const all = await call("calm_list", { limit: 100 });
+await call("calm_list", { query: "order | invoice", types: ["requirement", "user_story", "defect"] });
+await call("calm_list", { types: ["application", "development", "interface", "configuration"] });
 const ids = [
   firstDisplayId(all, "3"),
   firstDisplayId(all, "6"),
@@ -115,7 +115,7 @@ const ids = [
   firstDisplayId(all, "8-3"),
 ].filter((x): x is string => !!x);
 if (ids.length) await call("calm_get", { ids });
-const requirement = firstDisplayId(await call("calm_find", { types: ["requirement"] }), "3");
+const requirement = firstDisplayId(await call("calm_list", { types: ["requirement"] }), "3");
 if (requirement) await call("calm_trace", { id: requirement });
 await call("calm_gaps");
 await call("calm_analytics");

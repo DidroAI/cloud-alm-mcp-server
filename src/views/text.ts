@@ -102,6 +102,8 @@ export const taskLine = (t: TaskSummary) =>
     taskStatus(t),
     t.priority !== null ? `priority ${priorityLabel(t.priority)}` : null,
     `"${short(t.title)}"`,
+    t.assigneeName ? `@${t.assigneeName}` : null,
+    t.dueDate ? `due ${t.dueDate}` : null,
     t.tags.length ? `#${t.tags.join(" #")}` : null,
   ]
     .filter(Boolean)
@@ -113,7 +115,7 @@ export const featureLine = (f: SnapFeature) =>
 /** One result in words: "failed, 3 of 4 steps passed", "not run yet". */
 export function resultWords(r: TestResult): string {
   const status = r.status.toLowerCase();
-  if (status === "initial") return "not run yet";
+  if (status === "initial") return "not run";
   return `${status}${r.steps ? `, ${r.passed} of ${r.steps} steps passed` : ""}`;
 }
 

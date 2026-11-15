@@ -669,7 +669,7 @@ export async function createFeature(
   const created = (await needing("features.write", () => writer.post(PATHS.features, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
   if (!id)
-    return `Cloud ALM accepted the feature "${title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
+    return `Cloud ALM accepted the feature "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
   const linked: string[] = [];
   const failed: string[] = [];
   for (const t of tasks) {
@@ -756,7 +756,7 @@ export async function createDocument(
   const created = (await needing("documents.write", () => writer.post(PATHS.documents, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
   if (!id)
-    return `Cloud ALM accepted the document "${title}" but did not return its id. Check with calm_find before trying again: a retry would create a duplicate.`;
+    return `Cloud ALM accepted the document "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
   const back = await afterWrite("reading it back", () => readRow(calm, `${PATHS.documents}/${id}`, { $expand: "toTaskAssignments" }));
   const stored =
     typeof back === "string"

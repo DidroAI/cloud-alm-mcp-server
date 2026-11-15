@@ -55,5 +55,5 @@ case, `tasks` = items). Tags go on tasks (`calm_tag`), not on test cases.
 For a failed test case, `calm_get` it (steps and latest result) and the
 items it covers, then `calm_create_task` with `type: "defect"`: title =
 what is wrong, description = test case id, failing step, expected vs.
-observed, plan. Do not log a defect twice: `calm_find` with
+observed, plan. Do not log a defect twice: `calm_list` with
 `types: ["defect"]` and words of the failure first.

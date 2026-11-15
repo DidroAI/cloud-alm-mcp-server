@@ -11,7 +11,7 @@ Pick the tool by the question, not by the object:
 | Question | Call |
 | --- | --- |
 | "What is in the project / where do we stand?" | `calm_overview` |
-| "Which … are there?", "anything about X?" | `calm_find` (words, `types`, `status`, `tag`) |
+| "Which … are there?", "anything about X?" | `calm_list` (words, `types`, `status`, `tag`) |
 | "What does 3-17 say?", "steps of 8-1-2" | `calm_get` with all the ids at once |
 | "What is linked to / delivers / tests X?" | `calm_trace` |
 | "What is missing, untested, failing?" | `calm_gaps` (narrow with `checks`) |
@@ -39,7 +39,7 @@ Pick the tool by the question, not by the object:
 - Ids: use the display ids the tools print (`3-17`, `6-1`, `8-1-2`). Put
   them in your answer so the user can find the item in Cloud ALM.
 - Read several items in one `calm_get`; do not loop one by one.
-- `calm_find` matches titles and tags, not descriptions: try synonyms with
+- `calm_list` matches titles and tags, not descriptions: try synonyms with
   `|` (`export | letter of credit`).
 - Analytics are refreshed daily and are tenant-wide; items created today
   may be missing there. Counts from `calm_overview` are live.

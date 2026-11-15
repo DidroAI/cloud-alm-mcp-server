@@ -56,7 +56,7 @@ export function byTitleCode<T extends Titled>(code: string, items: T[]): T {
       "bad_request",
       `${code} is in several titles: ${found.slice(0, 8).map((x) => `${x.displayId} "${short(x.title, 50)}"`).join("; ")}; pass one display id`,
     );
-  throw new CloudAlmError("not_found", `no item has ${code} in its title; use a display id like 3-17 or 8-1-2 (calm_find lists them)`);
+  throw new CloudAlmError("not_found", `no item has ${code} in its title; use a display id like 3-17 or 8-1-2 (calm_list lists them)`);
 }
 
 /** Tasks by display id or GUID; unknown ones are an error naming them. */
@@ -73,7 +73,7 @@ export async function tasksByRef(snap: Snapshot, refs: string[]): Promise<TaskSu
   if (missing.length)
     throw new CloudAlmError(
       "not_found",
-      `tasks not found in ${snap.project.name ?? "the project"}: ${missing.join(", ")}; use display ids like 3-17 (calm_find lists them)`,
+      `tasks not found in ${snap.project.name ?? "the project"}: ${missing.join(", ")}; use display ids like 3-17 (calm_list lists them)`,
     );
   return found;
 }
@@ -134,7 +134,7 @@ export async function itemsByRef(snap: Snapshot, refs: string[]): Promise<Item[]
   if (missing.length)
     throw new CloudAlmError(
       "not_found",
-      `not found in ${snap.project.name ?? "the project"}: ${missing.join(", ")}; use display ids like 3-17 or 8-1-2 (calm_find lists them)`,
+      `not found in ${snap.project.name ?? "the project"}: ${missing.join(", ")}; use display ids like 3-17 or 8-1-2 (calm_list lists them)`,
     );
   return found;
 }

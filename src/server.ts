@@ -52,7 +52,7 @@ import {
 import {
   analytics,
   FIND_TYPES,
-  find,
+  list,
   GAP_CHECKS,
   gaps,
   get,
@@ -158,7 +158,7 @@ export const APPROVAL_TOOL_NAMES = ["calm_approve", "calm_confirm"] as const;
 const previewText = (text: string) => text.replace(/^Dry run[^\n]*?nothing sent\.\s*/, "").trim();
 
 const INSTRUCTIONS =
-  "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts, as do codes in titles (REQ-03). calm_find lists (status \"failed\" finds failed test cases), calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, defects, documents, process), calm_gaps lists what is missing or failing. SAP service status, outages and maintenance: calm_landscape. Counts across the tenant by status, priority or day (defects by status, test results, jobs, messages): calm_analytics.";
+  "SAP Cloud ALM. Start with calm_overview. Items have short display ids (3-17 task, 6-1 feature, 7-1 document, 8-1-2 test case, 8-3-1 test plan) that every tool accepts, as do codes in titles (REQ-03). calm_list lists (status \"failed\" finds failed test cases), calm_get reads several items at once, calm_trace follows links (requirement → user stories → features → transports, test cases, defects, documents, process), calm_gaps lists what is missing or failing. SAP service status, outages and maintenance: calm_landscape. Counts across the tenant by status, priority or day (defects by status, test results, jobs, messages): calm_analytics.";
 
 /**
  * An MCP server with a few task-shaped tools over one `CloudAlm` reader.
@@ -338,19 +338,25 @@ export function createServer(
     (a) => overview(calm, defined(a), options),
   );
   tool(
-    "calm_find",
-    "Find items",
-    "List or search items of a project in one call: tasks (requirements, user stories, defects…), features, documents, test cases, test plans, processes, library. Words match titles and tags; `a b | c` means (a and b) or c.",
+    "calm_list",
+    "List items",
+    "What exists in a project, one row per item (id, title, status, priority, assignee, due, last change); then calm_get ids for details. Words match titles and tags (`a b | c`: a and b, or c); searchText also reads descriptions. Paged: offset = nextOffset.",
     {
-      query: z.string().max(200).optional().describe("Words in the title or tags"),
       types: z.array(z.enum(FIND_TYPES)).optional().describe("Default: all project items (not library)"),
-      status: z.string().max(40).optional().describe('e.g. "open", "new", "done", "in testing"; test cases: "failed", "passed" (latest result)'),
+      query: z.string().max(200).optional().describe("Words in the title or tags"),
+      searchText: z.boolean().optional().describe("Also match descriptions and document content (slower: reads each item)"),
+      status: z.string().max(40).optional().describe('e.g. "open", "new", "done", "in testing"; test cases: "failed", "passed", "not run"'),
       tag: z.string().max(256).optional().describe("Tasks, features, test cases"),
+      assignee: z.string().max(100).optional().describe('Tasks: part of the assignee\'s name, or "none" for unassigned'),
+      priority: z.string().max(12).optional().describe('"very high", "high", "medium", "low"'),
+      dueBefore: z.string().max(10).optional().describe("Tasks due on or before YYYY-MM-DD"),
+      changedSince: z.string().max(10).optional().describe("Changed on or after YYYY-MM-DD (tasks, features, documents)"),
       projectId,
-      limit: z.number().int().min(1).max(100).optional().describe("Default 30"),
+      limit: z.number().int().min(1).max(100).optional().describe("Rows per page, default 25"),
       offset: z.number().int().min(0).max(5000).optional(),
     },
-    (a) => find(calm, defined(a), options),
+    (a) => list(calm, defined(a), options),
+    LIST_OUT,
   );
   tool(
     "calm_get",
@@ -677,7 +683,7 @@ export const WRITE_TOOL_NAMES = [
 /** Tool names, for documentation, tests and the allow list. */
 export const TOOL_NAMES = [
   "calm_overview",
-  "calm_find",
+  "calm_list",
   "calm_get",
   "calm_trace",
   "calm_gaps",
