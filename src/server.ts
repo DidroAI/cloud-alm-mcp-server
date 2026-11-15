@@ -58,6 +58,8 @@ import {
   get,
   landscape,
   overview,
+  projectsView,
+  team,
   trace,
   type ViewOptions,
 } from "./views/tools.js";
@@ -75,7 +77,7 @@ const guid = (what: string) =>
     .string()
     .regex(GUID, "must be a GUID")
     .describe(`${what} (a GUID, as shown in [brackets] by list tools)`);
-const projectId = guid("Project id").optional().describe("Project GUID; omit when the tenant has one project or a default is set");
+const projectId = z.string().min(1).max(200).optional().describe("Project id or name (calm_projects lists them); omit when the tenant has one project or a default is set");
 
 /** Drop undefined keys: the library's options use exact optional types. */
 function defined<T extends Record<string, unknown>>(value: T) {
@@ -336,6 +338,22 @@ export function createServer(
     "Start here. A project at a glance: current phase, counts of requirements, user stories, defects, features, test cases, documents by status, tags in use, and gaps.",
     { projectId },
     (a) => overview(calm, defined(a), options),
+    LOOSE_OUT,
+  );
+  tool(
+    "calm_projects",
+    "Projects",
+    "The projects this key can read: id, name, purpose, status. Every project tool takes projectId as the id or the name.",
+    {},
+    () => projectsView(calm, options),
+    LOOSE_OUT,
+  );
+  tool(
+    "calm_team",
+    "Project team",
+    "Who is in a project's team, with their roles. Their user id (the email) is what an assignee is set to.",
+    { projectId },
+    (a) => team(calm, defined(a), options),
     LOOSE_OUT,
   );
   tool(
@@ -693,6 +711,8 @@ export const WRITE_TOOL_NAMES = [
 /** Tool names, for documentation, tests and the allow list. */
 export const TOOL_NAMES = [
   "calm_overview",
+  "calm_projects",
+  "calm_team",
   "calm_list",
   "calm_get",
   "calm_trace",

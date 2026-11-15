@@ -39,7 +39,7 @@ async function connect(
 }
 
 describe("tools", () => {
-  test("seven read-only tools with short descriptions", async () => {
+  test("read-only tools with short descriptions", async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([...TOOL_NAMES]);
@@ -49,7 +49,7 @@ describe("tools", () => {
     }
     // What the model reads with every turn (names, descriptions, input
     // schemas) stays small; output schemas are for the client.
-    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(8000);
+    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(9500);
   });
 
   test("overview: phase, counts by status, gaps", async () => {

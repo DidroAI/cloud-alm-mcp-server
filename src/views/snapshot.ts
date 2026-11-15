@@ -545,6 +545,21 @@ export async function resolveProject(
   now = Date.now(),
 ): Promise<{ project: Project; others: Project[] }> {
   const wanted = projectId ?? defaultProject;
+  // A name instead of a GUID: look it up in the project list.
+  if (wanted && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(wanted.trim())) {
+    const all = await listProjects(calm, now);
+    const name = wanted.trim().toLowerCase();
+    const hits = all.filter((p) => (p.name ?? "").toLowerCase() === name);
+    const near = hits.length ? hits : all.filter((p) => (p.name ?? "").toLowerCase().includes(name));
+    if (near.length === 1) return { project: near[0] as Project, others: [] };
+    throw new CloudAlmError(
+      near.length ? "bad_request" : "not_found",
+      `${near.length ? `several projects match "${wanted}"` : `no project named "${wanted}"`}; projects this key can read: ${all
+        .slice(0, 20)
+        .map((p) => `${p.name ?? "?"} = ${p.id}`)
+        .join("; ")}`,
+    );
+  }
   if (wanted) {
     const id = guid(wanted, "projectId");
     const c = cacheOf(calm);

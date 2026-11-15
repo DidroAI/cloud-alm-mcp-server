@@ -1327,3 +1327,47 @@ export async function landscape(calm: CloudAlm) {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// calm_projects, calm_team
+// ---------------------------------------------------------------------------
+
+export async function projectsView(calm: CloudAlm, o: ViewOptions = {}) {
+  const projects = await listProjects(calm, clock(o));
+  const lines = [
+    `${projects.length} project${projects.length === 1 ? "" : "s"} this key can read${projects.length ? ":" : "."}`,
+    ...projects.map((p) => `- ${projectLabel(p)} · ${(p.purpose ?? "?").toLowerCase()} · status ${p.status ?? "?"}${o.defaultProject && p.id === o.defaultProject ? " · default" : ""}`),
+    "Every project tool takes projectId as the id or the name. Private or restricted projects need the key's calm-api.projects.private.read / protected.read scopes.",
+  ];
+  return {
+    text: lines.join("\n"),
+    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose, status: p.status, default: p.id === o.defaultProject })) },
+  };
+}
+
+/** Team members by role: who can be an assignee (their user id is their email). */
+export async function team(calm: CloudAlm, input: { projectId?: string }, o: ViewOptions = {}) {
+  const { project } = await resolveProject(calm, input.projectId, o.defaultProject, clock(o));
+  const detail = await calm.getProject(project.id);
+  const teams = await pool(detail.teams, PARALLEL, async (t) => {
+    const roles = await calm.operation(async (s) => (await s.get(`calm-projects/v1/teams/${t.id}/roles`)) as unknown);
+    const list = (Array.isArray(roles) ? roles : []) as { roleName?: string; members?: { userId?: string; userEmail?: string }[] }[];
+    return {
+      team: t.name,
+      roles: list
+        .map((r) => ({ role: r.roleName ?? "?", members: (r.members ?? []).map((m) => m.userId ?? m.userEmail ?? "?") }))
+        .filter((r) => r.members.length),
+    };
+  });
+  const people = new Map<string, Set<string>>();
+  for (const t of teams) for (const r of t.roles) for (const m of r.members) people.set(m, (people.get(m) ?? new Set()).add(r.role));
+  const lines = [
+    `Team of ${projectLabel(project)}: ${people.size} member${people.size === 1 ? "" : "s"}${people.size ? ":" : "."}`,
+    ...[...people].sort().map(([who, roles]) => `- ${who} · ${[...roles].join(", ")}`),
+    "An assignee is set by user id (shown here; it is the email).",
+  ];
+  return {
+    text: lines.join("\n"),
+    data: { project: { id: project.id, name: project.name }, members: [...people].map(([userId, roles]) => ({ userId, roles: [...roles] })), teams },
+  };
+}
