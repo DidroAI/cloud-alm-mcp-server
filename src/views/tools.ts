@@ -48,7 +48,7 @@ import {
   typeLabel,
 } from "./text.js";
 import { plainText } from "../calm/values.js";
-import { webUrl } from "./links.js";
+import { idFromUrl, webUrl } from "./links.js";
 import { byTitleCode, TITLE_CODE } from "./items.js";
 
 export type ViewOptions = {
@@ -621,7 +621,7 @@ async function resolveCode(snap: Snapshot, code: string): Promise<Ref> {
 }
 
 async function resolve(snap: Snapshot, raw: string): Promise<Ref> {
-  const ref = raw.trim().replace(/^\[|\]$/g, "");
+  const ref = idFromUrl(raw).trim().replace(/^\[|\]$/g, "");
   const byId = (x: { id: string; displayId: string | null }) =>
     GUID.test(ref) ? x.id.toLowerCase() === ref.toLowerCase() : x.displayId === ref;
   if (/^ERL-|^[A-Z]{2,}-[0-9a-f]{20,}$/i.test(ref)) {

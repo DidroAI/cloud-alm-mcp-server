@@ -411,3 +411,13 @@ test("items link to the Cloud ALM UI when the tenant's UI root is known", async 
   const plain = (await (await connect()).call("calm_list", { query: "credit" })).structured as { items: { url?: string }[] };
   expect(plain.items.every((i) => i.url === undefined)).toBe(true);
 });
+
+test("a Cloud ALM link works as an id", async () => {
+  const { idFromUrl } = await import("../src/views/links.js");
+  expect(idFromUrl("https://a.eu20.alm.cloud.sap/launchpad#ptmRequirement-management?sap-ui-app-id-hint=x&/taskDetail/3-17")).toBe("3-17");
+  expect(idFromUrl("https://a.eu20.alm.cloud.sap/launchpad#feature-display?x&/list/details/6-1")).toBe("6-1");
+  expect(idFromUrl("https://evil.example.com/#/taskDetail/3-17")).toBe("https://evil.example.com/#/taskDetail/3-17");
+  const { call } = await connect();
+  const r = await call("calm_get", { ids: ["https://a.eu20.alm.cloud.sap/launchpad#task-management?x&/taskDetail/3-1"] });
+  expect(r.text).toContain("3-1 requirement");
+});

@@ -7,6 +7,7 @@ import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js
 import { type Row, rowOf } from "../calm/values.js";
 import { escapeHtml } from "./html.js";
 import { resolveProject, type SnapDocument, type SnapFeature, Snapshot, type SnapTestCase } from "./snapshot.js";
+import { idFromUrl } from "./links.js";
 import { short, typeLabel } from "./text.js";
 import type { ViewOptions } from "./tools.js";
 
@@ -27,7 +28,7 @@ export async function snapshot(calm: CloudAlm, projectId: string | undefined, o:
   return new Snapshot(calm, project);
 }
 
-const clean = (raw: string) => raw.trim().replace(/^\[|\]$/g, "");
+const clean = (raw: string) => idFromUrl(raw).trim().replace(/^\[|\]$/g, "");
 const matches = (ref: string, x: { id: string; displayId: string | null }) =>
   x.displayId === ref || x.id.toLowerCase() === ref.toLowerCase();
 

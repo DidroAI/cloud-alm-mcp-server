@@ -67,3 +67,19 @@ export function webUrl(base: string | undefined, t: LinkTarget): string | undefi
       return at(APP[t.kind]);
   }
 }
+
+/**
+ * The id inside a Cloud ALM UI link, so a pasted link works as an id:
+ * `…#…&/taskDetail/3-17` → 3-17, `…/details/6-1` → 6-1, `…/manual/<GUID>/…`
+ * → the GUID. Anything else is returned as given.
+ */
+export function idFromUrl(raw: string): string {
+  const text = raw.trim();
+  if (!/^https:\/\/[^/]+\.alm\.cloud\.sap\//i.test(text)) return text;
+  const hash = decodeURIComponent(text.split("#")[1] ?? "");
+  const m =
+    /\/taskDetail\/([0-9]+-[0-9]+(?:-[0-9]+)?)/.exec(hash) ??
+    /\/details\/([0-9]+-[0-9]+(?:-[0-9]+)?)/.exec(hash) ??
+    /\/(?:manual|automated)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(hash);
+  return m?.[1] ?? text;
+}

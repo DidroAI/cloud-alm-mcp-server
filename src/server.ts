@@ -284,8 +284,8 @@ export function createServer(
   const ref = z
     .string()
     .min(1)
-    .max(80)
-    .describe("Display id (3-17, 6-1, 8-1-2), GUID, process id (ERL-…), or a code in a title (REQ-03)");
+    .max(400)
+    .describe("Display id (3-17, 6-1, 8-1-2), GUID, process id (ERL-…), a code in a title (REQ-03), or a Cloud ALM link");
 
   tool(
     "calm_overview",
