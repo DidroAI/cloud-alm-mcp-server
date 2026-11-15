@@ -7,13 +7,14 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
-import { type Check, keyChecks, nodeCheck } from "./checks.js";
-import { clientSnippets, PACKAGE_NAME, packageSpec } from "./clients.js";
+import { type Check, keyChecks, MIN_NODE, nodeCheck } from "./checks.js";
+import { cliCommand, clientSnippets, PACKAGE_NAME, packageSpec, version } from "./clients.js";
 import {
   CONFIG_DIR_ENV,
   expandHome,
@@ -35,6 +36,7 @@ import {
   findDownloadedKey,
   parseClients,
   type SetupEnv,
+  unconfigureClient,
 } from "./setup.js";
 
 /** Everything the commands touch outside the file system, for tests. */
@@ -47,17 +49,16 @@ export type Io = {
   fetch?: typeof fetch;
   platform?: NodeJS.Platform;
   nodeVersion?: string;
+  /** The script running, to tell a global install from npx. */
+  scriptPath?: string;
   /** setup: where clients live and how to run their CLIs. */
   setup?: Partial<SetupEnv>;
 };
 
-export function version(): string {
-  // Same relative place from src/cli/ and dist/cli/.
-  const pkg = JSON.parse(
-    readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-  ) as { version: string };
-  return pkg.version;
-}
+export { version };
+
+/** This CLI as the user must type it: `npx -y cloud-alm-mcp-server@beta`, or the bare name from a global install. */
+const cli = (io: Io) => cliCommand(packageSpec(version()), io.env, io.scriptPath);
 
 export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM
 
@@ -73,7 +74,14 @@ Usage:
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
   ${PACKAGE_NAME} doctor           Check the setup: key, token, scopes, API, Node
+  ${PACKAGE_NAME} uninstall        Remove the server from the clients setup knows
+                                   (each changed file is kept as .bak)
+      --key                        Also delete the saved service key
+      --client <list>              Only these clients
   ${PACKAGE_NAME} --version | --help
+
+Not installed globally? Put npx in front, as in:
+  npx -y ${packageSpec(version())} setup
 
 setup without a file takes the newest service key JSON downloaded to
 ~/Downloads in the last week (or in the current directory). init reads the
@@ -134,15 +142,17 @@ export function writeSecretFile(path: string, text: string) {
   renameSync(tmp, path);
 }
 
-type Flags = { positional: string[]; force: boolean; skipCheck: boolean; clients?: Client[] };
+type Flags = { positional: string[]; force: boolean; skipCheck: boolean; key: boolean; clients?: Client[] };
 
 function parseFlags(args: string[], command = "init"): Flags {
-  const flags: Flags = { positional: [], force: false, skipCheck: false };
+  const flags: Flags = { positional: [], force: false, skipCheck: false, key: false };
+  const takesClients = command === "setup" || command === "uninstall";
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
-    if (arg === "--force") flags.force = true;
-    else if (arg === "--skip-check") flags.skipCheck = true;
-    else if (command === "setup" && (arg === "--client" || arg.startsWith("--client="))) {
+    if (command === "uninstall" && arg === "--key") flags.key = true;
+    else if (command !== "uninstall" && arg === "--force") flags.force = true;
+    else if (command !== "uninstall" && arg === "--skip-check") flags.skipCheck = true;
+    else if (takesClients && (arg === "--client" || arg.startsWith("--client="))) {
       const value = arg.includes("=") ? arg.slice(9) : args[++i];
       if (!value) throw new UsageError("--client needs a value.");
       try {
@@ -155,6 +165,8 @@ function parseFlags(args: string[], command = "init"): Flags {
       throw new UsageError(`Unknown option ${arg}.`);
     else flags.positional.push(arg);
   }
+  if (command === "uninstall" && flags.positional.length)
+    throw new UsageError("uninstall takes no arguments.");
   if (flags.positional.length > 1)
     throw new UsageError(`${command} takes one service key file at most.`);
   return flags;
@@ -213,7 +225,9 @@ async function checkAndSave(
 
   if (!unchanged) writeSecretFile(target, text);
   const how = unchanged ? "already saved" : exists ? "saved, replacing the one before," : "saved";
-  io.out(`\nKey ${how} at ${target} (mode 600).`);
+  // Windows has no file modes; the key lies in the user's own profile there.
+  const mode = (io.platform ?? process.platform) === "win32" ? "" : " (mode 600)";
+  io.out(`\nKey ${how} at ${target}${mode}.`);
   return target;
 }
 
@@ -231,6 +245,14 @@ async function init(io: Io, args: string[]): Promise<number> {
 
 async function setup(io: Io, args: string[]): Promise<number> {
   const flags = parseFlags(args, "setup");
+  const node = nodeCheck(io.nodeVersion);
+  if (node.status === "fail") {
+    io.err(
+      `Node ${node.detail}. Install the current LTS from https://nodejs.org ` +
+        `(Node ${MIN_NODE} or later), open a new terminal and run this command again.`,
+    );
+    return 1;
+  }
   const e: SetupEnv = { ...defaultSetupEnv(io.env), platform: io.platform ?? process.platform, ...io.setup };
 
   let input: { text: string; origin: string; file?: string };
@@ -238,17 +260,30 @@ async function setup(io: Io, args: string[]): Promise<number> {
   if (arg) input = await readKeyInput(io, arg);
   else {
     // Downloads only: a key planted in a cloned repository is never picked up.
-    const found = findDownloadedKey([join(e.home, "Downloads")]);
+    const { key: found, unreadable } = findDownloadedKey([join(e.home, "Downloads")]);
     if (found) {
       io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
       input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
-    } else if (io.stdinIsTTY) input = await readKeyInput(io, undefined);
-    else {
-      io.err(
-        "No service key found in ~/Downloads from the last week. Download the key's JSON from SAP BTP, or run: " +
-          `${PACKAGE_NAME} setup <file>`,
-      );
-      return 1;
+    } else {
+      const byFile = `${cli(io)} setup <file>`;
+      for (const dir of unreadable)
+        io.err(
+          `Could not look in ${dir}: permission denied.` +
+            (e.platform === "darwin"
+              ? " Allow your terminal app under System Settings → Privacy & Security → Files and Folders → Downloads, or name the file."
+              : " Name the file instead."),
+        );
+      if (!io.stdinIsTTY) {
+        io.err(
+          (unreadable.length ? "No service key found. " : "No service key found in ~/Downloads from the last week. ") +
+            `Download the key's JSON from SAP BTP, or run: ${byFile}`,
+        );
+        return 1;
+      }
+      if (!unreadable.length)
+        io.err("No service key found in ~/Downloads from the last week.");
+      io.err(`Name the file (${byFile}), or paste the key here.`);
+      input = await readKeyInput(io, undefined);
     }
   }
 
@@ -294,12 +329,37 @@ async function setup(io: Io, args: string[]): Promise<number> {
   }
   const missing = CLIENTS.filter((c) => !clients.includes(c)).map((c) => LABEL[c]);
   if (missing.length && !flags.clients)
-    io.out(`  Not found: ${missing.join(", ")}. Run \`${PACKAGE_NAME} init\` to print their configuration.`);
+    io.out(`  Not found: ${missing.join(", ")}. Run \`${cli(io)} init\` to print their configuration.`);
 
   if (input.file && resolve(input.file) !== resolve(target))
     io.out(`\nYou can now delete ${input.file}.`);
   io.out('Open a new chat and ask: "Where does my Cloud ALM project stand?"');
-  io.out(`Check the setup any time with: ${PACKAGE_NAME} doctor`);
+  io.out(`Check the setup any time with: ${cli(io)} doctor`);
+  return failures ? 1 : 0;
+}
+
+/**
+ * Take the server out of every client setup knows. Asks nothing; each
+ * changed config file is kept as .bak. The saved key stays unless --key.
+ */
+async function uninstall(io: Io, args: string[]): Promise<number> {
+  const flags = parseFlags(args, "uninstall");
+  const e: SetupEnv = { ...defaultSetupEnv(io.env), platform: io.platform ?? process.platform, ...io.setup };
+  io.out("MCP clients:");
+  let failures = 0;
+  for (const client of flags.clients ?? CLIENTS) {
+    const r = await unconfigureClient(client, e, writeConfigFile);
+    io.out(`${r.ok ? MARK.ok : MARK.fail} ${r.label.padEnd(14)} ${r.detail}`);
+    if (!r.ok) failures++;
+  }
+  const saved = savedKeyPath(io.env);
+  if (flags.key) {
+    const had = existsSync(saved);
+    rmSync(saved, { force: true });
+    io.out(had ? `\nSaved key deleted: ${saved}` : `\nNo saved key at ${saved}.`);
+  } else if (existsSync(saved))
+    io.out(`\nThe saved key is kept at ${saved}. Delete it too with: ${cli(io)} uninstall --key`);
+  io.out("The key stays valid at SAP until you delete it in SAP BTP.");
   return failures ? 1 : 0;
 }
 
@@ -322,7 +382,7 @@ function printSnippets(io: Io, keyPath: string) {
     io.out(`\n# ${s.client}: ${s.where}`);
     io.out(s.text);
   }
-  io.out(`\nThen check the setup any time with: ${PACKAGE_NAME} doctor`);
+  io.out(`\nThen check the setup any time with: ${cli(io)} doctor`);
 }
 
 const fetchOption = (io: Io) => (io.fetch ? { fetch: io.fetch } : {});
@@ -335,7 +395,7 @@ async function doctor(io: Io): Promise<number> {
     checks.push({
       name: "Key",
       status: "fail",
-      detail: `none found: run \`${PACKAGE_NAME} setup\` or set ${SERVICE_KEY_ENV}`,
+      detail: `none found: run \`${cli(io)} setup\` or set ${SERVICE_KEY_ENV}`,
     });
     printChecks(io, checks);
     return 1;
@@ -359,7 +419,7 @@ async function doctor(io: Io): Promise<number> {
   return failed(checks) ? 1 : 0;
 }
 
-export const COMMANDS = ["setup", "init", "doctor", "help", "--help", "-h", "--version", "-v", "version"];
+export const COMMANDS = ["setup", "init", "doctor", "uninstall", "help", "--help", "-h", "--version", "-v", "version"];
 
 /** Run a setup command; returns the exit code. Never prints a secret. */
 export async function runCommand(io: Io, argv: string[]): Promise<number> {
@@ -384,12 +444,14 @@ export async function runCommand(io: Io, argv: string[]): Promise<number> {
       case "doctor":
         if (rest.length) throw new UsageError("doctor takes no arguments.");
         return await doctor(io);
+      case "uninstall":
+        return await uninstall(io, rest);
       default:
         throw new UsageError(`Unknown command ${command}.`);
     }
   } catch (error) {
     if (error instanceof UsageError) {
-      io.err(`${error.message} See ${PACKAGE_NAME} --help.`);
+      io.err(`${error.message} See ${cli(io)} --help.`);
       return 2;
     }
     try {

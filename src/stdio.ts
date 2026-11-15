@@ -5,6 +5,7 @@ import {
   serviceKeyGrants,
 } from "./calm/index.js";
 import { CloudAlmWriter } from "./calm/writer.js";
+import { cliCommand, packageSpec, version } from "./cli/clients.js";
 import {
   expandHome,
   keySource,
@@ -79,7 +80,11 @@ export function stdioFactory(
   const source = keySource(env, existsSync);
   if (!source)
     throw new Error(
-      `No Cloud ALM service key: run \`cloud-alm-mcp-server setup\`, or set ${SERVICE_KEY_ENV} to the key file's path (or its JSON).`,
+      "Cloud ALM is not set up yet: no service key was found. " +
+        `Run \`${cliCommand(packageSpec(version()), env)} setup\` in a terminal ` +
+        "(it finds the key JSON you downloaded from SAP BTP and saves it), " +
+        `or set ${SERVICE_KEY_ENV} to the key file's path. In a Claude Code plugin or ` +
+        "Claude Desktop extension, choose the key file in its settings.",
     );
   const { reader, writer, grants } = clientsFrom(loadServiceKey(source, env), options);
   let writeTools: Promise<string[]> | undefined;

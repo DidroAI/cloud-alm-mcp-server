@@ -6,6 +6,36 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `uninstall`: removes the server from Claude Code, Codex, Claude Desktop
+  and Cursor, keeps each changed config file as `.bak`, asks nothing;
+  `--key` also deletes the saved service key.
+- `setup` on Windows also writes the config of Claude Desktop from the
+  Microsoft Store
+  (`%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude`).
+
+### Changed
+
+- Client configs written by `setup` and printed by `init` run
+  `cloud-alm-mcp-server@beta` while the version is a prerelease (the bare
+  name after 0.1.0), not the exact version, so users get updates.
+- Every follow-up command is printed as it must be typed:
+  `npx -y cloud-alm-mcp-server@beta doctor`, or the bare command from a
+  global install.
+- `setup` checks the Node version first and says how to update it.
+- `setup` on a terminal says that `~/Downloads` has no key before it asks
+  to paste one, and reports a Downloads folder it may not read (macOS
+  privacy settings) instead of passing over it.
+
+### Fixed
+
+- Key files and client configs saved with a UTF-8 byte order mark (Windows
+  editors, PowerShell) are read.
+- `CALM_SERVICE_KEY` left as an unfilled `${…}` placeholder by a client
+  counts as not set, so the saved key is used.
+- No "mode 600" on Windows.
+
 ## [0.1.0-beta.2] - 2026-11-15
 
 ### Added
