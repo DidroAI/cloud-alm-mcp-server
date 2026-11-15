@@ -85,8 +85,17 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
    *Instances and Subscriptions* → *Create*.
 2. Service **SAP Cloud ALM API**, plan **standard**, runtime environment
    **Other**. Name it, e.g. `calm-read`.
-3. Parameters: give the client the read scopes it needs (the default
-   template has none, which gives a token that can read nothing):
+3. Parameters: paste one of the scope files of this repository (the
+   default template has no scopes, which gives a token that can read
+   nothing):
+
+   - [`scopes/read-only.json`](scopes/read-only.json): the agent reads;
+   - [`scopes/read-write.json`](scopes/read-write.json): it may also
+     propose changes to tasks, test cases, features and documents, each
+     one waiting for your approval.
+
+   Change `xsappname` if the name is taken in your subaccount. The
+   read-only file looks like this:
 
    ```json
    {
@@ -95,6 +104,7 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
        "authorities": [
          "$XSMASTERAPPNAME.calm-api.projects.read",
          "$XSMASTERAPPNAME.calm-api.tasks.read",
+         "$XSMASTERAPPNAME.calm-api.tasks.personal.read",
          "$XSMASTERAPPNAME.calm-api.features.read",
          "$XSMASTERAPPNAME.calm-api.documents.read",
          "$XSMASTERAPPNAME.calm-api.testcases.read",
@@ -105,7 +115,10 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
          "$XSMASTERAPPNAME.calm-api.lib.read",
          "$XSMASTERAPPNAME.calm-api.analytics.read",
          "$XSMASTERAPPNAME.calm-api.analytics.providers.read",
-         "$XSMASTERAPPNAME.calm-api.bsm.read"
+         "$XSMASTERAPPNAME.calm-api.bsm.read",
+         "$XSMASTERAPPNAME.calm-api.tests.read",
+         "$XSMASTERAPPNAME.calm-api.defects.read",
+         "$XSMASTERAPPNAME.calm-api.requirements.read"
        ]
      }
    }

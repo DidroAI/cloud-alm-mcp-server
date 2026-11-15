@@ -1,0 +1,28 @@
+{
+  "xs-security": {
+    "xsappname": "calm-write",
+    "authorities": [
+      "$XSMASTERAPPNAME.calm-api.projects.read",
+      "$XSMASTERAPPNAME.calm-api.tasks.read",
+      "$XSMASTERAPPNAME.calm-api.tasks.personal.read",
+      "$XSMASTERAPPNAME.calm-api.features.read",
+      "$XSMASTERAPPNAME.calm-api.documents.read",
+      "$XSMASTERAPPNAME.calm-api.testcases.read",
+      "$XSMASTERAPPNAME.calm-api.testplans.read",
+      "$XSMASTERAPPNAME.calm-api.processmanagement.read",
+      "$XSMASTERAPPNAME.calm-api.processhierarchy.read",
+      "$XSMASTERAPPNAME.calm-api.landscape.read",
+      "$XSMASTERAPPNAME.calm-api.lib.read",
+      "$XSMASTERAPPNAME.calm-api.analytics.read",
+      "$XSMASTERAPPNAME.calm-api.analytics.providers.read",
+      "$XSMASTERAPPNAME.calm-api.bsm.read",
+      "$XSMASTERAPPNAME.calm-api.tests.read",
+      "$XSMASTERAPPNAME.calm-api.defects.read",
+      "$XSMASTERAPPNAME.calm-api.requirements.read",
+      "$XSMASTERAPPNAME.calm-api.tasks.write",
+      "$XSMASTERAPPNAME.calm-api.testcases.write",
+      "$XSMASTERAPPNAME.calm-api.features.write",
+      "$XSMASTERAPPNAME.calm-api.documents.write"
+    ]
+  }
+}

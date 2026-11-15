@@ -13,6 +13,8 @@ All notable changes to this package. The format follows
   Desktop and Cursor, whichever are installed. Desktop apps get the full
   path to npx, so they start the server without the shell's PATH. The README
   has a prompt that lets an agent run the setup.
+- `scopes/read-only.json` and `scopes/read-write.json`: the parameters to
+  paste when creating the "SAP Cloud ALM API" instance.
 
 ### Changed
 

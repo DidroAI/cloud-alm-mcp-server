@@ -42,6 +42,7 @@
     "!dist/**/*.map",
     "README.md",
     "CHANGELOG.md",
+    "scopes",
     "LICENSE"
   ],
   "engines": {
