@@ -364,7 +364,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (!wanted || !tagOk(t.tags) || !since(t.changedAt)) return false;
     if (priority !== undefined && t.priority !== priority) return false;
     if (assignee && (unassigned ? !!t.assigneeName : !(t.assigneeName ?? "").toLowerCase().includes(assignee))) return false;
-    if (input.dueBefore && !(t.dueDate && t.dueDate <= input.dueBefore)) return false;
+    if (input.dueBefore && !(t.dueDate && t.dueDate.slice(0, 10) <= input.dueBefore)) return false;
     if (classification && classificationLabel(t.classification) !== classification) return false;
     return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status) || approvalLabel(t.approvalState) === status);
   };

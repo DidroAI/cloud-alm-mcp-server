@@ -98,9 +98,9 @@ const DOCUMENT_TYPES: Record<string, string> = {
   TE: "test document",
   EU: "end-user document",
   TR: "training",
-  FS: "functional spec",
+  FS: "fact sheet",
   NT: "note",
-  JD: "job description",
+  JD: "job documentation",
 };
 export const documentType = (code: string | null) =>
   code ? (DOCUMENT_TYPES[code] ?? code) : "document";

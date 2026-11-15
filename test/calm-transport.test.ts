@@ -152,7 +152,8 @@ describe("reasons stay short and clean", () => {
     const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl";
     expect(cleanReason(`bad token ${jwt}`)).toBe("bad token [redacted]");
     expect(cleanReason("x".repeat(500))).toBe("[redacted]");
-    expect(cleanReason("word ".repeat(100)).length).toBeLessThanOrEqual(200);
+    expect(cleanReason("word ".repeat(100), 200).length).toBeLessThanOrEqual(200);
+    expect(cleanReason("word ".repeat(1000)).length).toBeLessThanOrEqual(1500);
     expect(cleanReason("a\nb\tc")).toBe("a b c");
   });
 });

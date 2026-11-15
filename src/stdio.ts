@@ -84,10 +84,12 @@ export function stdioFactory(
   const { reader, writer, grants } = clientsFrom(loadServiceKey(source, env), options);
   let writeTools: Promise<string[]> | undefined;
   return async () => {
-    writeTools ??= grants().then(
-      (g) => writeToolsFor(tokenScopes(g.accessToken)),
-      () => [],
-    );
-    return createServer(reader, serverOptionsForKey(writer, await writeTools));
+    writeTools ??= grants().then((g) => writeToolsFor(tokenScopes(g.accessToken)));
+    // Offline at start: read tools now, and ask again on the next connection.
+    const tools = await writeTools.catch(() => {
+      writeTools = undefined;
+      return [] as string[];
+    });
+    return createServer(reader, serverOptionsForKey(writer, tools));
   };
 }

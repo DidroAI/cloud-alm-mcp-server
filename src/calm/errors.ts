@@ -16,21 +16,24 @@ const DEFAULT_REASONS: Record<CloudAlmErrorCode, string> = {
   bad_request: "SAP Cloud ALM rejected the request",
 };
 
-const MAX_REASON = 200;
+/** Long enough for the server's own guidance (a list of projects to pick from). */
+const MAX_REASON = 1500;
+/** What SAP's own messages are cut to. */
+export const MAX_PROVIDER_REASON = 200;
 
 /**
  * Shorten a provider's message to one safe line. Anything that looks like a
  * token (a JWT or a long opaque string) is removed, so an echoed header can
  * never travel further in an error.
  */
-export function cleanReason(text: string): string {
+export function cleanReason(text: string, max = MAX_REASON): string {
   const line = text
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, "[redacted]")
     .replace(/[A-Za-z0-9+/_=-]{60,}/g, "[redacted]")
     // Control characters and line breaks become single spaces.
     .replace(/[\s\p{Cc}]+/gu, " ")
     .trim();
-  return line.length > MAX_REASON ? `${line.slice(0, MAX_REASON - 1)}…` : line;
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 /**

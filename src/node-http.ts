@@ -34,7 +34,9 @@ export function toNodeListener(
       if (response.body)
         Readable.fromWeb(
           response.body as unknown as import("node:stream/web").ReadableStream,
-        ).pipe(res);
+        )
+          .on("error", () => res.destroy())
+          .pipe(res);
       else res.end();
     } catch {
       if (!res.headersSent) res.statusCode = 500;

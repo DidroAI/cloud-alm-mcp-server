@@ -97,8 +97,11 @@ export class CloudAlmWriter {
         redirect: "manual",
         signal: AbortSignal.timeout(this.options.timeoutMs ?? 30_000),
       });
-    } catch {
-      throw new CloudAlmError("unavailable", "network error");
+    } catch (error) {
+      // A timeout after sending may still have written: say so.
+      if ((error as Error)?.name === "TimeoutError")
+        throw new CloudAlmError("unavailable", "no answer in time; the change may or may not have been made: read the item before trying again");
+      throw new CloudAlmError("unavailable", "network error; nothing was sent");
     }
     if (response.status >= 200 && response.status < 300) {
       const text = await response.text();

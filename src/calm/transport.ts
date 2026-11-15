@@ -1,4 +1,4 @@
-import { CloudAlmError } from "./errors.js";
+import { CloudAlmError, cleanReason, MAX_PROVIDER_REASON } from "./errors.js";
 
 /**
  * A bearer token and the Cloud ALM API it is for. `baseUrl` is the API root
@@ -88,11 +88,11 @@ export function providerMessage(body: unknown): string | undefined {
   const nested = record.error;
   if (nested && typeof nested === "object") {
     const message = (nested as Record<string, unknown>).message;
-    if (typeof message === "string") return message;
+    if (typeof message === "string") return cleanReason(message, MAX_PROVIDER_REASON);
   }
   for (const key of ["message", "details", "error"] as const) {
     const value = record[key];
-    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "string" && value.trim()) return cleanReason(value, MAX_PROVIDER_REASON);
   }
   return undefined;
 }
