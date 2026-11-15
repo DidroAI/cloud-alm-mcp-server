@@ -1133,8 +1133,17 @@ export type GapCheck = (typeof GAP_CHECKS)[number];
 /** Checked when none is named; `coverage` is a full matrix, asked for by name. */
 const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
 
+/** A test case's latest results as data, in the words of every other tool. */
+const testResultData = (latest: TestResult[] | undefined) => ({
+  result: resultText(latest) || NOT_IN_PLAN,
+  results: (latest ?? []).map((r) => ({ plan: r.plan, status: r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase(), passed: r.passed, steps: r.steps, date: r.date })),
+});
+
 type GapItem = {
   url?: string | undefined;
+  prepared?: boolean;
+  result?: string;
+  results?: { plan: string; status: string; passed: number; steps: number; date: string }[];
   id: string | null;
   type: string;
   title: string | null;
@@ -1160,7 +1169,7 @@ export async function gaps(
     "features",
     "testCases",
     "processLinks",
-    ...(checks.has("failed_tests") || checks.has("coverage") ? (["testResults", "defects"] as const) : []),
+    ...(["failed_tests", "coverage", "orphan_tests", "unprepared_tests"].some((c) => checks.has(c as GapCheck)) ? (["testResults", "defects"] as const) : []),
   ]);
   const { tasks, features, testCases, processLinks, results } = n;
   const scope = input.includeClosed ? tasks : tasks.filter((t) => isOpen(t.status));
@@ -1225,9 +1234,11 @@ export async function gaps(
           const note = [covers.length ? `covers ${covers.join(", ")}` : "covers no task", n.defectsKnown ? (raised.length ? raised.map(n.defect).join("; ") : "no defect raised") : ""].filter(Boolean).join(" — ");
           return {
             id: t.displayId,
+            url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
             type: `${t.kind} test case`,
             title: t.title,
             status: "failed",
+            ...testResultData(results.get(t.id)),
             note,
             covers: t.taskIds.map((id) => n.taskOf(id)?.displayId ?? id),
             ...(n.defectsKnown ? { defects: raised.map((d) => d.displayId) } : {}),
@@ -1255,7 +1266,15 @@ export async function gaps(
     }
     section("features", "Features with no task, or untested tasks", items);
   }
-  const testItem = (t: SnapTestCase): GapItem & { line: string } => ({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", line: testCaseLine(t) });
+  const testItem = (t: SnapTestCase): GapItem & { line: string } => ({
+    id: t.displayId,
+    url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
+    type: `${t.kind} test case`,
+    title: t.title,
+    prepared: t.prepared !== false,
+    ...testResultData(results.get(t.id)),
+    line: testCaseLine(t, results.get(t.id)),
+  });
   if (checks.has("orphan_tests"))
     section("orphan_tests", "Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testItem));
   if (checks.has("unprepared_tests"))
@@ -1268,7 +1287,9 @@ export async function gaps(
       // A test that is not prepared does not count as ready, whatever it shows.
       const verdict = !cases.length
         ? "no test"
-        : words.includes("failed")
+        : words.every((w) => w === NOT_IN_PLAN)
+          ? NOT_IN_PLAN
+          : words.includes("failed")
           ? "failed"
           : words.every((w) => w === "passed")
             ? "passed"
@@ -1676,17 +1697,26 @@ export async function changes(
     snap.testResults(),
   ]);
   const after = (at: string | null | undefined) => !!at && at >= since;
-  type Change = { id: string | null; type: string; title: string | null; status: string | null; what: "created" | "changed"; at: string };
+  type Change = { id: string | null; url?: string | undefined; type: string; title: string | null; status: string | null; what: "created" | "changed"; at: string };
   const rows: Change[] = [];
   for (const t of tasks)
     if (after(t.changedAt) || after(t.createdAt))
-      rows.push({ id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), what: after(t.createdAt) ? "created" : "changed", at: (t.changedAt ?? t.createdAt) as string });
+      rows.push({
+        id: t.displayId,
+        url: webUrl(o.webUrl, { kind: "task", type: t.type, displayId: t.displayId }),
+        type: typeLabel(t.type),
+        title: t.title,
+        status: taskStatus(t),
+        what: after(t.createdAt) ? "created" : "changed",
+        // A created item shows when it was created; a changed one its last change.
+        at: (after(t.createdAt) ? t.createdAt : (t.changedAt ?? t.createdAt)) as string,
+      });
   for (const f of features)
-    if (after(f.modifiedAt)) rows.push({ id: f.displayId, type: "feature", title: f.title, status: featureStatus(f.statusCode), what: "changed", at: f.modifiedAt as string });
+    if (after(f.modifiedAt)) rows.push({ id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", displayId: f.displayId }), type: "feature", title: f.title, status: featureStatus(f.statusCode), what: "changed", at: f.modifiedAt as string });
   for (const d of documents)
     if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
   for (const t of testCases)
-    if (after(t.modifiedAt)) rows.push({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || NOT_IN_PLAN, what: "changed", at: t.modifiedAt as string });
+    if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || NOT_IN_PLAN, what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
   let resultsCut = false;
@@ -1740,7 +1770,7 @@ export async function changes(
       ? `Test results in this project's test plans, ${resultMove.from.date}: ${fmt(resultMove.from.counts)} → ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (daily analytics snapshots)`
       : "Test results over time: not available (analytics needs calm-api.analytics.read).",
     ...(resultsCut ? ["(test results: more than 2000 analytics rows; counted from the first 2000)"] : []),
-    "Cloud ALM's API keeps no change log: who changed an item, what field changed, and deleted items are not visible here.",
+    "Cloud ALM's API keeps no change log: who changed an item, what field changed, new comments and deleted items are not visible here (calm_get an item shows its comments).",
   ];
   lines.push(...footer(snap, ["tasks", "features", "documents", "testCases"]));
   return {
