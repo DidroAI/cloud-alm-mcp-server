@@ -193,10 +193,13 @@ const RESULT_STATUS: Record<string, string> = {
   passed: "passed",
   failed: "failed",
   "in progress": "in progress",
-  initial: "initial",
-  "not run": "initial",
-  "not run yet": "initial",
-  "not executed": "initial",
+  // Not run: assigned but not executed (initial), or never in a test plan.
+  initial: "not run",
+  "not run": "not run",
+  "not run yet": "not run",
+  "never run": "not run",
+  "no result": "not run",
+  "not executed": "not run",
   blocked: "blocked",
 };
 
@@ -308,7 +311,8 @@ export async function find(
     parts.push("testCases", "testResults");
     for (const t of testCases) {
       if (!match(t.title, ...t.tags) || !tagOk(t.tags)) continue;
-      if (resultStatus && !results.get(t.id)?.some((r) => r.status.toLowerCase() === resultStatus)) continue;
+      const latest = results.get(t.id) ?? [];
+      if (resultStatus === "not run" ? latest.some((r) => r.status.toLowerCase() !== "initial") : resultStatus && !latest.some((r) => r.status.toLowerCase() === resultStatus)) continue;
       hits.push({ sort: "4", displayId: t.displayId, line: testCaseLine(t, results.get(t.id)) });
     }
   }
@@ -341,7 +345,7 @@ export async function find(
   if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType)))
     notes.push("status filters tasks, features and test cases only");
   if (status && asked.has("test_case") && !resultStatus)
-    notes.push(`test cases filter by latest result: ${Object.keys(RESULT_STATUS).slice(0, 4).join(", ")}`);
+    notes.push("test cases filter by latest result: passed, failed, in progress, blocked, not run (never executed)");
   const lines = [
     `${hits.length} match${hits.length === 1 ? "" : "es"} in ${snap.project.name ?? "the project"}${hits.length && (offset > 0 || more) ? ` (${range})` : ""}${notes.length ? ` (${notes.join("; ")})` : ""}`,
     ...shown.map((h) => `- ${h.line}`),
