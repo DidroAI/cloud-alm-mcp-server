@@ -110,7 +110,8 @@ const WRITE = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: false,
-  openWorldHint: true,
+  // One tenant, a closed set of records: not the open web.
+  openWorldHint: false,
 } as const;
 
 /** Write tools that can remove or overwrite what is there. */
@@ -120,7 +121,7 @@ const READ_ONLY = {
   readOnlyHint: true,
   destructiveHint: false,
   idempotentHint: true,
-  openWorldHint: true,
+  openWorldHint: false,
 } as const;
 
 export type ServerOptions = ViewOptions & {
