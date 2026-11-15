@@ -15,12 +15,12 @@ last report if the user did not say.
 | --- | --- |
 | Phase, timeboxes, counts | `calm_overview` |
 | What changed since the last report | `calm_changes` with `since` = last report date |
-| Scope progress | `calm_list` `types: ["requirement"]`, by `status` (open, approved, in realization, done); features from `calm_overview` |
+| Scope progress | `calm_list` `types: ["requirement"]`: count rows by `status` (open, in realization, done…) and by `approval` (to be approved, approved); features from `calm_overview` |
 | Build | features by status (in realization, in testing, deployed) |
 | Testing | test plans and results from `calm_overview`; failed tests with `calm_gaps` `checks: ["failed_tests"]` |
 | Defects | `calm_list` `types: ["defect"]`, `status: "open"`, by priority |
 | Overdue and unassigned | `calm_list` `dueBefore` = today, `status: "open"`; `assignee: "none"` |
-| Risks | `calm_list` `query: "risk"` or tasks tagged as risks; blocked items (`status: "blocked"`) |
+| Risks | `calm_list` `query: "risk"` or tasks tagged as risks; blocked items (`status: "blocked"`; an empty answer names the statuses in use) |
 | Trends | `calm_analytics` (e.g. `dataset: "Defects"`, `groupBy: ["status"]`, or `["date"]` for a series); analytics are refreshed daily |
 
 ## 2. Judge

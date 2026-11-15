@@ -16,7 +16,7 @@ for the process area, the workshop type and the date if they did not say.
    `calm_trace` it (requirements, user stories, features, test cases,
    documents).
 3. Open items for the process: `calm_list` with
-   `types: ["requirement", "user_story", "defect", "project_task"]`,
+   `types: ["requirement", "user_story", "defect", "task"]`,
    `status: "open"` and the process words; add `searchText: true` if
    titles are terse.
 4. Decisions and earlier minutes: `calm_list` with `types: ["document"]`

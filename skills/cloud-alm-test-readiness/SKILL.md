@@ -25,9 +25,10 @@ process area) if the user did not say.
 7. Plan progress: `calm_list` `types: ["test_plan"]`, then `calm_get` the
    plan(s) for executed vs planned.
 
-Coverage counts direct links only: a requirement tested only through its
-user stories shows as untested; say so where it applies. Step-level
-results are not in the API.
+Coverage rolls each requirement up with its user stories (`rollup`): use
+the rollup for requirements tested through their stories. The test plan
+read gives executed and pass rates (`fields.progress`). Step-level results
+are not in the API.
 
 ## 2. Apply the criteria
 
