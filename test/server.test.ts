@@ -347,3 +347,12 @@ test("test cases: not run (in a plan) and not in a test plan are told apart", as
   const overview = (await call("calm_overview")).structured as { testResults: { notInPlan: number } };
   expect(overview.testResults.notInPlan).toBe(none.items.length);
 });
+
+test("analytics takes a project by name and leaves out blank groups", async () => {
+  const { call } = await connect();
+  const { projects } = (await call("calm_projects")).structured as { projects: { name: string }[] };
+  const name = projects[0]?.name as string;
+  const r = await call("calm_analytics", { dataset: "Tests", projectId: name, groupBy: ["status"] });
+  expect(r.error).toBe(false);
+  expect(r.text).toContain(`Project: ${name} only`);
+});

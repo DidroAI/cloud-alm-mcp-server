@@ -304,7 +304,7 @@ export function createServer(
       assignee: z.string().max(100).optional().describe('Tasks: part of the assignee\'s name, or "none" for unassigned'),
       priority: z.string().max(12).optional().describe('"very high", "high", "medium", "low"'),
       dueBefore: z.string().max(10).optional().describe("Tasks due on or before YYYY-MM-DD"),
-      classification: z.string().max(20).optional().describe('Requirements: fit-to-standard classification, "fit" or "gap"'),
+      classification: z.string().max(20).optional().describe('Requirements: "fit" or "gap"'),
       changedSince: z.string().max(10).optional().describe("Changed on or after YYYY-MM-DD (tasks, features, documents)"),
       projectId,
       limit: z.number().int().min(1).max(100).optional().describe("Rows per page, default 25"),
@@ -367,12 +367,13 @@ export function createServer(
     {
       dataset: z.enum(ANALYTICS_DATASETS).optional(),
       groupBy: z.array(z.string().max(60)).max(4).optional(),
-      filters: z.record(z.string(), z.string().max(200)).optional().describe('Column equalities, e.g. {"project":"<id>"}'),
-      period: z.string().regex(/^[A-Za-z0-9]{1,10}$/).optional().describe("e.g. C1D, C7D, C30D"),
+      filters: z.record(z.string(), z.string().max(200)).optional().describe('Column equalities on the dataset\'s columns, e.g. {"priority":"High"}'),
+      period: z.string().regex(/^[A-Za-z0-9]{1,10}$/).optional().describe("C1D today, C7D last 7 days, C30D last 30 days (default: today)"),
       limit: z.number().int().min(1).max(200).optional(),
+      projectId: z.string().min(1).max(200).optional().describe("One project, id or name (default: whole tenant)"),
     },
     async (a) => {
-      const out = await analytics(calm, defined(a));
+      const out = await analytics(calm, defined(a), options);
       return typeof out === "string" ? { text: out, data: { dataset: a.dataset ?? null, message: out } } : out;
     },
     LOOSE_OUT,

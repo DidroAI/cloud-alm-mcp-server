@@ -1271,9 +1271,19 @@ const NOT_SUMMED = /avg|average|progress|percent|ratio|rate$|id$/i;
 const MONITORED = new Set<AnalyticsDataset>(["Exceptions", "Jobs", "Metrics", "Requests", "ServiceLevels", "ScenarioExecutions", "MonitoringEvents", "Messages", "ConfigurationItems"]);
 const FRESHNESS = "Analytics is refreshed daily and tenant-wide; calm_overview and calm_list give one project's live state.";
 
+/** The column holding the project's id, per dataset (they differ). */
+const PROJECT_COLUMN: Partial<Record<AnalyticsDataset, string>> = {
+  Tasks: "project",
+  Requirements: "project",
+  Defects: "project",
+  Tests: "projectGUID",
+  Features: "projectId",
+};
+
 export async function analytics(
   calm: CloudAlm,
-  input: { dataset?: AnalyticsDataset; groupBy?: string[]; filters?: Record<string, string>; period?: string; limit?: number },
+  input: { dataset?: AnalyticsDataset; groupBy?: string[]; filters?: Record<string, string>; period?: string; limit?: number; projectId?: string },
+  o: ViewOptions = {},
 ) {
   if (!input.dataset)
     return [
@@ -1286,7 +1296,18 @@ export async function analytics(
   // here, case-insensitively, since Cloud ALM compares values exactly.
   const local: Record<string, string> = {};
   const remote: Record<string, string> = {};
+  // One project, named or by id, in the dataset's own project column.
+  const column = PROJECT_COLUMN[dataset];
+  const named = input.projectId ?? (input.filters?.project && !GUID.test(input.filters.project) ? input.filters.project : undefined);
+  let scopedTo: { id: string; name: string | null } | null = null;
+  if (named && column) {
+    const { project } = await resolveProject(calm, named, undefined, clock(o));
+    scopedTo = { id: project.id, name: project.name };
+    remote[column] = project.id;
+    local[column] = project.id;
+  }
   for (const [key, value] of Object.entries(input.filters ?? {})) {
+    if (scopedTo && key === "project") continue;
     if (key.toLowerCase() === "status" && info.status) local[info.status] = value;
     else {
       remote[key] = value;
@@ -1312,6 +1333,7 @@ export async function analytics(
     result.columns.find((c) => c.toLowerCase() === name.toLowerCase()) ??
     (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined);
   const notes: string[] = [];
+  if (scopedTo) notes.push(`Project: ${scopedTo.name ?? scopedTo.id} only`);
   let rows = result.rows;
   // Cloud ALM ignores filters on columns it does not have: say so.
   if (rows.length) {
@@ -1361,7 +1383,13 @@ export async function analytics(
     // Rows are daily snapshots: count the latest day only, never sum days.
     const day = dates.length > 1 && !groupBy.includes("date") ? rows.filter((r) => r.date === latest) : rows;
     const groups = new Map<string, Record<string, number>>();
+    let blank = 0;
     for (const r of day) {
+      // Rows of deleted or emptied items have no value in any grouped column.
+      if (groupBy.every((g) => r[g] === null || r[g] === undefined || r[g] === "" || r[g] === "NA")) {
+        blank++;
+        continue;
+      }
       const key = groupBy.map((g) => String(r[g] ?? "—")).join(" · ");
       const acc = groups.get(key) ?? {};
       for (const c of numeric.filter((c) => !groupBy.includes(c) && !NOT_SUMMED.test(c))) acc[c] = (acc[c] ?? 0) + Number(r[c] ?? 0);
@@ -1371,6 +1399,7 @@ export async function analytics(
     const text = [
       `${dataset} by ${groupBy.join(", ")}${latest && !groupBy.includes("date") ? `, as of ${latest}` : ""}: ${groups.size} group${groups.size === 1 ? "" : "s"} from ${day.length} rows${dates.length > 1 && !groupBy.includes("date") ? ` (the latest of ${dates.length} daily snapshots)` : ""}${groups.size > shownGroups.length ? `; showing ${shownGroups.length}, pass limit for more` : ""}${result.truncated ? "; rows cut at 200" : ""}:`,
       ...notes,
+      ...(blank ? [`(${blank} row${blank === 1 ? "" : "s"} with no value in ${groupBy.join(", ")} left out: deleted or emptied items)`] : []),
       ...shownGroups.map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
       FRESHNESS,
     ].join("\n");
