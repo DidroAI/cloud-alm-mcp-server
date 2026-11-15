@@ -125,6 +125,7 @@ describe("calm_get and calm_trace", () => {
     expect(get.text).toContain('Raised from test case: 8-1-1 "Order blocked by credit limit" (failed, 1 of 2 steps passed in UAT cycle 1)');
     const trace = await call("calm_trace", { id: "3-4" });
     expect(trace.text).toContain("raised from test case: 8-1-1");
+    expect(trace.text).toMatch(/blocks: 3-1 requirement "\[demo\] REQ-01 Credit check on order release" \(priority high\)/);
     expect(trace.text).not.toContain("test cases: NONE");
     const tc = await call("calm_get", { ids: ["8-1-1"] });
     expect(tc.text).toContain('Defects raised from it: defect 3-4 "Credit block not set for export orders" (open (new), priority very high)');

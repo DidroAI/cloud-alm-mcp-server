@@ -965,6 +965,20 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
   );
   const lines = [`Trace of ${head}`];
   const nodes: Record<string, unknown>[] = [];
+  /** What a defect holds up: the items its test case covers, with their features. */
+  const blockedBy = (defectId: string) => {
+    const from = n.raisedFrom(defectId);
+    return (from?.taskIds ?? [])
+      .map((id) => n.taskOf(id))
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .map((x) => ({
+        id: x.displayId,
+        type: typeLabel(x.type),
+        title: x.title,
+        priority: priorityLabel(x.priority),
+        features: featureOf(x.id).map((f) => ({ id: f.displayId, status: featureStatus(f.statusCode) })),
+      }));
+  };
   const describe = (taskId: string, indent: string, parent: string | null = null) => {
     const t = n.taskOf(taskId);
     const tcsAll = n.testCases.filter((x) => x.taskIds.includes(taskId));
@@ -978,7 +992,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
       testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || NOT_IN_PLAN, defects: n.defectsOf(x.id).map((d) => d.displayId) })),
       documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
-      ...(t?.type === "CALMDEF" ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null } : {}),
+      ...(t?.type === "CALMDEF" ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null, blocks: blockedBy(taskId) } : {}),
     });
     const out = [`${indent}${n.task(taskId)}${t?.tags.length ? ` #${t.tags.join(" #")}` : ""}`];
     const sub = `${" ".repeat(indent.length)}  `;
@@ -992,6 +1006,11 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     if (t?.type === "CALMDEF") {
       const from = n.raisedFrom(taskId);
       out.push(`${sub}raised from test case: ${from ? n.testCase(from) : n.defectsKnown ? "not recorded" : "unknown (no analytics scope)"}`);
+      const blocks = blockedBy(taskId);
+      if (blocks.length)
+        out.push(
+          `${sub}blocks: ${blocks.map((b) => `${b.id} ${b.type} "${short(b.title, 60)}"${b.priority ? ` (priority ${b.priority})` : ""}${b.features.length ? `, feature ${b.features.map((f) => `${f.id} ${f.status}`).join(", ")}` : ""}`).join("; ")}`,
+        );
     } else {
       const tcs = n.testCases.filter((x) => x.taskIds.includes(taskId));
       out.push(`${sub}test cases: ${tcs.length ? tcs.map(n.testCase).join("; ") : "NONE"}`);
