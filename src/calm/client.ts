@@ -220,6 +220,8 @@ export const taskSummary = (row: Row): TaskSummary => {
     typeName: type ? (TASK_TYPES[type as TaskTypeCode] ?? null) : null,
     status: str(row.status),
     subStatus: str(row.subStatus),
+    classification: str(row.classificationId),
+    approvalState: str(row.approvalState),
     priority: num(row.priorityId),
     assigneeName: str(row.assigneeName),
     scopeName: str(row.scopeName),

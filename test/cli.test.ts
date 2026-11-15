@@ -292,7 +292,7 @@ describe("key handling", () => {
 
   test("the stdio server starts from an inline key", () => {
     expect(() => stdioServer({ CALM_SERVICE_KEY: KEY_TEXT })).not.toThrow();
-    expect(() => stdioServer({ CALM_CONFIG_DIR: join(dir, "none") })).toThrow("init");
+    expect(() => stdioServer({ CALM_CONFIG_DIR: join(dir, "none") })).toThrow("setup");
   });
 
   test("the key decides the tools: write tools only for write scopes", async () => {

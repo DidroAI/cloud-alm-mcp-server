@@ -14,7 +14,6 @@ const linked = z.looseObject({ id: str, title: str, status: str.optional(), resu
 /** One row of a list: enough to choose, `calm_get` for the rest. */
 export const ROW = z.looseObject({
   id: str.describe("Display id (3-17, 6-1, 8-1-2) or, for processes, the process id"),
-  uuid: z.string(),
   type: z.string().describe("requirement, user story, defect, feature, document, manual test case…"),
   title: str,
   status: str.optional(),
@@ -25,6 +24,8 @@ export const ROW = z.looseObject({
   createdAt: str.optional(),
   changedAt: str.optional(),
   result: str.optional().describe("Test cases: latest result per test plan"),
+  classification: str.optional().describe("Requirements: fit-to-standard classification (fit, gap)"),
+  approval: str.optional().describe("Requirements: to be approved, approved, rejected"),
 });
 
 export const LIST_OUT = z.object({

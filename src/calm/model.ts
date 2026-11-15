@@ -72,6 +72,10 @@ export type TaskSummary = {
   typeName: string | null;
   status: string | null;
   subStatus: string | null;
+  /** Requirements: `REQ_FIT`, `REQ_GAP` … (fit-to-standard classification). */
+  classification?: string | null;
+  /** Requirements: `READY_4_APPR`, `APPROVED` … */
+  approvalState?: string | null;
   priority: number | null;
   assigneeName: string | null;
   scopeName: string | null;

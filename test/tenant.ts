@@ -32,7 +32,7 @@ const task = (id: string, displayId: string, type: string, status: string, title
   scopeName: "Order to Cash",
 });
 const tasks = [
-  task(REQ, "3-1", "CALMREQU", "CIPREQUOPEN", "[demo] REQ-01 Credit check on order release", ["Wave 1"], 20, "CREATED"),
+  { ...task(REQ, "3-1", "CALMREQU", "CIPREQUOPEN", "[demo] REQ-01 Credit check on order release", ["Wave 1"], 20, "CREATED"), classificationId: "REQ_GAP" },
   task(US1, "3-2", "CALMUS", "CIPUSOPEN", "Release blocked orders from a worklist"),
   task(US2, "3-3", "CALMUS", "CIPUSOPEN", "Credit exposure shown in the order (see REQ-01)"),
   task(DEF, "3-4", "CALMDEF", "CIPDFCTOPEN", "Credit block not set for export orders", [], 10, "DFC_NEW"),

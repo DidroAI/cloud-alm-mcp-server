@@ -302,6 +302,7 @@ export function createServer(
       assignee: z.string().max(100).optional().describe('Tasks: part of the assignee\'s name, or "none" for unassigned'),
       priority: z.string().max(12).optional().describe('"very high", "high", "medium", "low"'),
       dueBefore: z.string().max(10).optional().describe("Tasks due on or before YYYY-MM-DD"),
+      classification: z.string().max(20).optional().describe('Requirements: fit-to-standard classification, "fit" or "gap"'),
       changedSince: z.string().max(10).optional().describe("Changed on or after YYYY-MM-DD (tasks, features, documents)"),
       projectId,
       limit: z.number().int().min(1).max(100).optional().describe("Rows per page, default 25"),

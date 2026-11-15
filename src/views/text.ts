@@ -42,6 +42,22 @@ export function subStatusLabel(code: string | null): string | null {
     .trim() || null;
 }
 
+/** A requirement's fit-to-standard classification: `REQ_FIT` → "fit". */
+export function classificationLabel(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return code.replace(/^REQ_/, "").toLowerCase().replace(/_/g, " ") || null;
+}
+
+const APPROVALS: Record<string, string> = {
+  READY_4_APPR: "to be approved",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  NOT_RELEVANT: "not relevant",
+};
+/** A requirement's approval state in words. */
+export const approvalLabel = (code: string | null | undefined) =>
+  code ? (APPROVALS[code] ?? code.toLowerCase().replace(/_/g, " ")) : null;
+
 /** "open (new)" for a defect, "open" for a task without a sub-status. */
 export function taskStatus(t: { status: string | null; subStatus: string | null }): string {
   const main = statusLabel(t.status);
@@ -101,6 +117,8 @@ export const taskLine = (t: TaskSummary) =>
     typeLabel(t.type),
     taskStatus(t),
     t.priority !== null ? `priority ${priorityLabel(t.priority)}` : null,
+    t.classification ? classificationLabel(t.classification) : null,
+    t.approvalState ? approvalLabel(t.approvalState) : null,
     `"${short(t.title)}"`,
     t.assigneeName ? `@${t.assigneeName}` : "unassigned",
     t.dueDate ? `due ${t.dueDate}` : null,

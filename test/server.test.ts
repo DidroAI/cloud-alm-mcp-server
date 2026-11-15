@@ -32,8 +32,9 @@ async function connect(
     const result = (await client.callTool({ name, arguments: args })) as {
       isError?: boolean;
       content: { text: string }[];
+      structuredContent?: unknown;
     };
-    return { error: !!result.isError, text: result.content[0]?.text ?? "" };
+    return { error: !!result.isError, text: result.content[0]?.text ?? "", structured: result.structuredContent };
   };
   return { client, call, fake };
 }
@@ -76,8 +77,13 @@ describe("tools", () => {
     const credit = await call("calm_list", { query: "credit" });
     expect(credit.text).toStartWith("6 matches");
     expect(credit.text).toContain(
-      '- 3-1 · requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release" · unassigned · #Wave 1',
+      '- 3-1 · requirement · open (in refinement) · priority high · gap · "[demo] REQ-01 Credit check on order release" · unassigned · #Wave 1',
     );
+    const gaps = await call("calm_list", { classification: "gap" });
+    expect(gaps.text).toStartWith("1 match");
+    expect((gaps.structured as { items: { classification?: string; uuid?: string }[] }).items[0]).toMatchObject({ classification: "gap" });
+    expect((gaps.structured as { items: { uuid?: string }[] }).items[0]?.uuid).toBeUndefined();
+    expect((await call("calm_list", { classification: "fit" })).text).toStartWith("0 matches");
     expect(credit.text).toContain('- 3-4 · defect · open (new) · priority very high · "Credit block not set for export orders"');
     const alt = await call("calm_list", { query: "worklist | regression" });
     expect(alt.text).toContain("3-2 ·");

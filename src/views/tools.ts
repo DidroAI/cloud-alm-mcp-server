@@ -27,7 +27,9 @@ import {
 } from "./snapshot.js";
 import {
   byDisplayId,
+  approvalLabel,
   capped,
+  classificationLabel,
   counts,
   documentLine,
   documentType,
@@ -229,7 +231,6 @@ type Row = {
   line: string;
   data: {
     id: string | null;
-    uuid: string;
     type: string;
     title: string | null;
     status?: string | null;
@@ -242,6 +243,12 @@ type Row = {
     result?: string | null;
   };
 };
+
+/** A requirement's classification and approval, when Cloud ALM has them. */
+const requirementFields = (t: TaskSummary) => ({
+  ...(t.classification ? { classification: classificationLabel(t.classification) } : {}),
+  ...(t.approvalState ? { approval: approvalLabel(t.approvalState) } : {}),
+});
 
 /** `a b | c` → [[a,b],[c]]: all words of one alternative must match. */
 function matcher(query: string | undefined) {
@@ -272,6 +279,7 @@ export type ListInput = {
   priority?: string;
   changedSince?: string;
   dueBefore?: string;
+  classification?: string;
   searchText?: boolean;
   projectId?: string;
   limit?: number;
@@ -305,7 +313,8 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const tagOk = (tags: string[]) => !tag || tags.some((x) => x.toLowerCase() === tag);
   const since = (changed: string | null) => !input.changedSince || (!!changed && changed.slice(0, 10) >= input.changedSince);
   // Filters only tasks have: other kinds are left out when one is given.
-  const taskOnly = !!(assignee || input.dueBefore);
+  const classification = input.classification?.toLowerCase().trim();
+  const taskOnly = !!(assignee || input.dueBefore || classification);
   const snap = await snapshotFor(calm, input.projectId, o);
   const taskTypes = [...types].filter((t) => t in TASK_FIND);
   const want = {
@@ -356,7 +365,8 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (priority !== undefined && t.priority !== priority) return false;
     if (assignee && (unassigned ? !!t.assigneeName : !(t.assigneeName ?? "").toLowerCase().includes(assignee))) return false;
     if (input.dueBefore && !(t.dueDate && t.dueDate <= input.dueBefore)) return false;
-    return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status));
+    if (classification && classificationLabel(t.classification) !== classification) return false;
+    return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status) || approvalLabel(t.approvalState) === status);
   };
   const featurePass = (f: SnapFeature) =>
     tagOk(f.tags) && since(f.modifiedAt) && (priority === undefined || f.priorityCode === priority) && statusOk(featureStatus(f.statusCode), ["tested", "approved", "deployed", "confirmed", "not planned"]);
@@ -380,7 +390,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         sort: `1${t.type}`,
         displayId: t.displayId,
         line: taskLine(t),
-        data: { id: t.displayId, uuid: t.id, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, createdAt: t.createdAt ?? null, changedAt: t.changedAt },
+        data: { id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, ...requirementFields(t), createdAt: t.createdAt ?? null, changedAt: t.changedAt },
       });
     }
   }
@@ -392,14 +402,14 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "2",
           displayId: f.displayId,
           line: featureLine(f),
-          data: { id: f.displayId, uuid: f.id, type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
+          data: { id: f.displayId, type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
         });
   }
   if (want.documents) {
     parts.push("documents");
     for (const d of documents)
       if (since(d.modifiedAt) && hit(d.id, d.title))
-        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, uuid: d.id, type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
+        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
   }
   if (want.testCases) {
     parts.push("testCases", "testResults");
@@ -411,7 +421,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         sort: "4",
         displayId: t.displayId,
         line: testCaseLine(t, latest),
-        data: { id: t.displayId, uuid: t.id, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", priority: priorityLabel(t.priority), tags: t.tags, result: resultText(latest) || "not run" },
+        data: { id: t.displayId, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", priority: priorityLabel(t.priority), tags: t.tags, result: resultText(latest) || "not run" },
       });
     }
   }
@@ -423,7 +433,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "5",
           displayId: t.displayId,
           line: `${t.displayId} · test plan · "${short(t.title)}"${t.startDate ? ` · ${t.startDate}–${t.endDate ?? ""}` : ""}`,
-          data: { id: t.displayId, uuid: t.id, type: "test plan", title: t.title },
+          data: { id: t.displayId, type: "test plan", title: t.title },
         });
   }
   if (want.processes) {
@@ -434,7 +444,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "6",
           displayId: null,
           line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
-          data: { id: p.id, uuid: p.id, type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+          data: { id: p.id, type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
         });
   }
   libraryKinds.forEach((kind, i) => {
@@ -444,7 +454,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: `7${kind}`,
           displayId: item.displayId,
           line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}`,
-          data: { id: item.displayId ?? item.id, uuid: item.id, type: kind.replace(/s$/, ""), title: item.title },
+          data: { id: item.displayId ?? item.id, type: kind.replace(/s$/, ""), title: item.title },
         });
   });
   rows.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
@@ -774,7 +784,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       title: t.title,
       status: taskStatus(t),
       priority: priorityLabel(t.priority),
-      fields: { scope: t.scopeName, phase: t.timeboxName, assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, createdAt: t.createdAt, changedAt: t.changedAt, references: t.externalReferences },
+      fields: { ...requirementFields(t), scope: t.scopeName, phase: t.timeboxName, assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, createdAt: t.createdAt, changedAt: t.changedAt, references: t.externalReferences },
       description,
       links,
       comments,
