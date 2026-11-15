@@ -31,7 +31,7 @@ import {
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
 import { api } from "./views/api.js";
-import { GAPS_OUT, GET_OUT, LIST_OUT, LOOSE_OUT } from "./schemas.js";
+import { ANALYTICS_OUT, API_OUT, CHANGES_OUT, GAPS_OUT, GET_OUT, LANDSCAPE_OUT, LIST_OUT, OVERVIEW_OUT, PROJECTS_OUT, TEAM_OUT, TRACE_OUT } from "./schemas.js";
 import { NOTHING_TO_DO } from "./views/items.js";
 import {
   comment,
@@ -276,7 +276,7 @@ export function createServer(
     "Start here. A project at a glance: current phase, counts of requirements, user stories, defects, features, test cases, documents by status, tags in use, and gaps.",
     { projectId },
     (a) => overview(calm, defined(a), options),
-    LOOSE_OUT,
+    OVERVIEW_OUT,
   );
   tool(
     "calm_projects",
@@ -284,7 +284,7 @@ export function createServer(
     "The projects this key can read: id, name, purpose, status. Every project tool takes projectId as the id or the name.",
     {},
     () => projectsView(calm, options),
-    LOOSE_OUT,
+    PROJECTS_OUT,
   );
   tool(
     "calm_team",
@@ -292,7 +292,7 @@ export function createServer(
     "Who is in a project's team, with their roles. Their user id (the email) is what an assignee is set to.",
     { projectId },
     (a) => team(calm, defined(a), options),
-    LOOSE_OUT,
+    TEAM_OUT,
   );
   tool(
     "calm_list",
@@ -331,7 +331,7 @@ export function createServer(
       offset: z.number().int().min(0).max(5000).optional(),
     },
     (a) => changes(calm, defined(a), options),
-    LOOSE_OUT,
+    CHANGES_OUT,
   );
   tool(
     "calm_get",
@@ -351,7 +351,7 @@ export function createServer(
     "Follow an item's links both ways: requirement → user stories → features (status, transports), test cases, documents, solution process. Start from a task, feature, test case, document or process.",
     { id: ref, projectId },
     (a) => trace(calm, defined(a), options),
-    LOOSE_OUT,
+    TRACE_OUT,
   );
   tool(
     "calm_gaps",
@@ -383,7 +383,7 @@ export function createServer(
       const out = await analytics(calm, defined(a), options);
       return typeof out === "string" ? { text: out, data: { dataset: a.dataset ?? null, message: out } } : out;
     },
-    LOOSE_OUT,
+    ANALYTICS_OUT,
   );
   const apiPath = z.string().min(3).max(300).describe("Path under the API root, e.g. calm-features/v1/Features or calm-tasks/v1/tasks/{id}/comments");
   const apiQuery = z.record(z.string(), z.string().max(1000)).optional().describe('Query options, e.g. {"$filter":"contains(title,\'credit\')","$top":"20"} or {"projectId":"…","type":"CALMDEF"}');
@@ -397,7 +397,7 @@ export function createServer(
       requests: z.array(z.object({ path: apiPath, query: apiQuery })).max(5).optional().describe("Several GETs in one call"),
     },
     (a) => api(calm, defined(a)),
-    LOOSE_OUT,
+    API_OUT,
   );
   tool(
     "calm_landscape",
@@ -405,7 +405,7 @@ export function createServer(
     "Systems and cloud services of the tenant, and SAP service status events (outages, maintenance), open ones first.",
     {},
     () => landscape(calm),
-    LOOSE_OUT,
+    LANDSCAPE_OUT,
   );
 
   const writer = options.writer;

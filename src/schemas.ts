@@ -73,7 +73,7 @@ export const GAPS_OUT = z.object({
   scope: z.enum(["open", "all"]),
   offset: z.number().int(),
   sections: z.array(
-    z.object({
+    z.looseObject({
       check: z.string(),
       title: z.string(),
       total: z.number().int(),
@@ -87,13 +87,101 @@ export const GAPS_OUT = z.object({
           priority: str.optional(),
           covers: z.array(str).optional(),
           defects: z.array(str).optional(),
-          testCases: z.array(z.object({ id: str, result: z.string(), prepared: z.boolean().nullable() })).optional(),
+          testCases: z
+            .array(z.looseObject({ id: str, title: str.optional(), result: z.string(), prepared: z.boolean().nullable(), defects: z.array(str).optional() }))
+            .optional(),
+          children: z.array(z.object({ id: str, verdict: z.string() })).optional().describe("Coverage: the user stories under a requirement"),
+          rollup: z.string().optional().describe("Coverage: the requirement with its user stories, worst verdict first"),
         }),
       ),
+      summary: z.record(z.string(), z.number()).optional().describe("Coverage: items per verdict"),
     }),
   ),
   notes: z.array(z.string()),
 });
 
-/** Loose answers: the text says it all; the data carries the numbers and ids. */
+/** Answers without a declared shape. */
 export const LOOSE_OUT = z.looseObject({});
+
+const counts = z.record(z.string(), z.number());
+const loose = z.looseObject;
+
+export const OVERVIEW_OUT = loose({
+  projects: z.array(loose({ id: z.string(), name: str })).optional().describe("Several projects and none named: pick one"),
+  project: loose({ id: z.string(), name: str, purpose: str, status: str, phase: str }),
+  phases: z.array(loose({ name: str, start: str, end: str, current: z.boolean() })),
+  milestones: z.array(loose({ name: str, date: str })),
+  processes: loose({ inScope: z.number(), total: z.number() }),
+  tasks: z.record(z.string(), loose({ total: z.number(), byStatus: counts })),
+  defects: loose({ byStatus: counts, byPriority: counts }),
+  features: loose({ total: z.number(), byStatus: counts }),
+  testCases: loose({ manual: z.number(), prepared: z.number(), automated: z.number() }),
+  testResults: counts.describe("Latest result per test case and plan; notInPlan: test cases in no plan"),
+  gaps: loose({}),
+  notes: z.array(z.string()),
+}).partial();
+
+export const PROJECTS_OUT = loose({
+  projects: z.array(loose({ id: z.string(), name: str, purpose: str, status: str, default: z.boolean().optional() })),
+});
+
+export const TEAM_OUT = loose({
+  project,
+  members: z.array(loose({ userId: z.string().describe("What an assignee is set to"), roles: z.array(z.string()) })),
+});
+
+export const CHANGES_OUT = loose({
+  project,
+  since: z.string(),
+  total: z.number().int(),
+  byType: z.record(z.string(), loose({ created: z.number(), changed: z.number() })),
+  offset: z.number().int(),
+  nextOffset: z.number().int().nullable(),
+  items: z.array(loose({ id: str, type: z.string(), title: str, status: str, what: z.enum(["created", "changed"]), at: z.string() })),
+  testResults: z.unknown().describe("Counts of results on the first and last day, from daily analytics; null when not readable"),
+});
+
+export const TRACE_OUT = loose({
+  start: loose({ id: str, asked: z.string(), kind: z.string(), label: z.string() }),
+  nodes: z.array(
+    loose({
+      id: str,
+      type: z.string(),
+      title: str,
+      status: str,
+      under: str.describe("Parent requirement"),
+      processes: z.array(z.string()),
+      features: z.array(loose({ id: str, title: str, status: z.string(), transports: z.array(z.string()).nullable() })),
+      testCases: z.array(loose({ id: str, title: str, result: z.string(), defects: z.array(str) })),
+      documents: z.array(loose({ id: str, title: str })),
+      raisedFrom: str.optional().describe("Defects: the test case it came from"),
+      blocks: z.array(loose({ id: str, type: z.string(), title: str })).optional().describe("Defects: what its test case covers"),
+    }),
+  ),
+  notes: z.array(z.string()),
+});
+
+export const ANALYTICS_OUT = loose({
+  dataset: str,
+  message: z.string().optional().describe("Without dataset: the list of datasets"),
+  groupBy: z.array(z.string()).optional(),
+  asOf: str.optional(),
+  totalGroups: z.number().optional(),
+  groups: z.array(loose({ key: z.record(z.string(), str), values: counts })).optional(),
+  total: z.number().optional(),
+  columns: z.array(z.string()).optional(),
+  rows: z.array(z.record(z.string(), z.unknown())).optional(),
+});
+
+export const API_OUT = loose({
+  catalog: z.array(z.unknown()).optional().describe("Without a path: the APIs and their query options"),
+  results: z.array(
+    loose({ path: z.string(), error: z.string().optional(), rows: z.number().nullable().optional(), count: z.number().nullable().optional(), truncated: z.boolean().optional(), body: z.unknown().optional() }),
+  ),
+});
+
+export const LANDSCAPE_OUT = loose({
+  objects: z.array(loose({ name: str, type: str, system: str, role: str })),
+  events: z.array(loose({ status: str, type: str, service: str, start: str, end: str, text: z.string() })).nullable(),
+  eventCounts: loose({ open: z.number(), closed: z.number(), upcoming: z.number() }).nullable().optional(),
+});
