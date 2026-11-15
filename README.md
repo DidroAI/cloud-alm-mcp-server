@@ -296,6 +296,7 @@ prompt or slash-command menu):
 | `cloud-alm-fit-gap` | fit-to-standard: fit, configuration or gap per requirement and process |
 | `cloud-alm-workshop-prep` | agenda, open questions and decisions for a workshop |
 | `cloud-alm-backlog-from-notes` | minutes or a transcript into requirements, user stories, tasks and comments |
+| `cloud-alm-daily-brief` | what moved since yesterday, what is at risk, what is due |
 | `cloud-alm-status-report` | a steering committee or weekly status report |
 | `cloud-alm-test-readiness` | SIT/UAT entry and exit, go-live readiness, go / no-go |
 | `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
