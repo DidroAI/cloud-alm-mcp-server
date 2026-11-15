@@ -123,13 +123,13 @@ describe("calm_get and calm_trace", () => {
     // 3-3 mentions REQ-01 too; the title that starts with it wins.
     expect(text).toStartWith("3-1 requirement");
     expect((await call("calm_trace", { id: "req-01" })).text).toContain("Trace of 3-1 requirement");
-    expect((await call("calm_get", { ids: ["FEAT-99"] })).text).toContain("FEAT-99: not_found — no item has FEAT-99 in its title");
+    expect((await call("calm_get", { ids: ["FEAT-99"] })).text).toContain("FEAT-99: not_found: no item has FEAT-99 in its title");
   });
 
   test("a test plan lists its test cases sorted, with their result and defects", async () => {
     const { call } = await connect();
     const { text } = await call("calm_get", { ids: ["8-3-1"] });
-    expect(text).toContain("Test cases (3): 1 failed, 1 passed, 1 no result");
+    expect(text).toContain("Test cases (3): 1 failed, 1 passed, 1 not run");
     const at = (s: string) => text.indexOf(s);
     expect(at("- 8-1-1")).toBeLessThan(at("- 8-1-2"));
     expect(at("- 8-1-2")).toBeLessThan(at("- 8-1-3"));

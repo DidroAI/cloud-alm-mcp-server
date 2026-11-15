@@ -39,6 +39,7 @@ import {
   tag,
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
+import { GET_OUT, LIST_OUT } from "./schemas.js";
 import { NOTHING_TO_DO } from "./views/items.js";
 import {
   comment,
@@ -84,9 +85,15 @@ function defined<T extends Record<string, unknown>>(value: T) {
 }
 
 /** Run a read; a CloudAlmError becomes a tool error the model can read. */
-async function answer(read: () => Promise<string>): Promise<CallToolResult> {
+/** A read's answer: text for the model, and the same as data when the tool declares an output schema. */
+export type Out = string | { text: string; data: Record<string, unknown> };
+
+async function answer(read: () => Promise<Out>): Promise<CallToolResult> {
   try {
-    return { content: [{ type: "text", text: await read() }] };
+    const out = await read();
+    return typeof out === "string"
+      ? { content: [{ type: "text", text: out }] }
+      : { content: [{ type: "text", text: out.text }], structuredContent: out.data };
   } catch (error) {
     if (error instanceof CloudAlmError)
       return {
@@ -276,7 +283,8 @@ export function createServer(
     title: string,
     description: string,
     inputSchema: Shape,
-    write: (args: z.infer<z.ZodObject<Shape>>) => Promise<string>,
+    write: (args: z.infer<z.ZodObject<Shape>>) => Promise<Out>,
+    outputSchema?: z.ZodObject,
   ) => {
     if (allowed && !allowed.has(name)) return;
     const isWrite = (WRITE_TOOL_NAMES as readonly string[]).includes(name);
@@ -293,8 +301,8 @@ export function createServer(
     const config = {
       title,
       description,
-      // A zod v4 raw shape; the SDK's compat type does not name v4 shapes.
-      inputSchema: inputSchema as never,
+      inputSchema: z.object(inputSchema),
+      ...(outputSchema ? { outputSchema } : {}),
       annotations: isWrite ? { ...WRITE, destructiveHint: DESTRUCTIVE.has(name), title } : { ...READ_ONLY, title },
     };
     if (isWrite && approval !== "off") {
@@ -347,9 +355,14 @@ export function createServer(
   tool(
     "calm_get",
     "Get items",
-    "Full content of 1–10 items: description, test case steps and latest result, defects and the test case they came from, a test plan's results, document content, feature transports, and every link with its title.",
-    { ids: z.array(ref).min(1).max(10), projectId },
+    "Details of 1–10 items by id (from calm_list): description, fields (assignee, dates, scope, phase), comments, test case steps and latest results, defects and the test case they came from, a test plan's results, document content, feature transports, and every link with its id and title.",
+    {
+      ids: z.array(ref).min(1).max(10),
+      detail: z.enum(["summary", "full"]).optional().describe("summary: fields and links, text cut to 600 characters; full (default): text up to 8000 characters per item"),
+      projectId,
+    },
     (a) => get(calm, defined(a), options),
+    GET_OUT,
   );
   tool(
     "calm_trace",

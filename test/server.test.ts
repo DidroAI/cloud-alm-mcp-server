@@ -47,8 +47,9 @@ describe("tools", () => {
       expect(t.annotations?.readOnlyHint).toBe(true);
       expect((t.description ?? "").length).toBeLessThan(320);
     }
-    // The whole tool list stays small: it is sent with every turn.
-    expect(JSON.stringify(tools).length).toBeLessThan(7000);
+    // What the model reads with every turn (names, descriptions, input
+    // schemas) stays small; output schemas are for the client.
+    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(8000);
   });
 
   test("overview: phase, counts by status, gaps", async () => {
