@@ -435,6 +435,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
   if (isDry) lines.push(`${dryNote(o)} Would change:`);
   let failed = 0;
   let firstError: unknown;
+  let partial = false;
   for (const p of plans) {
     const todo = p.parts.filter((part) => changed(p.before, part));
     const head = itemLabel(p.item);
@@ -457,14 +458,16 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
       for (const n of p.notes) lines.push(`  Note: ${n}`);
       continue;
     }
+    const out: string[] = [];
+    let patched = false;
     try {
-      const out: string[] = [];
       if (todo.length) {
         await needing(p.scope, () => writer.patch(p.path, body, p.ifMatch ? { ifMatch: p.ifMatch } : {})).catch((error) => {
           if (error instanceof CloudAlmError && error.code === "bad_request" && "assigneeId" in body && /processor/i.test(error.reason))
             throw new CloudAlmError("bad_request", `${error.reason} The assignee must be the user id of a member of the project team`, error.status);
           throw error;
         });
+        patched = true;
         const after = await afterWrite("reading it back", () =>
           readRow(calm, p.path, p.item.kind === "testCase" ? { $expand: "toActivities" } : undefined),
         );
@@ -480,12 +483,19 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
       if (p.extra) out.push(`  ${await p.extra.run()}`);
       lines.push(`${head}:`, ...out);
     } catch (error) {
+      const why = error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error";
+      if (patched) {
+        // The fields were written; only the step after them failed.
+        lines.push(`${head}:`, ...out, `  ${p.extra?.line ?? "the next step"}: not done (${why}); the changes above were written. Check the item before trying that part again.`);
+        partial = true;
+        continue;
+      }
       failed++;
       firstError ??= error;
-      lines.push(`${head}: not changed (${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error"})`);
+      lines.push(`${head}: not changed (${why})`);
     }
   }
-  if (failed && failed === plans.length) throw firstError;
+  if (failed && failed === plans.length && !partial) throw firstError;
   return lines.join("\n");
 }
 

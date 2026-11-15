@@ -409,8 +409,16 @@ export async function tag(
       lines.push(`${t.displayId}: would go from [${before.join(", ")}] to [${target.join(", ")}] (${dryNote(o).replace(/\.$/, "")})`);
       continue;
     }
-    await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: t.id, tags: target });
-    const after = await allTags(calm, t.id);
+    try {
+      await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: t.id, tags: target });
+    } catch (error) {
+      // Report the tasks already tagged, then this one's failure.
+      if (!lines.some((l) => l.includes(" → "))) throw error;
+      const why = error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error";
+      lines.push(`${t.displayId}: not changed (${why}); the rest was not tried`);
+      break;
+    }
+    const after = await allTags(calm, t.id).catch(() => target);
     const stored = new Set(after.map((x) => x.toLowerCase()));
     const dropped = target.filter((x) => !stored.has(x.toLowerCase()));
     lines.push(

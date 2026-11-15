@@ -380,6 +380,15 @@ describe("calm_comment, calm_create_feature, calm_create_document", () => {
     expect(missing.text).toContain("tasks not found");
   });
 
+  test("an update whose comment fails still reports the fields it wrote", async () => {
+    const { call, writes } = await connect(undefined, [`POST calm-tasks/v1/tasks/${DEF}/comments`]);
+    const r = await call("calm_update", { ids: ["3-4"], priority: 20, comment: "Lowered after triage" });
+    expect(r.error).toBe(false);
+    expect(writes.some((w) => w.method === "PATCH")).toBe(true);
+    expect(r.text).toContain("not done");
+    expect(r.text).toContain("the changes above were written");
+  });
+
   test("a feature: duplicate refused, created and linked, read back", async () => {
     const { call, writes } = await connect();
     expect((await call("calm_create_feature", { title: "credit MANAGEMENT" })).text).toContain("exists: 6-1");
