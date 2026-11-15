@@ -1371,3 +1371,82 @@ export async function team(calm: CloudAlm, input: { projectId?: string }, o: Vie
     data: { project: { id: project.id, name: project.name }, members: [...people].map(([userId, roles]) => ({ userId, roles: [...roles] })), teams },
   };
 }
+
+// ---------------------------------------------------------------------------
+// calm_changes
+// ---------------------------------------------------------------------------
+
+/**
+ * What changed in a project since a day: items created or changed (tasks,
+ * features, documents, test cases, by their own timestamps), and how the
+ * test results moved (analytics keeps one snapshot per day). Cloud ALM's
+ * API has no change log: who changed what, and deletions, are not visible.
+ */
+export async function changes(
+  calm: CloudAlm,
+  input: { since: string; projectId?: string; limit?: number; offset?: number },
+  o: ViewOptions = {},
+) {
+  const since = input.since.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(since)) throw new CloudAlmError("bad_request", "since must be YYYY-MM-DD (or an ISO time)");
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const offset = Math.max(input.offset ?? 0, 0);
+  const snap = await snapshotFor(calm, input.projectId, o);
+  const [tasks, features, documents, testCases, results] = await Promise.all([
+    snap.tasks(),
+    snap.features(),
+    snap.documents(),
+    snap.testCases(),
+    snap.testResults(),
+  ]);
+  const after = (at: string | null | undefined) => !!at && at >= since;
+  type Change = { id: string | null; type: string; title: string | null; status: string | null; what: "created" | "changed"; at: string };
+  const rows: Change[] = [];
+  for (const t of tasks)
+    if (after(t.changedAt) || after(t.createdAt))
+      rows.push({ id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), what: after(t.createdAt) ? "created" : "changed", at: (t.changedAt ?? t.createdAt) as string });
+  for (const f of features)
+    if (after(f.modifiedAt)) rows.push({ id: f.displayId, type: "feature", title: f.title, status: featureStatus(f.statusCode), what: "changed", at: f.modifiedAt as string });
+  for (const d of documents)
+    if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
+  for (const t of testCases)
+    if (after(t.modifiedAt)) rows.push({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || "not run", what: "changed", at: t.modifiedAt as string });
+  rows.sort((a, b) => b.at.localeCompare(a.at));
+  // Test results then and now, from the analytics snapshots.
+  let resultMove: { from: { date: string; counts: Record<string, number> }; to: { date: string; counts: Record<string, number> } } | null = null;
+  try {
+    const days = Math.min(Math.max(Math.ceil((Date.now() - Date.parse(since.slice(0, 10))) / 86_400_000) + 1, 1), 90);
+    const tests = await calm.queryAnalytics({ dataset: "Tests", period: `C${days}D`, limit: 200 });
+    const byDay = new Map<string, Record<string, number>>();
+    for (const r of tests.rows) {
+      const date = typeof r.date === "string" ? r.date : null;
+      if (!date || (r.projectGUID && String(r.projectGUID).toLowerCase() !== snap.project.id.toLowerCase())) continue;
+      const status = String(r.status ?? "?").toLowerCase().replace("initial", "not run");
+      const c = byDay.get(date) ?? {};
+      c[status] = (c[status] ?? 0) + 1;
+      byDay.set(date, c);
+    }
+    const dates = [...byDay.keys()].sort();
+    const first = dates[0];
+    const last = dates.at(-1);
+    if (first && last) resultMove = { from: { date: first, counts: byDay.get(first) ?? {} }, to: { date: last, counts: byDay.get(last) ?? {} } };
+  } catch {
+    // Analytics may be out of the key's scopes: the item changes still stand.
+  }
+  const page = rows.slice(offset, offset + limit);
+  const nextOffset = offset + page.length < rows.length ? offset + page.length : null;
+  const fmt = (c: Record<string, number>) => Object.entries(c).map(([k, v]) => `${v} ${k}`).join(", ") || "none";
+  const lines = [
+    `Changes in ${snap.project.name ?? "the project"} since ${since}: ${rows.filter((r) => r.what === "created").length} created, ${rows.filter((r) => r.what === "changed").length} changed${nextOffset !== null ? ` (showing ${offset + 1}–${offset + page.length}; next page: offset ${nextOffset})` : ""}`,
+    ...page.map((r) => `- ${r.at.slice(0, 16).replace("T", " ")} · ${r.what} · ${r.id ?? "?"} ${r.type}${r.status ? ` · ${r.status}` : ""} · "${short(r.title, 70)}"`),
+    resultMove
+      ? `Test results ${resultMove.from.date}: ${fmt(resultMove.from.counts)} → ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (daily analytics snapshots, tenant-wide for this project's plans)`
+      : "Test results over time: not available (analytics needs calm-api.analytics.read).",
+    "Cloud ALM's API keeps no change log: who changed an item, what field changed, and deleted items are not visible here.",
+  ];
+  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases"]));
+  return {
+    text: lines.join("\n"),
+    data: { project: { id: snap.project.id, name: snap.project.name }, since, total: rows.length, offset, nextOffset, items: page, testResults: resultMove },
+  };
+}

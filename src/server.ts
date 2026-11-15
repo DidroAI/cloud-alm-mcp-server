@@ -57,6 +57,7 @@ import {
   gaps,
   get,
   landscape,
+  changes,
   overview,
   projectsView,
   team,
@@ -376,6 +377,19 @@ export function createServer(
     },
     (a) => list(calm, defined(a), options),
     LIST_OUT,
+  );
+  tool(
+    "calm_changes",
+    "What changed",
+    "What changed in a project since a day: items created or changed (requirements, user stories, defects, features, documents, test cases), newest first, and how test results moved. No change log exists in Cloud ALM: who changed what, and deletions, are not shown.",
+    {
+      since: z.string().min(10).max(30).describe("YYYY-MM-DD"),
+      projectId,
+      limit: z.number().int().min(1).max(200).optional().describe("Default 50"),
+      offset: z.number().int().min(0).max(5000).optional(),
+    },
+    (a) => changes(calm, defined(a), options),
+    LOOSE_OUT,
   );
   tool(
     "calm_get",
@@ -714,6 +728,7 @@ export const TOOL_NAMES = [
   "calm_projects",
   "calm_team",
   "calm_list",
+  "calm_changes",
   "calm_get",
   "calm_trace",
   "calm_gaps",

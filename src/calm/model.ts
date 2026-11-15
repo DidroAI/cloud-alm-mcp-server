@@ -80,6 +80,8 @@ export type TaskSummary = {
   tags: string[];
   /** `lastChangedTimestamp`. */
   changedAt: string | null;
+  /** `createdTimestamp`. */
+  createdAt?: string | null;
 };
 
 export type TaskComment = {

@@ -48,6 +48,7 @@ export type SnapTestCase = {
   taskIds: string[];
   /** Tag labels (manual test cases only; automated ones have none). */
   tags: string[];
+  modifiedAt?: string | null;
 };
 export type SnapFeature = Feature & { taskIds: string[] };
 export type SnapDocument = DocumentSummary & {
@@ -283,7 +284,7 @@ export class Snapshot {
                 ? PATHS.manualTestCases
                 : PATHS.automatedTestCases,
               {
-                $select: "uuid,displayId,title,isPrepared,priorityCode",
+                $select: "uuid,displayId,title,isPrepared,priorityCode,modifiedAt",
                 // Only manual test cases carry tags.
                 $expand:
                   kind === "manual"
@@ -301,6 +302,7 @@ export class Snapshot {
                 priority: num(r.priorityCode),
                 taskIds: ids(children(r.toTaskAssignments), "taskId"),
                 tags: tagLabels(children(r.toTagAssignments)),
+                modifiedAt: str(r.modifiedAt),
               }),
             );
           }),

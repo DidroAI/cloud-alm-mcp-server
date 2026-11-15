@@ -49,7 +49,7 @@ describe("tools", () => {
     }
     // What the model reads with every turn (names, descriptions, input
     // schemas) stays small; output schemas are for the client.
-    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(9500);
+    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(11500);
   });
 
   test("overview: phase, counts by status, gaps", async () => {

@@ -227,6 +227,7 @@ export const taskSummary = (row: Row): TaskSummary => {
     dueDate: str(row.dueDate),
     tags: strings(row.tags),
     changedAt: str(row.lastChangedTimestamp),
+    createdAt: str(row.createdTimestamp),
   };
 };
 
