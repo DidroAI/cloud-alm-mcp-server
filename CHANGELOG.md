@@ -8,6 +8,24 @@ All notable changes to this package. The format follows
 
 ### Added
 
+- Approval card redesigned (SAP Horizon look, light and dark, host
+  theming): the change field by field (before → after), what is created,
+  what is deleted with a strong warning, project and tenant. Write tools
+  hand the card their plan as data.
+- Project overview card for `calm_overview` (MCP Apps): phases, key figures,
+  test results, defects by priority, gaps with a button that asks the
+  follow-up.
+- Links to the Cloud ALM UI on items (`url` in list, get, trace, gaps);
+  the UI root comes from the service key, `CALM_WEB_URL` or the
+  `X-Calm-Web-Url` header. A pasted Cloud ALM link works as an id.
+- `calm_list`: row links (processes, features, test case count, raised
+  from), filters `process`, `feature`, `hasTests`, and `sort` (priority,
+  due, changed, created).
+- Coverage rolls each requirement up with its user stories, with test case
+  titles, defects and verdict counts as data.
+- Every read tool declares its output schema.
+- Skill: daily brief.
+
 - Claude Desktop extension: `cloud-alm-mcp-server.mcpb`, attached to each
   GitHub Release. Double-click, choose the service key file, done; no
   terminal and no Node.js to install. Built by `scripts/build-mcpb.sh`.
@@ -30,6 +48,10 @@ All notable changes to this package. The format follows
 
 ### Changed
 
+- HTTP mode reuses a token's reader while its snapshot is fresh (45 s), so
+  follow-up calls do not re-read every list.
+- Release: npm trusted publishing (OIDC); the npm token is only a fallback.
+- Tools are marked `openWorldHint: false` (one tenant's records).
 - A server started without a key says how to set one up, for the terminal,
   the plugin and the extension.
 - Client configs written by `setup` and printed by `init` run
