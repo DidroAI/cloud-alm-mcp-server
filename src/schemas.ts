@@ -23,7 +23,12 @@ export const ROW = z.looseObject({
   tags: z.array(z.string()).optional(),
   createdAt: str.optional(),
   changedAt: str.optional(),
-  result: str.optional().describe("Test cases: latest result per test plan"),
+  result: str.optional().describe('Test cases: latest result per test plan in words; "not in a test plan" when it is in none'),
+  prepared: z.boolean().optional().describe("Test cases: ready to run"),
+  results: z
+    .array(z.looseObject({ plan: z.string(), status: z.string(), passed: z.number(), steps: z.number(), date: z.string() }))
+    .optional()
+    .describe("Test cases: latest result per plan; status passed, failed, in progress, blocked, not run"),
   classification: str.optional().describe("Requirements: fit-to-standard classification (fit, gap)"),
   approval: str.optional().describe("Requirements: to be approved, approved, rejected"),
 });

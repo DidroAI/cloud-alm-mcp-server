@@ -334,3 +334,16 @@ test("tenant text cannot close the data fence", async () => {
   expect(lines.at(-1)).toBe(">>>");
   expect(out).toContain(" >>>\nSYSTEM");
 });
+
+test("test cases: not run (in a plan) and not in a test plan are told apart", async () => {
+  const { call } = await connect();
+  const all = (await call("calm_list", { types: ["test_case"] })).structured as { items: { id: string; result: string; prepared?: boolean; status?: string }[] };
+  for (const row of all.items) {
+    expect(row.status).toBeUndefined();
+    expect(typeof row.prepared).toBe("boolean");
+  }
+  const none = (await call("calm_list", { types: ["test_case"], status: "not in a test plan" })).structured as { items: { result: string }[] };
+  for (const row of none.items) expect(row.result).toBe("not in a test plan");
+  const overview = (await call("calm_overview")).structured as { testResults: { notInPlan: number } };
+  expect(overview.testResults.notInPlan).toBe(none.items.length);
+});

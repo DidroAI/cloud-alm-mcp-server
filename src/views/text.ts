@@ -130,7 +130,13 @@ export const taskLine = (t: TaskSummary) =>
 export const featureLine = (f: SnapFeature) =>
   `${f.displayId ?? "?"} · feature · ${featureStatus(f.statusCode)}${f.priorityCode !== null ? ` · priority ${priorityLabel(f.priorityCode)}` : ""} · "${short(f.title)}"${f.tags.length ? ` · #${f.tags.join(" #")}` : ""}`;
 
-/** One result in words: "failed, 3 of 4 steps passed", "not run yet". */
+/**
+ * A test case in no test plan has no result at all; "not run" means in a
+ * plan and not executed yet. The same words in every tool.
+ */
+export const NOT_IN_PLAN = "not in a test plan";
+
+/** One result in words: "failed, 3 of 4 steps passed", "not run". */
 export function resultWords(r: TestResult): string {
   const status = r.status.toLowerCase();
   if (status === "initial") return "not run";
@@ -145,7 +151,7 @@ export const resultText = (results: TestResult[] | undefined) =>
 
 export const testCaseLine = (t: SnapTestCase, results?: TestResult[]) => {
   const result = resultText(results);
-  return `${t.displayId ?? "?"} · ${t.kind} test case · ${t.prepared === false ? "not prepared" : "prepared"} · ${result || "not run"} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
+  return `${t.displayId ?? "?"} · ${t.kind} test case · ${t.prepared === false ? "not prepared" : "prepared"} · ${result || NOT_IN_PLAN} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
 };
 
 export const documentLine = (d: SnapDocument) =>

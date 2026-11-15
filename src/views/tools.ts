@@ -39,6 +39,7 @@ import {
   priorityLabel,
   resultText,
   resultWords,
+  NOT_IN_PLAN,
   short,
   statusLabel,
   taskLine,
@@ -145,8 +146,11 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${testPlans.length}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
   const latest = [...results.values()].flat();
-  if (latest.length)
-    lines.push(`Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase())))}`);
+  const notInPlan = testCases.filter((t) => !results.get(t.id)?.length).length;
+  if (latest.length || notInPlan)
+    lines.push(
+      `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
+    );
   lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
@@ -175,7 +179,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
       defects: { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) },
       features: { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) },
       testCases: { manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length, testPlans: testPlans.map((t) => ({ id: t.displayId, title: t.title })) },
-      testResults: tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))),
+      testResults: { ...tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))), notInPlan },
       documents: documents.map((d) => ({ id: d.displayId, title: d.title, type: documentType(d.documentTypeCode) })),
       tags: tally(tasks.flatMap((t) => t.tags)),
       gaps: { untested, openRequirementsAndStories: reqs.length, noProcess, orphanTestCases: orphans },
@@ -219,7 +223,10 @@ const RESULT_STATUS: Record<string, string> = {
   "not run": "not run",
   "not run yet": "not run",
   "never run": "not run",
-  "no result": "not run",
+  "not in a test plan": "not in a test plan",
+  "not in a plan": "not in a test plan",
+  "no plan": "not in a test plan",
+  "unplanned": "not in a test plan",
   "not executed": "not run",
   blocked: "blocked",
 };
@@ -241,6 +248,10 @@ type Row = {
     createdAt?: string | null;
     changedAt?: string | null;
     result?: string | null;
+    prepared?: boolean;
+    results?: { plan: string; status: string; passed: number; steps: number; date: string }[];
+    classification?: string | null;
+    approval?: string | null;
   };
 };
 
@@ -416,12 +427,28 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     for (const t of testCases) {
       if (!match(t.title, ...t.tags) || !tagOk(t.tags) || (priority !== undefined && t.priority !== priority)) continue;
       const latest = results.get(t.id) ?? [];
-      if (resultStatus === "not run" ? latest.some((r) => r.status.toLowerCase() !== "initial") : resultStatus && !latest.some((r) => r.status.toLowerCase() === resultStatus)) continue;
+      if (
+        resultStatus === NOT_IN_PLAN
+          ? latest.length > 0
+          : resultStatus === "not run"
+            ? !latest.some((r) => r.status.toLowerCase() === "initial")
+            : resultStatus && !latest.some((r) => r.status.toLowerCase() === resultStatus)
+      )
+        continue;
       rows.push({
         sort: "4",
         displayId: t.displayId,
         line: testCaseLine(t, latest),
-        data: { id: t.displayId, type: `${t.kind} test case`, title: t.title, status: t.prepared === false ? "not prepared" : "prepared", priority: priorityLabel(t.priority), tags: t.tags, result: resultText(latest) || "not run" },
+        data: {
+          id: t.displayId,
+          type: `${t.kind} test case`,
+          title: t.title,
+          prepared: t.prepared !== false,
+          priority: priorityLabel(t.priority),
+          tags: t.tags,
+          result: resultText(latest) || NOT_IN_PLAN,
+          results: latest.map((r) => ({ plan: r.plan, status: r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase(), passed: r.passed, steps: r.steps, date: r.date })),
+        },
       });
     }
   }
@@ -464,7 +491,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const asked = new Set(input.types ?? []);
   if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("tags exist on tasks, features and test cases only");
   if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features and test cases only");
-  if (status && asked.has("test_case") && !resultStatus) notes.push("test cases filter by latest result: passed, failed, in progress, blocked, not run");
+  if (status && asked.has("test_case") && !resultStatus) notes.push(`test cases filter by latest result: passed, failed, in progress, blocked, not run (in a plan, not executed), ${NOT_IN_PLAN}`);
   if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee and dueBefore filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
   if (query && !input.searchText) notes.push("words matched titles and tags; searchText: true also reads descriptions and document content");
@@ -949,7 +976,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
-      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || "not run", defects: n.defectsOf(x.id).map((d) => d.displayId) })),
+      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || NOT_IN_PLAN, defects: n.defectsOf(x.id).map((d) => d.displayId) })),
       documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
       ...(t?.type === "CALMDEF" ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null } : {}),
     });
@@ -1056,7 +1083,7 @@ export async function gaps(
   };
   const latestWord = (id: string) => {
     const r = results.get(id) ?? [];
-    if (!r.length) return "not run";
+    if (!r.length) return NOT_IN_PLAN;
     if (r.some((x) => /fail/i.test(x.status))) return "failed";
     if (r.every((x) => /pass/i.test(x.status))) return "passed";
     if (r.some((x) => /progress/i.test(x.status))) return "in progress";
@@ -1500,7 +1527,7 @@ export async function changes(
   for (const d of documents)
     if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
   for (const t of testCases)
-    if (after(t.modifiedAt)) rows.push({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || "not run", what: "changed", at: t.modifiedAt as string });
+    if (after(t.modifiedAt)) rows.push({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || NOT_IN_PLAN, what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
   let resultsCut = false;
