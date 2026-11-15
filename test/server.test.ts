@@ -384,3 +384,13 @@ test("list rows carry their links; filters by process, feature, tests; sort", as
   const byPriority = (await call("calm_list", { types: ["requirement", "user_story", "defect"], sort: "priority" })).structured as { items: { priority?: string }[] };
   expect(byPriority.items[0]?.priority).toBe("very high");
 });
+
+test("coverage rolls a requirement up with its user stories", async () => {
+  const { call } = await connect();
+  const r = (await call("calm_gaps", { checks: ["coverage"] })).structured as { sections: { summary?: Record<string, number>; items: { id: string; rollup?: string; children?: { id: string; verdict: string }[]; testCases?: { title?: string }[] }[] }[] };
+  const cov = r.sections[0];
+  expect(cov?.summary).toBeDefined();
+  const req = cov?.items.find((i) => i.id === "3-1");
+  expect(req?.children?.length).toBeGreaterThan(0);
+  expect(typeof req?.rollup).toBe("string");
+});

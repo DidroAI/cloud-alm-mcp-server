@@ -1237,8 +1237,8 @@ export async function gaps(
     section("unprepared_tests", "Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map(testItem));
   if (checks.has("coverage")) {
     // Every requirement and user story, its test cases and their latest results.
-    const rows = reqs.sort(byDisplayId).map((t) => {
-      const cases = testCases.filter((c) => c.taskIds.includes(t.id)).sort(byDisplayId);
+    const verdictOf = (taskId: string) => {
+      const cases = testCases.filter((c) => c.taskIds.includes(taskId)).sort(byDisplayId);
       const words = cases.map((c) => latestWord(c.id));
       // A test that is not prepared does not count as ready, whatever it shows.
       const verdict = !cases.length
@@ -1252,14 +1252,39 @@ export async function gaps(
               : cases.some((c) => c.prepared === false)
                 ? "not prepared"
                 : "not run";
+      return { cases, words, verdict };
+    };
+    // Worst first: a requirement is only as ready as its weakest part.
+    const RANK = ["failed", "no test", "not prepared", NOT_IN_PLAN, "not run", "in progress", "passed"];
+    const worst = (vs: string[]) => vs.reduce((a, b) => (RANK.indexOf(b) < RANK.indexOf(a) ? b : a), "passed");
+    const sorted = reqs.sort(byDisplayId);
+    // User stories under each requirement (one call each, capped).
+    const parents = sorted.filter((t) => t.type === "CALMREQU").slice(0, 60);
+    const kids = new Map(
+      await pool(parents, PARALLEL, async (t) => [t.id, (await snap.relations(t.id)).filter((r) => r.type === "0").map((r) => r.taskId)] as const),
+    );
+    const rows = sorted.map((t) => {
+      const { cases, words, verdict } = verdictOf(t.id);
+      const children = (kids.get(t.id) ?? []).map((id) => ({ id: n.taskOf(id)?.displayId ?? id, verdict: verdictOf(id).verdict }));
+      // Tested only through its user stories: the stories decide.
+      const rollup = children.length ? worst([...(cases.length ? [verdict] : []), ...children.map((c) => c.verdict)]) : verdict;
       return {
         ...taskItem(t, verdict),
-        testCases: cases.map((c, i) => ({ id: c.displayId, result: words[i] ?? "not run", prepared: c.prepared })),
-        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}`,
+        testCases: cases.map((c, i) => ({
+          id: c.displayId,
+          title: c.title,
+          result: words[i] ?? "not run",
+          prepared: c.prepared,
+          defects: n.defectsOf(c.id).map((d) => d.displayId),
+        })),
+        ...(children.length ? { children, rollup } : {}),
+        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}${children.length ? `; with its user stories (${children.map((c) => `${c.id} ${c.verdict}`).join(", ")}): ${rollup}` : ""}`,
       };
     });
     const tally = counts(rows.map((r) => r.note ?? ""));
     section("coverage", `Coverage: requirements and user stories × test cases × latest result (${tally})`, rows);
+    const last = sections.at(-1);
+    if (last) Object.assign(last, { summary: Object.fromEntries([...new Set(rows.map((r) => r.note ?? ""))].map((v) => [v, rows.filter((r) => r.note === v).length])) });
   }
   lines.push("", "Links counted: test case → task (Test Management), feature → task, task → solution process. Direct links only.");
   const footnotes = footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "defects"]);
