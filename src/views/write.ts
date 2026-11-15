@@ -13,6 +13,7 @@ import {
   afterWrite as afterCreate,
   dry,
   dryNote,
+  NOTHING_TO_DO,
   type Item,
   itemsByRef,
   label,
@@ -188,7 +189,7 @@ export async function link(
   const verb = unlink ? "unlink" : "link";
   const prep = unlink ? "from" : "to";
   if (!plan.todo.length)
-    return `Nothing to do: ${plan.name} is ${unlink ? "not linked to" : "already linked to"} ${plan.skipped.join(", ")}.`;
+    return `${NOTHING_TO_DO} ${plan.name} is ${unlink ? "not linked to" : "already linked to"} ${plan.skipped.join(", ")}.`;
   const skippedNote = plan.skipped.length ? ` ${unlink ? "Not linked" : "Already linked"}: ${plan.skipped.join(", ")}.` : "";
   const notes = plan.notes.length ? ` Note: ${plan.notes.join("; ")}.` : "";
   if (dry(o, input.dryRun))
@@ -401,6 +402,7 @@ export async function tag(
       `${t.displayId}: [${before.join(", ")}] → [${after.join(", ")}]${dropped.length ? `; Cloud ALM did not store ${dropped.join(", ")} (a tag differing only in capitals from an existing one is dropped)` : ""}`,
     );
   }
+  if (lines.every((l) => / no change \(/.test(l))) return `${NOTHING_TO_DO} ${lines.join("; ")}.`;
   return lines.join("\n");
 }
 

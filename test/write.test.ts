@@ -298,7 +298,7 @@ describe("calm_update", () => {
 
   test("no change when every field already has the value; a 403 names the scope", async () => {
     const { call, writes } = await connect();
-    expect((await call("calm_update", { ids: ["3-3"], priority: 20 })).text).toBe('3-3 user story "Credit exposure shown in the order (see REQ-01)": no change (priority already 20 high)');
+    expect((await call("calm_update", { ids: ["3-3"], priority: 20 })).text).toBe('Nothing to do: 3-3 user story "Credit exposure shown in the order (see REQ-01)" already has priority 20 high.');
     expect(writes).toEqual([]);
     const denied = await connect(undefined, ["PATCH calm-tasks"]);
     const r = await denied.call("calm_update", { ids: ["3-3"], status: "blocked" });
@@ -411,4 +411,14 @@ test("timebox by name resolves to its id", async () => {
   const { call, writes } = await connect();
   await call("calm_update", { ids: ["3-2"], timebox: "Realize" });
   expect(writes[0]?.body).toEqual({ timeboxId: PHASE_ID });
+});
+
+describe("title codes in write tools", () => {
+  test("REQ-01 resolves to its task in writes, as in reads", async () => {
+    const { call } = await connect();
+    const r = await call("calm_create_task", { type: "user_story", title: "Code parent", requirement: "REQ-01", dryRun: true });
+    expect(r.text).toContain("under 3-1");
+    const c = await call("calm_comment", { task: "REQ-01", text: "x", dryRun: true });
+    expect(c.text).toContain("3-1");
+  });
 });

@@ -30,6 +30,7 @@ import {
   tag,
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
+import { NOTHING_TO_DO } from "./views/items.js";
 import {
   comment,
   createDocument,
@@ -186,6 +187,8 @@ export function createServer(
     const preview = await answer(() => run({ ...args, dryRun: true }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
+    // Nothing would change: say so, and ask nobody to approve it.
+    if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }] };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });

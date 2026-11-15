@@ -45,6 +45,7 @@ import {
   typeLabel,
 } from "./text.js";
 import { plainText } from "../calm/values.js";
+import { byTitleCode, TITLE_CODE } from "./items.js";
 
 export type ViewOptions = {
   /** Project used when a call names none (else: the tenant's only project). */
@@ -364,38 +365,16 @@ type Ref =
   | { kind: "process"; id: string };
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** A code written in titles, like REQ-03, FEAT-02 or O2C-11. */
-const TITLE_CODE = /^[A-Z][A-Z0-9]{0,9}-\d{1,5}$/i;
-
 /** Items whose title carries `code` as a word: "[seed] REQ-03 Credit…". */
 async function resolveCode(snap: Snapshot, code: string): Promise<Ref> {
-  const [tasks, features, documents, testCases] = await Promise.all([
-    snap.tasks(),
-    snap.features(),
-    snap.documents(),
-    snap.testCases(),
-  ]);
-  const word = new RegExp(`(^|[^A-Za-z0-9-])${code.replace(/[-]/g, "\\-")}(?![A-Za-z0-9]|-\\d)`, "i");
-  const lead = new RegExp(`^(\\[[^\\]]*\\]\\s*)?${code.replace(/[-]/g, "\\-")}(?![A-Za-z0-9]|-\\d)`, "i");
-  const all: { ref: Ref; title: string | null; displayId: string | null }[] = [
-    ...tasks.map((task) => ({ ref: { kind: "task", task } as Ref, title: task.title, displayId: task.displayId })),
-    ...features.map((feature) => ({ ref: { kind: "feature", feature } as Ref, title: feature.title, displayId: feature.displayId })),
-    ...documents.map((document) => ({ ref: { kind: "document", document } as Ref, title: document.title, displayId: document.displayId })),
-    ...testCases.map((testCase) => ({ ref: { kind: "test case", testCase } as Ref, title: testCase.title, displayId: testCase.displayId })),
+  const [tasks, features, documents, testCases] = await Promise.all([snap.tasks(), snap.features(), snap.documents(), snap.testCases()]);
+  const all = [
+    ...tasks.map((task) => ({ ref: { kind: "task", task } as Ref, id: task.id, title: task.title, displayId: task.displayId })),
+    ...features.map((feature) => ({ ref: { kind: "feature", feature } as Ref, id: feature.id, title: feature.title, displayId: feature.displayId })),
+    ...documents.map((document) => ({ ref: { kind: "document", document } as Ref, id: document.id, title: document.title, displayId: document.displayId })),
+    ...testCases.map((testCase) => ({ ref: { kind: "test case", testCase } as Ref, id: testCase.id, title: testCase.title, displayId: testCase.displayId })),
   ];
-  let found = all.filter((x) => word.test(x.title ?? ""));
-  // Several mention it: the one whose title starts with it is the one.
-  if (found.length > 1) {
-    const leading = found.filter((x) => lead.test(x.title ?? ""));
-    if (leading.length) found = leading;
-  }
-  if (found.length === 1) return (found[0] as (typeof found)[number]).ref;
-  if (found.length > 1)
-    throw new CloudAlmError(
-      "bad_request",
-      `${code} is in several titles: ${found.slice(0, 8).map((x) => `${x.displayId} "${short(x.title, 50)}"`).join("; ")}; pass one display id`,
-    );
-  throw new CloudAlmError("not_found", `no item has ${code} in its title; use a display id like 3-17 or 8-1-2 (calm_find lists them)`);
+  return byTitleCode(code, all).ref;
 }
 
 async function resolve(snap: Snapshot, raw: string): Promise<Ref> {

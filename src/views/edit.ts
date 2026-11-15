@@ -14,6 +14,7 @@ import {
   afterWrite,
   dry,
   dryNote,
+  NOTHING_TO_DO,
   etagOf,
   gone,
   type Item,
@@ -415,6 +416,9 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
   }
   const lines: string[] = [];
   const isDry = dry(o, input.dryRun);
+  const noop = (p: Planned) => !p.extra && !p.parts.some((part) => changed(p.before, part));
+  if (plans.length && plans.every(noop))
+    return `${NOTHING_TO_DO} ${plans.map((p) => `${itemLabel(p.item)} already has ${p.parts.map((part) => `${part.field} ${part.show(p.before)}`).join(", ")}`).join("; ")}.`;
   if (isDry) lines.push(`${dryNote(o)} Would change:`);
   let failed = 0;
   let firstError: unknown;
