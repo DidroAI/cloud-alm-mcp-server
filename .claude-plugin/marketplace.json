@@ -1,0 +1,18 @@
+{
+  "name": "didro",
+  "description": "Didro's plugins for SAP consultants",
+  "owner": {
+    "name": "Didro",
+    "url": "https://github.com/DidroAI"
+  },
+  "plugins": [
+    {
+      "name": "cloud-alm",
+      "source": "./",
+      "description": "SAP Cloud ALM for agents: an MCP server whose tools follow your service key's scopes (every write waits for your approval) and skills for fit-gap, workshops, status reports, test readiness, defect triage and test design",
+      "homepage": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
+      "license": "MIT",
+      "keywords": ["sap", "cloud-alm", "mcp"]
+    }
+  ]
+}

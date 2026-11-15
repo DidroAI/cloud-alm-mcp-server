@@ -1,6 +1,7 @@
 {
   "name": "cloud-alm-mcp-server",
   "version": "0.1.0-beta.2",
+  "mcpName": "io.github.DidroAI/cloud-alm-mcp-server",
   "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics; writes wait for the user's approval",
   "license": "MIT",
   "author": "Didro",
@@ -42,6 +43,7 @@
     "!dist/**/*.map",
     "README.md",
     "CHANGELOG.md",
+    "PRIVACY.md",
     "scopes",
     "skills",
     "LICENSE"

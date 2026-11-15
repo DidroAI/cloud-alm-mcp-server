@@ -8,6 +8,19 @@ All notable changes to this package. The format follows
 
 ### Added
 
+- Claude Desktop extension: `cloud-alm-mcp-server.mcpb`, attached to each
+  GitHub Release. Double-click, choose the service key file, done; no
+  terminal and no Node.js to install. Built by `scripts/build-mcpb.sh`.
+- Claude Code plugin marketplace (`.claude-plugin/marketplace.json`):
+  `/plugin install cloud-alm --marketplace DidroAI/cloud-alm-mcp-server`.
+  The plugin asks for the service key file when it is enabled.
+- Official MCP Registry: `server.json`
+  (`io.github.DidroAI/cloud-alm-mcp-server`), published by the release
+  workflow.
+- `PRIVACY.md`: no telemetry; the server talks only to the key's SAP token
+  host and the Cloud ALM API.
+- `docs/INSTALL-SNIPPETS.md`: install links for Cursor and VS Code and the
+  commands for every client.
 - `uninstall`: removes the server from Claude Code, Codex, Claude Desktop
   and Cursor, keeps each changed config file as `.bak`, asks nothing;
   `--key` also deletes the saved service key.
@@ -17,6 +30,8 @@ All notable changes to this package. The format follows
 
 ### Changed
 
+- A server started without a key says how to set one up, for the terminal,
+  the plugin and the extension.
 - Client configs written by `setup` and printed by `init` run
   `cloud-alm-mcp-server@beta` while the version is a prerelease (the bare
   name after 0.1.0), not the exact version, so users get updates.

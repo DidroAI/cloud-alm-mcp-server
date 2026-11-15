@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.DidroAI/cloud-alm-mcp-server",
+  "title": "SAP Cloud ALM",
+  "description": "SAP Cloud ALM: requirements, features, tests, defects, landscape; writes wait for your approval.",
+  "version": "0.1.0-beta.2",
+  "websiteUrl": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
+  "repository": {
+    "url": "https://github.com/DidroAI/cloud-alm-mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "cloud-alm-mcp-server",
+      "version": "0.1.0-beta.2",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "CALM_SERVICE_KEY",
+          "description": "Path to the SAP Cloud ALM API service key (the JSON file downloaded from SAP BTP). Leave empty when `npx -y cloud-alm-mcp-server setup` saved the key.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

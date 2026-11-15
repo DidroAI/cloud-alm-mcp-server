@@ -1,0 +1,15 @@
+# Left out of the Claude Desktop extension (.mcpb). scripts/build-mcpb.sh
+# stages only what the server needs; these trim what is left.
+# Patterns match at any depth, node_modules included: name no folder here
+# that a dependency needs at run time (src/, lib/, docs/ …).
+*.d.ts
+*.d.cts
+*.d.mts
+*.map
+*.tsbuildinfo
+.mcpbignore
+*.tgz
+*.mcpb
+.env*
+*service-key*.json
+*.key.json
