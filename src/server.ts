@@ -235,7 +235,7 @@ export function createServer(
       if (ctx.mcpReq.envelope)
         return inputRequired({
           inputRequests: { approve: inputRequired.elicit({ message, requestedSchema: approveSchema }) },
-          requestState: await stateCodec.mint({ id: p.id }),
+          requestState: await stateCodec.mint({ id: p.id }, ctx),
         }) as unknown as CallToolResult;
       const result = await ctx.mcpReq
         .elicitInput(

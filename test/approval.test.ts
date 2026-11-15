@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { createMcpHandler } from "@modelcontextprotocol/server";
 import { CARD_URI, cardHtml, clearPending, META_KEY, propose, take } from "../src/approval.js";
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
@@ -261,4 +262,49 @@ test("a change that changes nothing asks for no approval", async () => {
   const r = await call("calm_update", { ids: ["3-3"], priority: 20 });
   expect(r.text).toStartWith("Nothing to do:");
   expect(r.meta?.[META_KEY]).toBeUndefined();
+});
+
+describe("2026-07-28: the confirm dialog rides input_required", () => {
+  async function modern(answer: "accept" | "decline") {
+    const fake = fakeTenant();
+    const grant = { accessToken: "t", baseUrl: BASE_URL };
+    const handler = createMcpHandler(() =>
+      createServer(new CloudAlm(grant, { fetch: fake.fetcher }), {
+        writer: new CloudAlmWriter(grant, { fetch: fake.fetcher }),
+        writeMode: "on",
+        approval: "required",
+        approvalDialog: true,
+      }),
+    );
+    const prompts: string[] = [];
+    const client = new Client(
+      { name: "test", version: "0" },
+      { versionNegotiation: { mode: "auto" }, capabilities: { elicitation: { form: {} } } },
+    );
+    client.setRequestHandler("elicitation/create", async (request) => {
+      prompts.push(String(request.params.message));
+      return answer === "accept" ? { action: "accept", content: { approve: true } } : { action: "decline" };
+    });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL("http://test.local/mcp"), { fetch: (u, i) => handler.fetch(new Request(u, i)) }),
+    );
+    expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
+    const r = (await client.callTool({ name: "calm_create_task", arguments: NEW_DEFECT })) as { content: { text: string }[]; _meta?: Record<string, unknown> };
+    return { r, prompts, posts: fake.posts };
+  }
+
+  test("accepted: written once, after one dialog", async () => {
+    const { r, prompts, posts } = await modern("accept");
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Credit check skipped");
+    expect(r.content[0]?.text).toContain("Created 3-99");
+    expect(posts).toEqual(["calm-tasks/v1/tasks"]);
+  });
+
+  test("declined: nothing written, the proposal stays open", async () => {
+    const { r, posts } = await modern("decline");
+    expect(posts).toEqual([]);
+    expect(r.content[0]?.text).toContain("Approval needed");
+    expect(r._meta?.[META_KEY]).toBeDefined();
+  });
 });

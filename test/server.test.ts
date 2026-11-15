@@ -218,6 +218,22 @@ describe("mode (b): streamable HTTP with a bearer per request", () => {
     await client.close();
   });
 
+  test("a 2026-07-28 client is served statelessly, with the caller's token", async () => {
+    const client = new Client({ name: "test", version: "0" }, { versionNegotiation: { mode: "auto" } });
+    await client.connect(
+      new StreamableHTTPClientTransport(endpoint, {
+        requestInit: { headers: { Authorization: "Bearer modern-token" } },
+      }),
+    );
+    expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
+    const tools = await client.listTools();
+    expect(tools.tools.map((t) => t.name)).toContain("calm_overview");
+    const result = (await client.callTool({ name: "calm_overview", arguments: {} })) as { content: { text: string }[] };
+    expect(result.content[0]?.text).toContain("Rollout Example");
+    expect(fake.seen.at(-1)?.authorization).toBe("Bearer modern-token");
+    await client.close();
+  });
+
   test("no bearer, wrong method or a foreign API address is refused", async () => {
     const init = {
       jsonrpc: "2.0",
