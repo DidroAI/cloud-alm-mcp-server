@@ -79,7 +79,7 @@ export function stdioFactory(
   const source = keySource(env, existsSync);
   if (!source)
     throw new Error(
-      `No Cloud ALM service key: run \`cloud-alm-mcp-server init\`, or set ${SERVICE_KEY_ENV} to the key file's path (or its JSON).`,
+      `No Cloud ALM service key: run \`cloud-alm-mcp-server setup\`, or set ${SERVICE_KEY_ENV} to the key file's path (or its JSON).`,
     );
   const { reader, writer, grants } = clientsFrom(loadServiceKey(source, env), options);
   let writeTools: Promise<string[]> | undefined;
