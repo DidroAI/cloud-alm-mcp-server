@@ -257,3 +257,14 @@ test("a proposal carries the change field by field for the card", async () => {
   expect(change?.items[0]?.fields?.find((f) => f.field === "Priority")?.after).toBe("high");
   expect((r.meta?.[META_KEY] as { change?: unknown }).change).toEqual(change);
 });
+
+test("calm_overview carries the overview card", async () => {
+  const { client } = await connect("ui", { approval: "prefer" });
+  const tool = (await client.listTools()).tools.find((t) => t.name === "calm_overview");
+  const uri = (tool?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri;
+  expect(uri).toBe("ui://cloud-alm/overview-v1.html");
+  const r = await client.readResource({ uri: uri as string });
+  const html = (r.contents[0] as { text: string }).text;
+  expect(html).not.toContain("__APP_BUNDLE__");
+  expect(html).not.toContain("innerHTML");
+});

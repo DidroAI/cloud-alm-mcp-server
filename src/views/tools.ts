@@ -175,6 +175,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     text: lines.join("\n"),
     data: {
       project: { id: p.id, name: p.name, purpose: p.purpose, status: p.operationalStatus, phase: current?.name ?? null, otherProjects: projects.length - 1 },
+      ...(o.webUrl ? { tenant: new URL(o.webUrl).hostname } : {}),
       phases: phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })),
       milestones: milestones.map((t) => ({ name: t.name, date: t.startDate })),
       processes: { inScope: scoped.length, total: processes.length },

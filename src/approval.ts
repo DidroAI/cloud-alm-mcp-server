@@ -16,6 +16,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { CARD_TEMPLATE } from "./approval-card.js";
+import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 
 /** off: write at once; prefer: approve in the card or the chat; required: in the card (or an opted-in dialog) only. */
 export type ApprovalMode = "off" | "prefer" | "required";
@@ -136,6 +137,13 @@ function appBundle(): string {
  * The approval card. Shows the server's preview (never HTML from the
  * model or the tenant: text only), and Approve / Reject.
  */
+export const OVERVIEW_URI = "ui://cloud-alm/overview-v1.html";
+
+/** The project overview card. */
+export function overviewHtml(): string {
+  return OVERVIEW_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle());
+}
+
 export function cardHtml(): string {
   return CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
 }

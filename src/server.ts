@@ -17,6 +17,8 @@ import {
   CARD_URI,
   cardHtml,
   META_KEY,
+  OVERVIEW_URI,
+  overviewHtml,
   propose,
   take,
 } from "./approval.js";
@@ -122,6 +124,8 @@ const READ_ONLY = {
 } as const;
 
 export type ServerOptions = ViewOptions & {
+  /** MCP Apps cards for reads (the project overview). Default: on. */
+  cards?: boolean;
   /** The skills of `skills/` as MCP prompts. Default: on. */
   prompts?: boolean;
   /** Tool names to offer; others are left out. Default: all. */
@@ -262,6 +266,11 @@ export function createServer(
         ((args: Record<string, unknown>, extra: Extra) =>
           args.dryRun === true ? answer(() => runAny(args)) : gated(name, title, args, runAny, extra)) as never,
       );
+      return;
+    }
+    if (name === "calm_overview" && options.cards !== false) {
+      // Hosts with MCP Apps show the project at a glance; others read the text.
+      registerAppTool(server, name, { ...config, _meta: { ui: { resourceUri: OVERVIEW_URI } } }, ((args: z.infer<z.ZodObject<Shape>>) => answer(() => run(args))) as never);
       return;
     }
     server.registerTool(
@@ -578,6 +587,14 @@ export function createServer(
     );
   }
   if (approval !== "off") registerApproval();
+  if (options.cards !== false && (!allowed || allowed.has("calm_overview")))
+    registerAppResource(
+      server,
+      "Cloud ALM project overview",
+      OVERVIEW_URI,
+      { description: "A Cloud ALM project at a glance", _meta: { ui: { csp: {}, prefersBorder: true } } },
+      async () => ({ contents: [{ uri: OVERVIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: overviewHtml() }] }),
+    );
   if (options.prompts !== false) registerSkillPrompts(server);
   return server;
 
