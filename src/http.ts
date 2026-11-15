@@ -1,3 +1,4 @@
+import { webBaseFrom } from "./views/links.js";
 import { SNAPSHOT_TTL_MS } from "./views/snapshot.js";
 import { subjectOf } from "./approval.js";
 import {
@@ -17,6 +18,8 @@ export type HttpOptions = {
    * `https://eu20.alm.cloud.sap/api`. Not a secret.
    */
   baseUrl?: string;
+  /** The Cloud ALM UI root for links to items (https://<tenant>.<region>.alm.cloud.sap); a request may send its own in X-Calm-Web-Url. */
+  webUrl?: string;
   /** Options for the reader (tests pass a fake `fetch` here). */
   reader?: CloudAlmOptions;
   /** Largest accepted request body. Default 256 KB. */
@@ -27,6 +30,7 @@ export type HttpOptions = {
 
 /** Header a caller may use to name the Cloud ALM API root per request. */
 export const BASE_URL_HEADER = "x-calm-api-url";
+export const WEB_URL_HEADER = "x-calm-web-url";
 
 function refuse(
   status: number,
@@ -69,7 +73,7 @@ export function createHttpHandler(options: HttpOptions = {}) {
     readers.set(key, { calm, at: now });
     return calm;
   };
-  const make = (token: string, baseUrl: string) => {
+  const make = (token: string, baseUrl: string, webUrl?: string) => {
     const grant = { accessToken: token, baseUrl };
     const writer = new CloudAlmWriter(grant, options.reader ?? {});
     // The caller's token decides: write tools when its scopes allow them.
@@ -80,16 +84,17 @@ export function createHttpHandler(options: HttpOptions = {}) {
       ...serverOptions,
       // Approvals arrive in a later request (card or chat), and only from the same token.
       approvalSubject: subjectOf(token),
+      ...(webUrl ? { webUrl } : {}),
     });
   };
-  const mcp = createMcpHandler(({ authInfo }) => make(authInfo?.token ?? "", String(authInfo?.extra?.baseUrl ?? "")), {
+  const mcp = createMcpHandler(({ authInfo }) => make(authInfo?.token ?? "", String(authInfo?.extra?.baseUrl ?? ""), authInfo?.extra?.webUrl as string | undefined), {
     responseMode: "json",
     maxRequestBodySize: maxBody,
     legacy: "reject",
   });
   /** A 2025-era request: one server, answered as plain JSON, as before. */
-  const legacy = async (request: Request, token: string, baseUrl: string) => {
-    const server = make(token, baseUrl);
+  const legacy = async (request: Request, token: string, baseUrl: string, webUrl?: string) => {
+    const server = make(token, baseUrl, webUrl);
     const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true });
     await server.connect(transport);
     try {
@@ -127,10 +132,11 @@ export function createHttpHandler(options: HttpOptions = {}) {
           : "Bad Cloud ALM API address.",
       );
     }
-    if (await isLegacyRequest(request, undefined, { maxRequestBodySize: maxBody })) return legacy(request, match[1], baseUrl);
+    const webUrl = webBaseFrom(request.headers.get(WEB_URL_HEADER) ?? undefined) ?? webBaseFrom(options.webUrl);
+    if (await isLegacyRequest(request, undefined, { maxRequestBodySize: maxBody })) return legacy(request, match[1], baseUrl, webUrl);
     // 2026-07-28: the token and API root ride the request to the factory.
     return mcp.fetch(request, {
-      authInfo: { token: match[1], clientId: "bearer", scopes: [], extra: { baseUrl } },
+      authInfo: { token: match[1], clientId: "bearer", scopes: [], extra: { baseUrl, ...(webUrl ? { webUrl } : {}) } },
     });
   };
 }

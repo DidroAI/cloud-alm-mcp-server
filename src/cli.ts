@@ -41,7 +41,10 @@ if (COMMANDS.includes(mode)) {
   const port = Number(process.env.PORT ?? 3333);
   const host = process.env.HOST ?? "127.0.0.1";
   const handler = createHttpHandler(
-    process.env.CALM_API_URL ? { baseUrl: process.env.CALM_API_URL } : {},
+    {
+      ...(process.env.CALM_API_URL ? { baseUrl: process.env.CALM_API_URL } : {}),
+      ...(process.env.CALM_WEB_URL ? { webUrl: process.env.CALM_WEB_URL } : {}),
+    },
   );
   createHttpServer(
     toNodeListener((request) =>

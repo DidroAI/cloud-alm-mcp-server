@@ -14,6 +14,7 @@ const linked = z.looseObject({ id: str, title: str, status: str.optional(), resu
 /** One row of a list: enough to choose, `calm_get` for the rest. */
 export const ROW = z.looseObject({
   id: str.describe("Display id (3-17, 6-1, 8-1-2) or, for processes, the process id"),
+  url: z.string().optional().describe("The item in the Cloud ALM web UI (its list app when it has no page of its own)"),
   type: z.string().describe("requirement, user story, defect, feature, document, manual test case…"),
   title: str,
   status: str.optional(),
@@ -48,6 +49,7 @@ export const GET_OUT = z.object({
     z.looseObject({
       id: str,
       uuid: z.string(),
+      url: z.string().optional().describe("The item in the Cloud ALM web UI"),
       kind: z.string(),
       title: str,
       status: str.optional(),

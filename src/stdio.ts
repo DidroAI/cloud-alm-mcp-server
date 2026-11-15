@@ -1,3 +1,4 @@
+import { webBaseFrom, webBaseFromKey } from "./views/links.js";
 import { existsSync } from "node:fs";
 import {
   CloudAlm,
@@ -81,7 +82,10 @@ export function stdioFactory(
     throw new Error(
       `No Cloud ALM service key: run \`cloud-alm-mcp-server setup\`, or set ${SERVICE_KEY_ENV} to the key file's path (or its JSON).`,
     );
-  const { reader, writer, grants } = clientsFrom(loadServiceKey(source, env), options);
+  const key = loadServiceKey(source, env);
+  const { reader, writer, grants } = clientsFrom(key, options);
+  // Links to the Cloud ALM UI: configured, else the tenant the key opens.
+  const webUrl = webBaseFrom(env.CALM_WEB_URL) ?? webBaseFromKey(key);
   let writeTools: Promise<string[]> | undefined;
   return async () => {
     writeTools ??= grants().then((g) => writeToolsFor(tokenScopes(g.accessToken)));
@@ -90,6 +94,6 @@ export function stdioFactory(
       writeTools = undefined;
       return [] as string[];
     });
-    return createServer(reader, serverOptionsForKey(writer, tools));
+    return createServer(reader, { ...serverOptionsForKey(writer, tools), ...(webUrl ? { webUrl } : {}) });
   };
 }

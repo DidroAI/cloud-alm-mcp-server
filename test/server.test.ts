@@ -394,3 +394,20 @@ test("coverage rolls a requirement up with its user stories", async () => {
   expect(req?.children?.length).toBeGreaterThan(0);
   expect(typeof req?.rollup).toBe("string");
 });
+
+test("items link to the Cloud ALM UI when the tenant's UI root is known", async () => {
+  const { webBaseFromKey, webBaseFrom, webUrl } = await import("../src/views/links.js");
+  expect(webBaseFromKey({ uaa: { url: "https://acme-calm.authentication.eu20.hana.ondemand.com" }, endpoints: { Api: "https://eu20.alm.cloud.sap/api" } })).toBe("https://acme-calm.eu20.alm.cloud.sap");
+  expect(webBaseFrom("https://evil.example.com")).toBeUndefined();
+  expect(webUrl("https://a.eu20.alm.cloud.sap", { kind: "task", type: "CALMDEF", displayId: "3-14" })).toBe(
+    "https://a.eu20.alm.cloud.sap/launchpad#ptmDefect-management?sap-ui-app-id-hint=com.sap.calm.imp.ptm.defects.ui&/taskDetail/3-14",
+  );
+  const base = "https://acme.eu20.alm.cloud.sap";
+  const { call } = await connect(TENANT, { webUrl: base });
+  const list = (await call("calm_list", { query: "credit" })).structured as { items: { id: string; url?: string }[] };
+  expect(list.items.find((i) => i.id === "3-1")?.url).toBe(`${base}/launchpad#ptmRequirement-management?sap-ui-app-id-hint=com.sap.calm.imp.ptm.requirements.ui&/taskDetail/3-1`);
+  const got = await call("calm_get", { ids: ["6-1"] });
+  expect(got.text).toContain(`Open in Cloud ALM: ${base}/launchpad#feature-display`);
+  const plain = (await (await connect()).call("calm_list", { query: "credit" })).structured as { items: { url?: string }[] };
+  expect(plain.items.every((i) => i.url === undefined)).toBe(true);
+});

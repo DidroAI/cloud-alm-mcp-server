@@ -48,6 +48,7 @@ import {
   typeLabel,
 } from "./text.js";
 import { plainText } from "../calm/values.js";
+import { webUrl } from "./links.js";
 import { byTitleCode, TITLE_CODE } from "./items.js";
 
 export type ViewOptions = {
@@ -57,6 +58,8 @@ export type ViewOptions = {
   today?: () => string;
   /** Clock for the snapshot cache (milliseconds); tests pass their own. */
   now?: () => number;
+  /** The Cloud ALM UI root (https://<tenant>.<region>.alm.cloud.sap), for links to items. */
+  webUrl?: string;
 };
 
 /** Independent reads run at most this many at a time. */
@@ -238,6 +241,7 @@ type Row = {
   line: string;
   data: {
     id: string | null;
+    url?: string | undefined;
     type: string;
     title: string | null;
     status?: string | null;
@@ -449,7 +453,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         sort: `1${t.type}`,
         displayId: t.displayId,
         line: taskLine(t),
-        data: { id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, ...requirementFields(t), links: taskLinks(t), createdAt: t.createdAt ?? null, changedAt: t.changedAt },
+        data: { id: t.displayId, url: webUrl(o.webUrl, { kind: "task", type: t.type, displayId: t.displayId }), type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, ...requirementFields(t), links: taskLinks(t), createdAt: t.createdAt ?? null, changedAt: t.changedAt },
       });
     }
   }
@@ -461,14 +465,14 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "2",
           displayId: f.displayId,
           line: featureLine(f),
-          data: { id: f.displayId, type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
+          data: { id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", displayId: f.displayId }), type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
         });
   }
   if (want.documents) {
     parts.push("documents");
     for (const d of documents)
       if (since(d.modifiedAt) && hit(d.id, d.title))
-        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
+        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, url: webUrl(o.webUrl, { kind: "document" }), type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
   }
   if (want.testCases) {
     parts.push("testCases", "testResults");
@@ -489,6 +493,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         line: testCaseLine(t, latest),
         data: {
           id: t.displayId,
+          url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
           type: `${t.kind} test case`,
           title: t.title,
           prepared: t.prepared !== false,
@@ -508,7 +513,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "5",
           displayId: t.displayId,
           line: `${t.displayId} · test plan · "${short(t.title)}"${t.startDate ? ` · ${t.startDate}–${t.endDate ?? ""}` : ""}`,
-          data: { id: t.displayId, type: "test plan", title: t.title },
+          data: { id: t.displayId, url: webUrl(o.webUrl, { kind: "testPlan" }), type: "test plan", title: t.title },
         });
   }
   if (want.processes) {
@@ -590,6 +595,16 @@ type Ref =
   | { kind: "test case"; testCase: SnapTestCase }
   | { kind: "test plan"; id: string; displayId: string | null; title: string | null }
   | { kind: "process"; id: string };
+
+/** Where a resolved item opens in the Cloud ALM UI. */
+const refUrl = (ref: Ref, base: string | undefined) =>
+  ref.kind === "task"
+    ? webUrl(base, { kind: "task", type: ref.task.type, displayId: ref.task.displayId })
+    : ref.kind === "feature"
+      ? webUrl(base, { kind: "feature", displayId: ref.feature.displayId })
+      : ref.kind === "test case"
+        ? webUrl(base, { kind: "testCase", id: ref.testCase.id, manual: ref.testCase.kind === "manual" })
+        : webUrl(base, { kind: ref.kind === "test plan" ? "testPlan" : ref.kind });
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Items whose title carries `code` as a word: "[seed] REQ-03 Credit…". */
@@ -795,7 +810,13 @@ export async function get(
   // At most 10 ids, each 1–3 requests: all at once stays well inside the API limits.
   const out = await pool(refs, 10, (r) =>
     r.ref
-      ? getOne(calm, snap, n, r.ref, budget).catch((error: unknown) => failed(r.raw, error))
+      ? getOne(calm, snap, n, r.ref, budget).then(
+          (x) => {
+            const url = refUrl(r.ref as Ref, o.webUrl);
+            return url ? { text: `${x.text}\nOpen in Cloud ALM: ${url}`, data: { ...x.data, url } } : x;
+          },
+          (error: unknown) => failed(r.raw, error),
+        )
       : Promise.resolve(r.error as { id: string; error: string }),
   );
   const items = out.filter((x): x is { text: string; data: ItemDetail } => "data" in x);
@@ -1045,6 +1066,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     const tcsAll = n.testCases.filter((x) => x.taskIds.includes(taskId));
     nodes.push({
       id: t?.displayId ?? taskId,
+      url: t ? webUrl(o.webUrl, { kind: "task", type: t.type, displayId: t.displayId }) : undefined,
       type: typeLabel(t?.type ?? null),
       title: t?.title ?? null,
       status: t ? taskStatus(t) : null,
@@ -1111,6 +1133,7 @@ export type GapCheck = (typeof GAP_CHECKS)[number];
 const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
 
 type GapItem = {
+  url?: string | undefined;
   id: string | null;
   type: string;
   title: string | null;
@@ -1147,6 +1170,7 @@ export async function gaps(
   const sections: { check: GapCheck; title: string; total: number; items: GapItem[] }[] = [];
   const taskItem = (t: TaskSummary, note?: string): GapItem & { line: string } => ({
     id: t.displayId,
+    url: webUrl(o.webUrl, { kind: "task", type: t.type, displayId: t.displayId }),
     type: typeLabel(t.type),
     title: t.title,
     status: taskStatus(t),
