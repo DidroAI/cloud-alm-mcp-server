@@ -1,3 +1,4 @@
+import { SNAPSHOT_TTL_MS } from "./views/snapshot.js";
 import { subjectOf } from "./approval.js";
 import {
   apiRoot,
@@ -44,8 +45,8 @@ function refuse(
 
 /**
  * A stateless Streamable HTTP handler. Each request carries its own
- * `Authorization: Bearer <token>`; the server keeps no secret and no token
- * beyond the request. The Cloud ALM API root comes from the
+ * `Authorization: Bearer <token>`; the server keeps no secret, and a token
+ * only in memory, for at most 45 s after its last use (its read cache). The Cloud ALM API root comes from the
  * `X-Calm-Api-Url` header or the configured `baseUrl`, and must be an
  * https `*.alm.cloud.sap` address (the reader refuses anything else).
  */
@@ -53,7 +54,21 @@ export function createHttpHandler(options: HttpOptions = {}) {
   const maxBody = options.maxBodyBytes ?? 256 * 1024;
 
   // One server per request, for both protocol eras (2026-07-28 and the
-  // 2025 handshake, served statelessly). Nothing outlives the request.
+  // 2025 handshake, served statelessly). The reader of a token is kept as
+  // long as its snapshot is fresh (45 s), so an agent's follow-up calls do
+  // not re-read every list; then it is dropped with the token it holds.
+  const readers = new Map<string, { calm: CloudAlm; at: number }>();
+  const readerFor = (token: string, baseUrl: string) => {
+    const now = Date.now();
+    for (const [k, v] of readers) if (now - v.at >= SNAPSHOT_TTL_MS) readers.delete(k);
+    const key = `${subjectOf(token)} ${baseUrl}`;
+    const hit = readers.get(key);
+    if (hit) return hit.calm;
+    while (readers.size >= 100) readers.delete(readers.keys().next().value as string);
+    const calm = new CloudAlm({ accessToken: token, baseUrl }, options.reader ?? {});
+    readers.set(key, { calm, at: now });
+    return calm;
+  };
   const make = (token: string, baseUrl: string) => {
     const grant = { accessToken: token, baseUrl };
     const writer = new CloudAlmWriter(grant, options.reader ?? {});
@@ -61,7 +76,7 @@ export function createHttpHandler(options: HttpOptions = {}) {
     const serverOptions = options.server
       ? { ...options.server, ...(options.server.writeMode && options.server.writeMode !== "off" ? { writer } : {}) }
       : serverOptionsForKey(writer, writeToolsFor(tokenScopes(token)));
-    return createServer(new CloudAlm(grant, options.reader ?? {}), {
+    return createServer(readerFor(token, baseUrl), {
       ...serverOptions,
       // Approvals arrive in a later request (card or chat), and only from the same token.
       approvalSubject: subjectOf(token),

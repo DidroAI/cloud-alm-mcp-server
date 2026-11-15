@@ -352,6 +352,9 @@ console.log(formatTasks(await calm.listTasks({ type: "defect", limit: 20 })));
 
 A grant is `{ accessToken, baseUrl, expiresAt? }`; a callback is called once
 per operation. The library never reads environment variables or files.
+`CloudAlm` (typed reads of every Cloud ALM area), `CloudAlmWriter` (the
+allow-listed writes) and the `format*` helpers are public API; the MCP tools
+are built on the same client.
 
 ## Cloud ALM quirks it hides
 

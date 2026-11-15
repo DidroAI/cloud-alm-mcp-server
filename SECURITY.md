@@ -32,6 +32,7 @@ The latest release (and, before 0.1.0, the latest beta) gets fixes.
   readable only by the user (mode 600) and never print it.
 - Tokens are fetched with the key's client credentials and kept in memory.
 - In HTTP mode the server holds no key: each request brings its own bearer
-  token, and approvals are bound to it.
+  token, kept in memory only while its read cache is fresh (45 seconds),
+  and approvals are bound to it.
 - A key with write scopes can change the whole tenant (SAP cannot limit a key
   to one project). Give read-only keys to anyone who only needs to read.
