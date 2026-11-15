@@ -1,7 +1,9 @@
 name: Release
 
-# Publishes to npm when a v* tag on main is pushed, through npm trusted
-# publishing (OIDC) for this workflow, with provenance.
+# When a v* tag on main is pushed: publishes to npm through npm trusted
+# publishing (OIDC) for this workflow, with provenance; then lists the server
+# in the official MCP Registry (server.json) and attaches the Claude Desktop
+# extension (.mcpb) to a GitHub Release for the tag.
 
 on:
   push:
@@ -78,3 +80,70 @@ jobs:
           case "$version" in *-*)
             case "$latest" in ""|*-*) npm dist-tag add "cloud-alm-mcp-server@$version" latest ;; esac ;;
           esac
+
+      # Official MCP Registry: server.json, proven by this repository's OIDC
+      # token (namespace io.github.DidroAI) and by "mcpName" in the package
+      # just published. Never fatal: the npm release above stands.
+      - name: Install cosign
+        continue-on-error: true
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Publish to the MCP Registry
+        continue-on-error: true
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.9
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+  # The Claude Desktop extension (.mcpb), attached to a GitHub Release for the
+  # tag. Its own job, so only it may write to the repository's releases.
+  bundle:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload the .mcpb
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Build the .mcpb
+        run: scripts/build-mcpb.sh cloud-alm-mcp-server.mcpb
+      # One file name for every version, so
+      # releases/latest/download/cloud-alm-mcp-server.mcpb always works.
+      # A beta is marked as a prerelease only once a release exists: until
+      # then the newest beta is the latest release, as on npm.
+      - name: Attach it to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*)
+            if [ -n "$(gh release list --exclude-pre-releases --exclude-drafts --limit 100 --json tagName --jq '.[].tagName | select(contains("-") | not)')" ]; then
+              flags+=(--prerelease)
+            fi ;;
+          esac
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" cloud-alm-mcp-server.mcpb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" cloud-alm-mcp-server.mcpb \
+              --verify-tag --title "$GITHUB_REF_NAME" --generate-notes "${flags[@]}"
+          fi
