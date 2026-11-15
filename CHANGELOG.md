@@ -6,6 +6,8 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-11-15
+
 ### Changed
 
 - MCP spec 2026-07-28 with the v2 SDK (`@modelcontextprotocol/server`

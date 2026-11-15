@@ -65,5 +65,17 @@ jobs:
           tag=latest
           case "$(node -p 'require("./package.json").version')" in *-*) tag=beta ;; esac
           npm publish --provenance --access public --tag "$tag"
+      # Until a release exists, latest follows the newest beta, so a bare
+      # `npx cloud-alm-mcp-server` gets it.
+      - name: Point latest at the beta while there is no release
+        if: env.NPM_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          latest="$(npm view cloud-alm-mcp-server dist-tags.latest 2>/dev/null || true)"
+          case "$version" in *-*)
+            case "$latest" in ""|*-*) npm dist-tag add "cloud-alm-mcp-server@$version" latest ;; esac ;;
+          esac
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

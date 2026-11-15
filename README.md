@@ -15,7 +15,7 @@ Speaks MCP 2026-07-28 (stateless) and serves 2025-era clients on the same
 endpoint; read tools return structured output; write approval works through
 an MCP Apps card, the chat, or the client's confirm dialog.
 
-> Status: beta (0.1.0-beta.0). MIT licence.
+> Status: beta (0.1.0-beta.1). MIT licence.
 
 ## Quick start
 
