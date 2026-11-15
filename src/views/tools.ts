@@ -252,6 +252,7 @@ type Row = {
     results?: { plan: string; status: string; passed: number; steps: number; date: string }[];
     classification?: string | null;
     approval?: string | null;
+    links?: { processes?: (string | null)[]; features?: (string | null)[]; testCases?: number; raisedFrom?: string };
   };
 };
 
@@ -291,6 +292,13 @@ export type ListInput = {
   changedSince?: string;
   dueBefore?: string;
   classification?: string;
+  /** Tasks under this solution process (name words or id). */
+  process?: string;
+  /** Tasks this feature delivers (display id). */
+  feature?: string;
+  /** Requirements and user stories with (true) or without (false) a test case. */
+  hasTests?: boolean;
+  sort?: "id" | "priority" | "due" | "changed" | "created";
   searchText?: boolean;
   projectId?: string;
   limit?: number;
@@ -325,7 +333,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const since = (changed: string | null) => !input.changedSince || (!!changed && changed.slice(0, 10) >= input.changedSince);
   // Filters only tasks have: other kinds are left out when one is given.
   const classification = input.classification?.toLowerCase().trim();
-  const taskOnly = !!(assignee || input.dueBefore || classification);
+  const taskOnly = !!(assignee || input.dueBefore || classification || input.process || input.feature || input.hasTests !== undefined);
   const snap = await snapshotFor(calm, input.projectId, o);
   const taskTypes = [...types].filter((t) => t in TASK_FIND);
   const want = {
@@ -357,6 +365,45 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     ),
   ]);
   const notes: string[] = [];
+  // Links of each task, from lists the snapshot reads once per project.
+  const [allFeatures, allTests, procLinks, allProcesses, defectLinks] = want.tasks
+    ? await Promise.all([
+        snap.features(),
+        snap.testCases(),
+        snap.processLinks(),
+        snap.processes(),
+        snap.defects().catch(() => ({ byTestCase: new Map<string, string[]>(), byDefect: new Map<string, string>() })),
+      ])
+    : [[], [], new Map<string, string[]>(), [], { byTestCase: new Map<string, string[]>(), byDefect: new Map<string, string>() }];
+  const processName = new Map(allProcesses.map((p) => [p.id, p.name]));
+  const testsOf = (taskId: string) => allTests.filter((x) => x.taskIds.includes(taskId));
+  const featuresOf = (taskId: string) => allFeatures.filter((f) => f.taskIds.includes(taskId));
+  const taskLinks = (t: TaskSummary) => {
+    const processes = (procLinks.get(t.id) ?? []).map((id) => processName.get(id) ?? id);
+    const features = featuresOf(t.id).map((f) => f.displayId);
+    const from = defectLinks.byDefect.get(t.id.toLowerCase());
+    const raisedFrom = from ? (allTests.find((x) => x.id.toLowerCase() === from)?.displayId ?? null) : null;
+    return {
+      ...(processes.length ? { processes } : {}),
+      ...(features.length ? { features } : {}),
+      ...(t.type === "CALMREQU" || t.type === "CALMUS" ? { testCases: testsOf(t.id).length } : {}),
+      ...(raisedFrom ? { raisedFrom } : {}),
+    };
+  };
+  const processWords = input.process ? matcher(input.process) : null;
+  const wantedFeature = input.feature?.trim().toLowerCase();
+  const linkPass = (t: TaskSummary) => {
+    if (processWords || input.process) {
+      const ids = procLinks.get(t.id) ?? [];
+      if (!ids.some((id) => id === input.process || processWords?.(processName.get(id)))) return false;
+    }
+    if (wantedFeature && !featuresOf(t.id).some((f) => f.displayId?.toLowerCase() === wantedFeature || f.id.toLowerCase() === wantedFeature)) return false;
+    if (input.hasTests !== undefined) {
+      if (t.type !== "CALMREQU" && t.type !== "CALMUS") return false;
+      if ((testsOf(t.id).length > 0) !== input.hasTests) return false;
+    }
+    return true;
+  };
   // With searchText, words may also be in an item's own text (description,
   // document content): read it for the items that pass every other filter.
   const textHits = new Set<string>();
@@ -377,6 +424,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (assignee && (unassigned ? !!t.assigneeName : !(t.assigneeName ?? "").toLowerCase().includes(assignee))) return false;
     if (input.dueBefore && !(t.dueDate && t.dueDate.slice(0, 10) <= input.dueBefore)) return false;
     if (classification && classificationLabel(t.classification) !== classification) return false;
+    if (!linkPass(t)) return false;
     return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status) || approvalLabel(t.approvalState) === status);
   };
   const featurePass = (f: SnapFeature) =>
@@ -401,7 +449,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         sort: `1${t.type}`,
         displayId: t.displayId,
         line: taskLine(t),
-        data: { id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, ...requirementFields(t), createdAt: t.createdAt ?? null, changedAt: t.changedAt },
+        data: { id: t.displayId, type: typeLabel(t.type), title: t.title, status: taskStatus(t), priority: priorityLabel(t.priority), assignee: t.assigneeName, dueDate: t.dueDate, tags: t.tags, ...requirementFields(t), links: taskLinks(t), createdAt: t.createdAt ?? null, changedAt: t.changedAt },
       });
     }
   }
@@ -486,13 +534,26 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         });
   });
   rows.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
+  if (input.sort && input.sort !== "id") {
+    const PRIORITY_RANK: Record<string, number> = { "very high": 0, high: 1, medium: 2, low: 3 };
+    const key = (r: Row): string => {
+      const d = r.data;
+      if (input.sort === "priority") return String(PRIORITY_RANK[d.priority ?? ""] ?? 9);
+      if (input.sort === "due") return d.dueDate ?? "9999";
+      if (input.sort === "created") return d.createdAt ?? "";
+      return d.changedAt ?? "";
+    };
+    // Newest first for dates of change and creation; soonest first for due dates.
+    const desc = input.sort === "changed" || input.sort === "created";
+    rows.sort((a, b) => (desc ? key(b).localeCompare(key(a)) : key(a).localeCompare(key(b))) || byDisplayId(a, b));
+  }
   const shown = rows.slice(offset, offset + limit);
   const nextOffset = offset + shown.length < rows.length ? offset + shown.length : null;
   const asked = new Set(input.types ?? []);
   if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("tags exist on tasks, features and test cases only");
   if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features and test cases only");
   if (status && asked.has("test_case") && !resultStatus) notes.push(`test cases filter by latest result: passed, failed, in progress, blocked, not run (in a plan, not executed), ${NOT_IN_PLAN}`);
-  if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee and dueBefore filter tasks only");
+  if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee, dueBefore, classification, process, feature and hasTests filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
   if (query && !input.searchText) notes.push("words matched titles and tags; searchText: true also reads descriptions and document content");
   if (!rows.length && want.tasks && tasks.length) {

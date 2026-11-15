@@ -50,7 +50,7 @@ describe("tools", () => {
     }
     // What the model reads with every turn (names, descriptions, input
     // schemas) stays small; output schemas are for the client.
-    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(11500);
+    expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(12500);
   });
 
   test("overview: phase, counts by status, gaps", async () => {
@@ -367,4 +367,20 @@ test("the skills are offered as prompts", async () => {
   const text = (p.messages[0]?.content as { text: string }).text;
   expect(text).toContain("Fit-gap analysis in SAP Cloud ALM");
   expect(text).toContain("My request: Order to Cash");
+});
+
+test("list rows carry their links; filters by process, feature, tests; sort", async () => {
+  const { call } = await connect();
+  const reqs = (await call("calm_list", { types: ["requirement", "user_story"] })).structured as { items: { id: string; links?: { testCases?: number; features?: string[] } }[] };
+  expect(reqs.items.every((r) => typeof r.links?.testCases === "number")).toBe(true);
+  const untested = (await call("calm_list", { hasTests: false })).structured as { items: { links?: { testCases?: number } }[] };
+  for (const r of untested.items) expect(r.links?.testCases).toBe(0);
+  const withFeature = reqs.items.find((r) => r.links?.features?.length);
+  if (withFeature) {
+    const f = withFeature.links?.features?.[0] as string;
+    const delivered = (await call("calm_list", { feature: f })).structured as { items: { id: string }[] };
+    expect(delivered.items.map((r) => r.id)).toContain(withFeature.id);
+  }
+  const byPriority = (await call("calm_list", { types: ["requirement", "user_story", "defect"], sort: "priority" })).structured as { items: { priority?: string }[] };
+  expect(byPriority.items[0]?.priority).toBe("very high");
 });
