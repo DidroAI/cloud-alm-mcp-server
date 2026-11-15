@@ -24,6 +24,8 @@ All notable changes to this package. The format follows
 - Coverage rolls each requirement up with its user stories, with test case
   titles, defects and verdict counts as data.
 - Every read tool declares its output schema.
+- Test plans show progress: executed, passed, pass rate.
+- A requirement's trace names the open defects that block it.
 - Skill: daily brief.
 
 - Claude Desktop extension: `cloud-alm-mcp-server.mcpb`, attached to each
@@ -66,6 +68,20 @@ All notable changes to this package. The format follows
   privacy settings) instead of passing over it.
 
 ### Fixed
+
+- Test plan membership comes from the plans' assignments in every tool: a
+  case in a plan that never ran is "not run" everywhere (overview, list,
+  gaps, coverage and the plan read agreed on 12 vs 14 before).
+- Gap rows of test cases carry their result, per-plan results and link;
+  orphan and unprepared rows no longer read "not in a test plan" for
+  planned cases.
+- Analytics groups use the readable status column and the same words as
+  the other tools; with `projectId` the footer no longer says tenant-wide.
+- `calm_changes` shows the creation time of created items.
+- Unknown `classification` values are refused (`none` = not classified);
+  empty results name the statuses in use; a process search that finds
+  nothing lists the processes in scope.
+- The SAP token request is retried on 5xx.
 
 - Key files and client configs saved with a UTF-8 byte order mark (Windows
   editors, PowerShell) are read.
