@@ -6,6 +6,44 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- MCP spec 2026-07-28 with the v2 SDK (`@modelcontextprotocol/server`
+  2.4, ext-apps 2.1). stdio and HTTP serve 2026-07-28 clients and 2025-era
+  clients on the same endpoint; HTTP stays stateless. The opt-in confirm
+  dialog uses `input_required` on 2026-07-28.
+- Read tools are shaped "list, then read": `calm_list` (was `calm_find`)
+  gives one row per item, paged with `offset` / `nextOffset`, and filters by
+  assignee, priority, due date and change date; `searchText` also reads
+  descriptions and documents. `calm_get` gives the details, with `detail:
+  summary|full` and a size budget.
+- Every read tool answers with structured output (`structuredContent` and
+  an `outputSchema`) as well as text.
+- Text written in Cloud ALM is fenced as data in answers, and the
+  instructions tell the agent never to follow it.
+
+### Added
+
+- `calm_projects`, `calm_team`, `calm_changes` (what changed since a day)
+  and `calm_api` (read any Cloud ALM API, GET only, so an agent can compose
+  its own calls). `projectId` takes a project name.
+- `calm_gaps`: `coverage` (requirement × test cases × latest result),
+  `includeClosed`, paging.
+- `calm_create_task`: assignee, start and due date; `testCase` for defects.
+  `calm_update`: `comment` under the same approval.
+
+### Fixed
+
+- Title codes (`REQ-03`) resolve in write tools, as in reads.
+- A change that changes nothing asks for no approval.
+- `calm_analytics`: honest empty results (a monitoring dataset with no rows
+  says so), groupable columns from the data, row counts when cut, date
+  series documented.
+- Test status "not run" (also never run, no result) finds test cases that
+  never ran; assignee and due date always shown on task details.
+- `calm_delete` warns when it removes every item of a type or defects that
+  record failed tests.
+
 ## [0.1.0-beta.0] - 2026-11-14
 
 ### Fixed

@@ -11,6 +11,10 @@ the reader sends GET requests only, to `*.alm.cloud.sap` hosts only.
 Writing (create, change, link, tag, comment, delete) is opt-in
 with `CALM_WRITE` ([Modes and governance](#modes-and-governance)).
 
+Speaks MCP 2026-07-28 (stateless) and serves 2025-era clients on the same
+endpoint; read tools return structured output; write approval works through
+an MCP Apps card, the chat, or the client's confirm dialog.
+
 > Status: beta (0.1.0-beta.0). MIT licence.
 
 ## Quick start
@@ -108,31 +112,42 @@ Changed the scopes? The token reflects them at once: rerun
 
 ## Tools
 
-Seven read tools, each answering a question in one call. Items are named by
+Read tools, shaped as "list, then read": `calm_list` returns one compact
+row per item, `calm_get` the details of the ids you pick. Items are named by
 their short **display ids** (`3-17` task, `6-1` feature, `7-1` document,
-`8-1-2` test case, `8-3-1` test plan), which every tool accepts; GUIDs work
-too. Answers are compact text written for a model's context.
+`8-1-2` test case, `8-3-1` test plan), which every tool accepts; GUIDs and
+codes in titles (`REQ-03`) work too. Every read answers with compact text and
+the same answer as structured data (`structuredContent`, described by the
+tool's `outputSchema`).
 
 | Tool | Answers |
 | --- | --- |
-| `calm_overview` | Start here: the project, its current phase, counts of requirements, user stories, defects, features, test cases and documents by status, latest test results, tags in use, gaps |
-| `calm_list` | Search or list items across types (tasks, features, documents, test cases, test plans, processes, library) by words in titles and tags (`a b \| c`), type, status, tag |
-| `calm_get` | Full content of 1–10 items at once: description, test steps and latest result, document text, feature transports, every link named |
+| `calm_overview` | Start here: the project, its current phase, counts of requirements, user stories, defects, features, test cases and documents by status, latest test results, documents, tags in use, gaps |
+| `calm_projects` | The projects the key can read; every tool takes `projectId` as an id or a name |
+| `calm_team` | Who is in the project team, with roles: the user ids an assignee is set to |
+| `calm_list` | One row per item (id, title, status, priority, assignee, due date, last change) across types; filters by words (`a b \| c`), type, status, tag, assignee, priority, due date, changed since; `searchText` also reads descriptions and documents; paged with `offset` / `nextOffset` |
+| `calm_changes` | What changed since a day: items created or changed, newest first, and how test results moved |
+| `calm_get` | Details of 1–10 items: fields, description, comments, test steps and latest results, document text, feature transports, every link with its id; `detail: "summary"` for less, and a size budget |
 | `calm_trace` | An item's links both ways: requirement → user stories → features (status, transports), test cases (with results), documents, solution process |
-| `calm_gaps` | What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared |
-| `calm_analytics` | Analytics datasets (tasks, defects, test runs, jobs, exceptions, integration messages…), counted with `groupBy` |
+| `calm_gaps` | What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with untested tasks; test cases linked to nothing or not prepared; `coverage` for an audit matrix; paged |
+| `calm_analytics` | Analytics datasets (tasks, defects, test runs, jobs, exceptions, integration messages…), counted with `groupBy`, per day with `date` |
+| `calm_api` | Any Cloud ALM API, read-only (GET on the known API paths, OData query options passed through): the agent composes its own calls when no other tool answers. Without a path it lists the APIs |
 | `calm_landscape` | Systems and cloud services, and SAP service status events, open ones first |
+
+Text people wrote in Cloud ALM (descriptions, comments, documents, API data)
+is fenced as data in the answers, and the server instructions tell the agent
+never to follow it.
 
 With write mode on (below), ten more:
 
 | Tool | Does |
 | --- | --- |
-| `calm_create_task` | Creates a requirement, user story (optionally under a requirement), defect or project task; refuses a duplicate title |
+| `calm_create_task` | Creates a requirement, user story (optionally under a requirement), defect or project task, with assignee, start and due date; a defect can name the test case it was found in (Cloud ALM's API cannot link the two, so the description names it, and an open defect for it is flagged); refuses a duplicate title |
 | `calm_create_test_case` | Creates a manual test case with activities and steps, linked to the requirements or user stories it covers; refuses a duplicate title |
 | `calm_create_feature` | Creates a feature, optionally linked to the tasks it delivers; refuses a duplicate title |
 | `calm_create_document` | Creates a document (content, type, status, priority) linked to tasks; refuses a duplicate title |
-| `calm_update` | Changes 1–20 items with the same changes: tasks (title, description, status in plain words, priority, assignee, start and due date, timebox, obsolete), features (title, description, status, priority), manual test cases (title, prepared, priority, `addActivity` with steps). Sends only the fields that differ and answers before → after per field |
-| `calm_delete` | Deletes tasks (`soft: true` marks them obsolete instead, as SAP recommends), manual test cases (`force: true` also deletes their runs and results) and documents |
+| `calm_update` | Changes 1–20 items with the same changes: tasks (title, description, status in plain words, priority, assignee, start and due date, timebox, obsolete), features (title, description, status, priority), manual test cases (title, prepared, priority, `addActivity` with steps); `comment` adds a comment under the same approval. Sends only the fields that differ, answers before → after per field, and asks no approval when nothing would change |
+| `calm_delete` | Deletes tasks (`soft: true` marks them obsolete instead, as SAP recommends), manual test cases (`force: true` also deletes their runs and results) and documents; warns when it removes every item of a type or defects that record failed tests |
 | `calm_comment` | Adds a comment to a task |
 | `calm_link` | Links, or with `unlink: true` unlinks, a test case (tests), feature (delivers) or document (documents) to tasks, and user stories or project tasks to their requirement; skips links already in that state |
 | `calm_tag` | Adds or removes tags on tasks, keeping the others, and reports tags Cloud ALM silently dropped |
