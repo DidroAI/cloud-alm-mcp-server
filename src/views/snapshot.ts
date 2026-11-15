@@ -313,10 +313,15 @@ export class Snapshot {
     );
   }
 
-  testPlans(): Promise<TestPlan[]> {
+  /** Test plans, each with the test cases assigned to it (the one source of plan membership). */
+  testPlans(): Promise<(TestPlan & { testCaseIds: string[] })[]> {
     return this.once(
       "testPlans",
-      async () => (await this.odata(PATHS.testPlans, {})).map(testPlan),
+      async () =>
+        (await this.odata(PATHS.testPlans, { $expand: "toTestCaseAssignments($select=testCaseId)" })).map((r) => ({
+          ...testPlan(r),
+          testCaseIds: ids(children(r.toTestCaseAssignments), "testCaseId").map((x) => x.toLowerCase()),
+        })),
       [],
     );
   }
@@ -434,6 +439,18 @@ export class Snapshot {
           }
           if (map.size) break;
         }
+        // A test case assigned to a plan but never run has no analytics row:
+        // the plan's assignments say it is in the plan, not yet run.
+        const plans = await this.testPlans().catch(() => []);
+        const byLower = new Map([...map.keys()].map((k) => [k.toLowerCase(), k]));
+        for (const plan of plans)
+          for (const tc of plan.testCaseIds) {
+            const key = byLower.get(tc) ?? tc;
+            const list = map.get(key) ?? [];
+            if (list.some((r) => r.plan === plan.title)) continue;
+            list.push({ plan: plan.title ?? "?", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 });
+            map.set(key, list);
+          }
         return map;
       },
       new Map(),
