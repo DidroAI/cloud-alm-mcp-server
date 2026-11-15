@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never paste a service key, client secret or token. Redact tenant data you cannot share.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Include the tool call and its answer if you have them.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `npx cloud-alm-mcp-server --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      options: [Claude Desktop, Claude Code, Codex, Cursor, VS Code, ChatGPT, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options: [stdio (service key), HTTP (bearer token)]
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `cloud-alm-mcp-server doctor`
+      description: It prints no secrets.
+      render: text

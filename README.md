@@ -1,5 +1,9 @@
 # cloud-alm-mcp-server
 
+[![npm](https://img.shields.io/npm/v/cloud-alm-mcp-server/beta?label=npm)](https://www.npmjs.com/package/cloud-alm-mcp-server)
+[![CI](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server that lets
 an agent (Claude, Codex, Cursor…) work with **SAP Cloud ALM**: projects,
 requirements, user stories, defects, features, documents, test cases and
@@ -15,9 +19,11 @@ only, to `*.alm.cloud.sap` hosts only.
 
 Speaks MCP 2026-07-28 (stateless) and serves 2025-era clients on the same
 endpoint; read tools return structured output; write approval works through
-an MCP Apps card, the chat, or the client's confirm dialog.
+an MCP Apps card or the chat.
 
-> Status: beta (0.1.0-beta.1). MIT licence.
+> Status: beta (0.1.0-beta.2). MIT licence. An independent open-source
+> project, not affiliated with or endorsed by SAP. SAP and SAP Cloud ALM are
+> trademarks of SAP SE.
 
 ## Quick start
 
@@ -418,3 +424,6 @@ until the repository has an `NPM_TOKEN` secret.
 ## Licence
 
 MIT: see [LICENSE](LICENSE). Use it, change it, ship it.
+
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+[SECURITY.md](SECURITY.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
