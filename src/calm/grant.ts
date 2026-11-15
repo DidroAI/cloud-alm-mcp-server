@@ -42,6 +42,8 @@ export function parseServiceKey(value: unknown): ServiceKey {
 export type ClientCredentialsOptions = {
   fetch?: typeof fetch;
   now?: () => number;
+  /** Wait before the second try; the third waits three times as long. Default 400 ms. */
+  retryDelayMs?: number;
 };
 
 /**
@@ -67,22 +69,29 @@ export async function clientCredentials(
   const basic = Buffer.from(
     `${key.uaa.clientid}:${key.uaa.clientsecret}`,
   ).toString("base64");
-  let response: Response;
-  try {
-    response = await (options.fetch ?? fetch)(tokenUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${basic}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: "grant_type=client_credentials",
-      redirect: "manual",
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
-    throw new CloudAlmError("unavailable", "token endpoint did not answer");
+  let response: Response | undefined;
+  // SAP's token endpoint answers 5xx now and then: try three times.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, (options.retryDelayMs ?? 400) * 3 ** (attempt - 1)));
+    try {
+      response = await (options.fetch ?? fetch)(tokenUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${basic}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: "grant_type=client_credentials",
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      response = undefined;
+      continue;
+    }
+    if (response.status < 500) break;
   }
+  if (!response) throw new CloudAlmError("unavailable", "the SAP token endpoint did not answer; try again in a minute");
   if (response.status === 401 || response.status === 400)
     throw new CloudAlmError(
       "unauthorized",
@@ -92,7 +101,7 @@ export async function clientCredentials(
   if (!response.ok)
     throw new CloudAlmError(
       "unavailable",
-      `token endpoint error ${response.status}`,
+      `the SAP token endpoint answered ${response.status} three times; try again in a minute`,
       response.status,
     );
   let body: { access_token?: unknown; expires_in?: unknown };

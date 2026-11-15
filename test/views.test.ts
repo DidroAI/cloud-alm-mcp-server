@@ -250,8 +250,8 @@ describe("calm_analytics", () => {
     const { call } = await connect(tests30);
     const { text } = await call("calm_analytics", { dataset: "Tests", period: "C30D", groupBy: ["status"] });
     expect(text).toContain("Tests by status, as of 2026-11-13: 2 groups from 3 rows (the latest of 3 daily snapshots)");
-    expect(text).toContain("- Failed: total 2, allActions 8, passedActions 4, failedActions 2");
-    expect(text).toContain("- Passed: total 1, allActions 2, passedActions 2");
+    expect(text).toContain("- failed: total 2, allActions 8, passedActions 4, failedActions 2");
+    expect(text).toContain("- passed: total 1, allActions 2, passedActions 2");
     // Averages, progress and ids are never summed.
     expect(text).not.toContain("progress");
     expect(text).not.toContain("testerId");
@@ -261,7 +261,7 @@ describe("calm_analytics", () => {
     const { call } = await connect();
     const grouped = await call("calm_analytics", { dataset: "Defects", groupBy: ["status", "priority"] });
     expect(grouped.text).toContain("Defects by statusText, priority, as of 2026-11-13");
-    expect(grouped.text).toContain("- New · Very High: counter 1");
+    expect(grouped.text).toContain("- new · very high: counter 1");
     const filtered = await call("calm_analytics", { dataset: "Defects", filters: { status: "new" } });
     expect(filtered.text).toStartWith("Defects: 1 rows, as of 2026-11-13");
     const none = await call("calm_analytics", { dataset: "Defects", filters: { status: "closed" } });

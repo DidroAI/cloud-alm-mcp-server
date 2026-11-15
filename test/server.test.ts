@@ -421,3 +421,18 @@ test("a Cloud ALM link works as an id", async () => {
   const r = await call("calm_get", { ids: ["https://a.eu20.alm.cloud.sap/launchpad#task-management?x&/taskDetail/3-1"] });
   expect(r.text).toContain("3-1 requirement");
 });
+
+test("the token request is retried when SAP answers 5xx", async () => {
+  const { clientCredentials } = await import("../src/calm/grant.js");
+  let calls = 0;
+  const fetcher = (async () => {
+    calls++;
+    return calls < 3 ? new Response("{}", { status: 503 }) : Response.json({ access_token: "tok", expires_in: 3600 });
+  }) as unknown as typeof fetch;
+  const key = { uaa: { url: "https://x.authentication.eu20.hana.ondemand.com", clientid: "id", clientsecret: "secret" }, endpoints: { Api: "https://eu20.alm.cloud.sap/api" } };
+  const g = await clientCredentials(key, { fetch: fetcher, retryDelayMs: 1 });
+  expect(g.accessToken).toBe("tok");
+  expect(calls).toBe(3);
+  calls = -10;
+  await expect(clientCredentials(key, { fetch: fetcher, retryDelayMs: 1 })).rejects.toThrow("three times");
+});

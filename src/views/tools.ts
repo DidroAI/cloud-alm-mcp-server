@@ -338,6 +338,8 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const since = (changed: string | null) => !input.changedSince || (!!changed && changed.slice(0, 10) >= input.changedSince);
   // Filters only tasks have: other kinds are left out when one is given.
   const classification = input.classification?.toLowerCase().trim();
+  if (classification && !["fit", "gap", "none"].includes(classification))
+    throw new CloudAlmError("bad_request", `classification is "fit", "gap" or "none" (not classified)`);
   const taskOnly = !!(assignee || input.dueBefore || classification || input.process || input.feature || input.hasTests !== undefined);
   const snap = await snapshotFor(calm, input.projectId, o);
   const taskTypes = [...types].filter((t) => t in TASK_FIND);
@@ -428,7 +430,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (priority !== undefined && t.priority !== priority) return false;
     if (assignee && (unassigned ? !!t.assigneeName : !(t.assigneeName ?? "").toLowerCase().includes(assignee))) return false;
     if (input.dueBefore && !(t.dueDate && t.dueDate.slice(0, 10) <= input.dueBefore)) return false;
-    if (classification && classificationLabel(t.classification) !== classification) return false;
+    if (classification && (classification === "none" ? !!t.classification : classificationLabel(t.classification) !== classification)) return false;
     if (!linkPass(t)) return false;
     return !status || (status === "open" ? isOpen(t.status) : taskStatus(t).includes(status) || approvalLabel(t.approvalState) === status);
   };
@@ -562,6 +564,15 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee, dueBefore, classification, process, feature and hasTests filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
   if (query && !input.searchText) notes.push("words matched titles and tags; searchText: true also reads descriptions and document content");
+  if (!rows.length && status && want.tasks && tasks.length) {
+    const used = [...new Set(tasks.filter((t) => taskTypes.some((k) => (TASK_FIND[k] ?? []).includes(t.type ?? ""))).map(taskStatus))];
+    if (used.length) notes.push(`no item has status "${status}"; statuses in use: ${used.join(", ")}`);
+  }
+  if (input.process) notes.push("processes are assigned to requirements: user stories under them are not listed (calm_trace the process shows them)");
+  if (!rows.length && want.processes && processes.length) {
+    const scoped = processes.filter((p) => p.isScoped);
+    notes.push(`no process matches "${query}"; ${scoped.length ? `in scope: ${scoped.map((p) => p.name).join("; ")}` : `${processes.length} processes, none in scope`} (end-to-end names, e.g. Lead to Cash for order to cash)`);
+  }
   if (!rows.length && want.tasks && tasks.length) {
     if (input.dueBefore) notes.push(`${tasks.filter((t) => t.dueDate).length} of ${tasks.length} tasks have a due date`);
     if (assignee && !unassigned) notes.push(`${tasks.filter((t) => t.assigneeName).length} of ${tasks.length} tasks have an assignee`);
@@ -1402,6 +1413,12 @@ const NOT_SUMMED = /avg|average|progress|percent|ratio|rate$|id$/i;
 /** Datasets fed by monitored systems: empty may mean nothing is connected. */
 const MONITORED = new Set<AnalyticsDataset>(["Exceptions", "Jobs", "Metrics", "Requests", "ServiceLevels", "ScenarioExecutions", "MonitoringEvents", "Messages", "ConfigurationItems"]);
 const FRESHNESS = "Analytics is refreshed daily and tenant-wide; calm_overview and calm_list give one project's live state.";
+const FRESHNESS_PROJECT = "Analytics is refreshed daily; calm_overview and calm_list give the live state.";
+/** An analytics value in the words of the other tools. */
+const analyticsWord = (v: unknown) => {
+  const s = String(v ?? "—").trim();
+  return /^initial$/i.test(s) ? "not run" : s.toLowerCase();
+};
 
 /** The column holding the project's id, per dataset (they differ). */
 const PROJECT_COLUMN: Partial<Record<AnalyticsDataset, string>> = {
@@ -1461,6 +1478,8 @@ export async function analytics(
     throw error;
   }
   const columnOf = (name: string) =>
+    // `status` is the dataset's readable status column (statusText), not its raw code.
+    (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined) ??
     result.columns.find((c) => c === name) ??
     result.columns.find((c) => c.toLowerCase() === name.toLowerCase()) ??
     (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined);
@@ -1522,7 +1541,8 @@ export async function analytics(
         blank++;
         continue;
       }
-      const key = groupBy.map((g) => String(r[g] ?? "—")).join(" · ");
+      // Values in the words of the other tools: lower case, "not run" for Initial.
+      const key = groupBy.map((g) => (g === "date" ? String(r[g] ?? "—") : analyticsWord(r[g]))).join(" · ");
       const acc = groups.get(key) ?? {};
       for (const c of numeric.filter((c) => !groupBy.includes(c) && !NOT_SUMMED.test(c))) acc[c] = (acc[c] ?? 0) + Number(r[c] ?? 0);
       groups.set(key, acc);
@@ -1533,7 +1553,7 @@ export async function analytics(
       ...notes,
       ...(blank ? [`(${blank} row${blank === 1 ? "" : "s"} with no value in ${groupBy.join(", ")} left out: deleted or emptied items)`] : []),
       ...shownGroups.map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
-      FRESHNESS,
+      scopedTo ? FRESHNESS_PROJECT : FRESHNESS,
     ].join("\n");
     return {
       text,
@@ -1541,6 +1561,8 @@ export async function analytics(
         dataset,
         groupBy,
         asOf: groupBy.includes("date") ? null : (latest ?? null),
+        ...(scopedTo ? { project: scopedTo } : {}),
+        ...(blank ? { leftOut: blank } : {}),
         totalGroups: groups.size,
         groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, k.split(" · ")[i] ?? null])), values: v })),
       },
@@ -1558,7 +1580,7 @@ export async function analytics(
     ...notes,
     same.length ? `All rows: ${same.map((c) => `${c}=${cell(rows[0]?.[c])}`).join("; ")}` : "",
     ...(varying.length ? rows.slice(0, input.limit ?? 10).map((r) => `- ${varying.map((c) => `${c}=${cell(r[c])}`).join("; ")}`) : []),
-    FRESHNESS,
+    scopedTo ? FRESHNESS_PROJECT : FRESHNESS,
   ]
     .filter(Boolean)
     .join("\n");
