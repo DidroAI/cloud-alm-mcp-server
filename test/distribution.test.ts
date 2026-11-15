@@ -57,8 +57,8 @@ describe("distribution files", () => {
     expect(entry.args).toEqual(["-y", packageSpec(pkg.version)]);
   });
 
-  test("the install links in docs/INSTALL-SNIPPETS.md decode to the npx configuration", () => {
-    const docs = read("docs/INSTALL-SNIPPETS.md");
+  test("the install links in docs/install.md decode to the npx configuration", () => {
+    const docs = read("docs/install.md");
     const config = { command: "npx", args: ["-y", packageSpec(pkg.version)] };
 
     const cursor = [...docs.matchAll(/(?:cursor:\/\/anysphere\.cursor-deeplink\/mcp\/install|https:\/\/cursor\.com\/install-mcp)\?name=cloud-alm&config=([\w%+/=-]+)/g)];
@@ -81,4 +81,18 @@ describe("distribution files", () => {
     for (const query of inner)
       expect(JSON.parse(decodeURIComponent(query))).toEqual({ name: "cloud-alm", ...config });
   });
+});
+
+test("the README's install buttons decode to the npx configuration", () => {
+  const readme = read("README.md");
+  const pkgVersion = JSON.parse(read("package.json")).version as string;
+  const config = { command: "npx", args: ["-y", packageSpec(pkgVersion)] };
+  const cursor = [...readme.matchAll(/https:\/\/cursor\.com\/install-mcp\?name=cloud-alm&config=([\w%+/=-]+)/g)];
+  expect(cursor.length).toBe(1);
+  expect(JSON.parse(Buffer.from(decodeURIComponent(cursor[0]?.[1] as string), "base64").toString())).toEqual(config);
+  const vscode = [...readme.matchAll(/https:\/\/vscode\.dev\/redirect\?url=([\w%.-]+)/g)];
+  expect(vscode.length).toBe(1);
+  const link = decodeURIComponent(vscode[0]?.[1] as string);
+  const json = JSON.parse(decodeURIComponent(link.slice(link.indexOf("?") + 1)));
+  expect({ command: json.command, args: json.args }).toEqual(config);
 });

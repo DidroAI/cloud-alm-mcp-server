@@ -19,7 +19,7 @@ All notable changes to this package. The format follows
   workflow.
 - `PRIVACY.md`: no telemetry; the server talks only to the key's SAP token
   host and the Cloud ALM API.
-- `docs/INSTALL-SNIPPETS.md`: install links for Cursor and VS Code and the
+- `docs/install.md`: install links for Cursor and VS Code and the
   commands for every client.
 - `uninstall`: removes the server from Claude Code, Codex, Claude Desktop
   and Cursor, keeps each changed config file as `.bak`, asks nothing;

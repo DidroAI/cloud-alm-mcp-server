@@ -1,9 +1,7 @@
-# Install snippets for the README
+# Install
 
-Ready-made blocks for the README's install section, one per channel. Every
-link and command here was checked against the client's current documentation
-or CLI (November 2026); `test/distribution.test.ts` checks that the two
-install links still decode to the configuration below.
+Every way to install the server, one per client. Back to the
+[README](../README.md).
 
 While the version is a beta, the snippets name `cloud-alm-mcp-server@beta`.
 After 0.1.0, replace it with `cloud-alm-mcp-server` everywhere (and rebuild
