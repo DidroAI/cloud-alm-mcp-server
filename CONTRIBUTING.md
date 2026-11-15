@@ -53,3 +53,12 @@ with a read-only key where it can.
 
 By contributing you agree that your contribution is licensed under the
 [MIT licence](LICENSE).
+
+## Releases
+
+A release changes the version in `package.json`, `server.json` (the server
+and its npm package), `manifest.json` and `.claude-plugin/plugin.json`;
+`test/distribution.test.ts` fails when they differ. Pushing the tag `v<version>`
+on main publishes to npm and the MCP Registry and attaches the Claude Desktop
+extension to a GitHub Release. To build the extension locally:
+`bun run build && scripts/build-mcpb.sh`.

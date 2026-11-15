@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { isServiceKey } from "./key.js";
+import { isServiceKey, stripBom } from "./key.js";
 import { SERVER_KEY } from "./clients.js";
 
 export type ExecResult = { code: number; stdout: string; stderr: string };
@@ -38,20 +38,28 @@ const MAX_KEY_BYTES = 64 * 1024;
 /** Downloads older than this are not picked up on their own. */
 const RECENT_MS = 7 * 24 * 3600_000;
 
+export type DownloadedKey = {
+  /** The newest key found, and how many other keys lie next to it. */
+  key?: { path: string; others: number };
+  /** Folders that exist but may not be read (macOS privacy, permissions). */
+  unreadable: string[];
+};
+
 /**
  * The newest JSON file in ~/Downloads that is
  * a Cloud ALM API service key, downloaded in the last week.
  */
-export function findDownloadedKey(
-  dirs: string[],
-  now = Date.now(),
-): { path: string; others: number } | undefined {
+export function findDownloadedKey(dirs: string[], now = Date.now()): DownloadedKey {
   const found: { path: string; mtime: number }[] = [];
+  const unreadable: string[] = [];
   for (const dir of dirs) {
     let names: string[];
     try {
       names = readdirSync(dir);
-    } catch {
+    } catch (error) {
+      // A missing folder is nothing to report; a refused one is.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EACCES" || code === "EPERM") unreadable.push(dir);
       continue;
     }
     for (const name of names) {
@@ -66,7 +74,7 @@ export function findDownloadedKey(
   }
   found.sort((a, b) => b.mtime - a.mtime);
   const [first] = found;
-  return first && { path: first.path, others: found.length - 1 };
+  return { ...(first ? { key: { path: first.path, others: found.length - 1 } } : {}), unreadable };
 }
 
 export type Client = "claude-code" | "codex" | "claude-desktop" | "cursor";
@@ -95,6 +103,37 @@ export function claudeDesktopConfig(e: Pick<SetupEnv, "platform" | "home" | "env
   return join(e.env.XDG_CONFIG_HOME || join(e.home, ".config"), "Claude", "claude_desktop_config.json");
 }
 
+/**
+ * Claude Desktop from the Microsoft Store (MSIX) keeps its files in a
+ * per-package folder instead of %APPDATA%:
+ * %LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude.
+ */
+export function claudeDesktopMsixConfigs(e: Pick<SetupEnv, "platform" | "home" | "env">): string[] {
+  if (e.platform !== "win32") return [];
+  const packages = join(e.env.LOCALAPPDATA ?? join(e.home, "AppData", "Local"), "Packages");
+  let names: string[];
+  try {
+    names = readdirSync(packages);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => name.startsWith("Claude_"))
+    .map((name) => join(packages, name, "LocalCache", "Roaming", "Claude"))
+    .filter((dir) => existsSync(dir))
+    .map((dir) => join(dir, "claude_desktop_config.json"));
+}
+
+/**
+ * Every Claude Desktop config on this machine: the folders that exist
+ * (the usual one, the Store app's on Windows), else the usual one.
+ */
+export function claudeDesktopConfigs(e: Pick<SetupEnv, "platform" | "home" | "env">): string[] {
+  const usual = claudeDesktopConfig(e);
+  const msix = claudeDesktopMsixConfigs(e);
+  return existsSync(dirname(usual)) || !msix.length ? [usual, ...msix] : msix;
+}
+
 const cursorConfig = (home: string) => join(home, ".cursor", "mcp.json");
 
 /**
@@ -121,12 +160,42 @@ export async function detectClients(e: SetupEnv): Promise<Client[]> {
   const found: Client[] = [];
   if (await has("claude")) found.push("claude-code");
   if (await has("codex")) found.push("codex");
-  if (existsSync(dirname(claudeDesktopConfig(e)))) found.push("claude-desktop");
+  if (claudeDesktopConfigs(e).some((path) => existsSync(dirname(path)))) found.push("claude-desktop");
   if (existsSync(dirname(cursorConfig(e.home)))) found.push("cursor");
   return found;
 }
 
 export type ClientResult = { client: Client; label: string; ok: boolean; detail: string };
+
+/** A client's JSON config as an object; empty when the file is missing or blank. */
+function readJsonConfig(path: string, advice: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  const text = stripBom(readFileSync(path, "utf8"));
+  if (!text.trim()) return {};
+  let config: unknown;
+  try {
+    config = JSON.parse(text);
+  } catch {
+    throw new Error(`${path} is not valid JSON; fix it or ${advice}.`);
+  }
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    throw new Error(`${path} is not a JSON object.`);
+  return config as Record<string, unknown>;
+}
+
+/** Take the server out of a JSON config; false when it was not there. */
+export function removeFromJsonConfig(
+  path: string,
+  write: (path: string, text: string) => void,
+): boolean {
+  const config = readJsonConfig(path, "remove the entry by hand");
+  const servers = config.mcpServers;
+  if (!servers || typeof servers !== "object" || !(SERVER_KEY in servers)) return false;
+  const { [SERVER_KEY]: _removed, ...rest } = servers as Record<string, unknown>;
+  config.mcpServers = rest;
+  write(path, `${JSON.stringify(config, null, 2)}\n`);
+  return true;
+}
 
 /** Add or replace the server in a JSON config with an `mcpServers` map. */
 export function mergeJsonConfig(
@@ -134,19 +203,7 @@ export function mergeJsonConfig(
   entry: unknown,
   write: (path: string, text: string) => void,
 ): string {
-  let config: Record<string, unknown> = {};
-  if (existsSync(path)) {
-    const text = readFileSync(path, "utf8");
-    if (text.trim()) {
-      try {
-        config = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        throw new Error(`${path} is not valid JSON; fix it or add the entry by hand.`);
-      }
-      if (!config || typeof config !== "object" || Array.isArray(config))
-        throw new Error(`${path} is not a JSON object.`);
-    }
-  }
+  const config = readJsonConfig(path, "add the entry by hand");
   const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
   const replaced = SERVER_KEY in servers;
   config.mcpServers = { ...servers, [SERVER_KEY]: entry };
@@ -184,9 +241,10 @@ export async function configureClient(
           : fail(`codex mcp add failed: ${firstLine(r.stderr || r.stdout)}`);
       }
       case "claude-desktop": {
-        const path = claudeDesktopConfig(e);
-        const how = mergeJsonConfig(path, desktopEntry(e, keyPath, spec), write);
-        return { client, label, ok: true, detail: `${how} in ${path}; quit and reopen Claude Desktop` };
+        const done = claudeDesktopConfigs(e).map(
+          (path) => `${mergeJsonConfig(path, desktopEntry(e, keyPath, spec), write)} in ${path}`,
+        );
+        return { client, label, ok: true, detail: `${done.join(", ")}; quit and reopen Claude Desktop` };
       }
       case "cursor": {
         const path = cursorConfig(e.home);
@@ -196,6 +254,42 @@ export async function configureClient(
     }
   } catch (error) {
     return fail((error as Error).message);
+  }
+}
+
+/** Take the server out of one client. Not being there is not a failure. */
+export async function unconfigureClient(
+  client: Client,
+  e: SetupEnv,
+  write: (path: string, text: string) => void,
+): Promise<ClientResult> {
+  const label = LABEL[client];
+  const result = (ok: boolean, detail: string): ClientResult => ({ client, label, ok, detail });
+  const fromFiles = (paths: string[]) => {
+    const removed = paths.filter((path) => removeFromJsonConfig(path, write));
+    return result(
+      true,
+      removed.length
+        ? `removed from ${removed.join(", ")} (the file before is kept as .bak)`
+        : "was not set up",
+    );
+  };
+  try {
+    switch (client) {
+      case "claude-code":
+      case "codex": {
+        const cli = client === "codex" ? "codex" : "claude";
+        if ((await e.exec(cli, ["--version"])).code !== 0) return result(true, "not installed");
+        const r = await e.exec(cli, ["mcp", "remove", SERVER_KEY, ...(cli === "claude" ? ["--scope", "user"] : [])]);
+        return result(true, r.code === 0 ? `removed (${cli} mcp remove)` : "was not set up");
+      }
+      case "claude-desktop":
+        return fromFiles(claudeDesktopConfigs(e));
+      case "cursor":
+        return fromFiles([cursorConfig(e.home)]);
+    }
+  } catch (error) {
+    return result(false, (error as Error).message);
   }
 }
 

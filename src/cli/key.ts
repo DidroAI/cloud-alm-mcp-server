@@ -42,6 +42,9 @@ export function savedKeyPath(env: Env = process.env): string {
 /** True when the value is the key JSON itself rather than a path. */
 export const isInlineJson = (value: string) => value.trimStart().startsWith("{");
 
+/** Windows editors and PowerShell save JSON with a UTF-8 byte order mark. */
+export const stripBom = (text: string) => text.replace(/^\uFEFF/, "");
+
 /**
  * Parse service key text. Never echoes the text: a JSON parse error's own
  * message can quote the input, so it is replaced.
@@ -49,7 +52,7 @@ export const isInlineJson = (value: string) => value.trimStart().startsWith("{")
 export function parseServiceKeyText(text: string, origin: string): ServiceKey {
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(stripBom(text));
   } catch {
     throw new Error(`${origin} is not valid JSON.`);
   }
@@ -65,7 +68,7 @@ export function parseServiceKeyText(text: string, origin: string): ServiceKey {
 /** True when the text is a Cloud ALM API service key. */
 export function isServiceKey(text: string): boolean {
   try {
-    parseServiceKey(JSON.parse(text));
+    parseServiceKey(JSON.parse(stripBom(text)));
     return true;
   } catch {
     return false;
@@ -85,7 +88,9 @@ export function keySource(
   env: Env = process.env,
   exists: (path: string) => boolean,
 ): KeySource | undefined {
-  const value = env[SERVICE_KEY_ENV]?.trim();
+  const raw = env[SERVICE_KEY_ENV]?.trim();
+  // A client that left "${user_config.…}" or "${VAR}" unfilled set nothing.
+  const value = raw && /^\$\{[^}]*\}$/.test(raw) ? undefined : raw;
   if (value) {
     if (isInlineJson(value))
       return { kind: "inline", label: `${SERVICE_KEY_ENV} (inline JSON)` };
@@ -104,7 +109,7 @@ export function loadServiceKey(
   read: (path: string) => string = (p) => readFileSync(p, "utf8"),
 ): ServiceKey {
   if (source.kind === "inline")
-    return parseServiceKeyText(env[SERVICE_KEY_ENV] ?? "", SERVICE_KEY_ENV);
+    return parseServiceKeyText((env[SERVICE_KEY_ENV] ?? "").trim(), SERVICE_KEY_ENV);
   let text: string;
   try {
     text = read(source.path);

@@ -1,5 +1,20 @@
 {
   "name": "cloud-alm",
   "description": "SAP Cloud ALM for agents: an MCP server whose tools follow your service key's scopes (every write waits for your approval) and skills for fit-gap, workshops, status reports, test readiness, defect triage and test design",
-  "version": "0.1.0-beta.2"
+  "version": "0.1.0-beta.2",
+  "author": {
+    "name": "Didro",
+    "url": "https://github.com/DidroAI"
+  },
+  "homepage": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
+  "repository": "https://github.com/DidroAI/cloud-alm-mcp-server",
+  "license": "MIT",
+  "keywords": ["sap", "cloud-alm", "mcp"],
+  "userConfig": {
+    "service_key_file": {
+      "type": "file",
+      "title": "Cloud ALM service key (JSON file)",
+      "description": "The service key file of your \"SAP Cloud ALM API\" instance, downloaded from SAP BTP. Leave empty if `npx -y cloud-alm-mcp-server setup` already saved your key."
+    }
+  }
 }
