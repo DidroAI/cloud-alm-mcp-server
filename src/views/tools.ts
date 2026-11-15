@@ -1502,14 +1502,26 @@ export async function changes(
     if (after(t.modifiedAt)) rows.push({ id: t.displayId, type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || "not run", what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
+  let resultsCut = false;
   let resultMove: { from: { date: string; counts: Record<string, number> }; to: { date: string; counts: Record<string, number> } } | null = null;
   try {
-    const days = Math.min(Math.max(Math.ceil((Date.now() - Date.parse(since.slice(0, 10))) / 86_400_000) + 1, 1), 90);
-    const tests = await calm.queryAnalytics({ dataset: "Tests", period: `C${days}D`, limit: 200 });
+    const days = Math.min(Math.max(Math.ceil(((o.now?.() ?? Date.now()) - Date.parse(since.slice(0, 10))) / 86_400_000) + 1, 1), 90);
+    // This project's rows only, filtered by SAP, every page (up to 2000 rows).
+    const testRows: Record<string, unknown>[] = [];
+    let cut = true;
+    for (let skip = 0; skip < 2000; skip += 200) {
+      const page = await calm.queryAnalytics({ dataset: "Tests", period: `C${days}D`, limit: 200, offset: skip, filters: { projectGUID: snap.project.id } });
+      testRows.push(...page.rows);
+      if (!page.truncated) {
+        cut = false;
+        break;
+      }
+    }
+    if (cut) resultsCut = true;
     const byDay = new Map<string, Record<string, number>>();
-    for (const r of tests.rows) {
+    for (const r of testRows) {
       const date = typeof r.date === "string" ? r.date : null;
-      if (!date || (r.projectGUID && String(r.projectGUID).toLowerCase() !== snap.project.id.toLowerCase())) continue;
+      if (!date || String(r.projectGUID ?? "").toLowerCase() !== snap.project.id.toLowerCase()) continue;
       // A test case's row outside any plan is not a result: count plan rows only, as calm_overview does.
       if (!r.testPlan || r.testPlan === "(None)") continue;
       const status = String(r.status ?? "?").toLowerCase().replace("initial", "not run");
@@ -1540,6 +1552,7 @@ export async function changes(
     resultMove
       ? `Test results in this project's test plans, ${resultMove.from.date}: ${fmt(resultMove.from.counts)} → ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (daily analytics snapshots)`
       : "Test results over time: not available (analytics needs calm-api.analytics.read).",
+    ...(resultsCut ? ["(test results: more than 2000 analytics rows; counted from the first 2000)"] : []),
     "Cloud ALM's API keeps no change log: who changed an item, what field changed, and deleted items are not visible here.",
   ];
   lines.push(...footer(snap, ["tasks", "features", "documents", "testCases"]));

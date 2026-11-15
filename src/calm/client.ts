@@ -1029,6 +1029,7 @@ export class CloudAlm {
     resolution?: string;
     filters?: Record<string, string>;
     limit?: number;
+    offset?: number;
   }): Promise<AnalyticsResult> {
     const { dataset } = input;
     if (!ANALYTICS_DATASETS.includes(dataset))
@@ -1036,7 +1037,7 @@ export class CloudAlm {
         "bad_request",
         `dataset must be one of ${ANALYTICS_DATASETS.join(", ")}`,
       );
-    const { limit } = page({ limit: input.limit ?? DEFAULT_LIMIT });
+    const { limit, offset } = page({ limit: input.limit ?? DEFAULT_LIMIT, offset: input.offset ?? 0 });
     const clauses: string[] = [];
     const code = (value: string, what: string) => {
       if (!/^[A-Za-z0-9]{1,10}$/.test(value))
@@ -1059,6 +1060,7 @@ export class CloudAlm {
       const body = await s.get(`${PATHS.analytics}/${dataset}`, {
         $filter: clauses.length ? clauses.join(" and ") : undefined,
         $top: limit + 1,
+        ...(offset ? { $skip: offset } : {}),
       });
       const all = rowsOf(body);
       const columns = [...new Set(all.flatMap((row) => Object.keys(row)))]

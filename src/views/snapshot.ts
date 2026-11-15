@@ -389,19 +389,29 @@ export class Snapshot {
    * Latest result per test case and test plan, from the analytics `Tests`
    * dataset (today, else yesterday). Rows outside a test plan are skipped.
    */
+  /**
+   * Every row of an analytics dataset for this project (filtered by SAP),
+   * in pages of 200, up to 1000 rows; beyond that the answer says it is cut.
+   */
+  private async analyticsRows(dataset: "Tests" | "Defects", period: string): Promise<Record<string, unknown>[]> {
+    const filters = dataset === "Tests" ? { projectGUID: this.pid } : { project: this.pid };
+    const rows: Record<string, unknown>[] = [];
+    for (let offset = 0; offset < 1000; offset += 200) {
+      const result = await this.calm.queryAnalytics({ dataset, period, limit: 200, offset, filters });
+      rows.push(...result.rows);
+      if (!result.truncated) return rows;
+    }
+    this.truncated = true;
+    return rows;
+  }
+
   testResults(): Promise<Map<string, TestResult[]>> {
     return this.once(
       "testResults",
       async () => {
         const map = new Map<string, TestResult[]>();
         for (const period of ["C1D", "L1D"]) {
-          const result = await this.calm.queryAnalytics({
-            dataset: "Tests",
-            period,
-            limit: 200,
-          });
-          if (result.truncated || result.rows.length >= 200) this.truncated = true;
-          for (const r of result.rows) {
+          for (const r of await this.analyticsRows("Tests", period)) {
             if (String(r.projectGUID ?? "").toLowerCase() !== this.pid.toLowerCase()) continue;
             const id = typeof r.testcaseId === "string" ? r.testcaseId : null;
             const plan = typeof r.testPlan === "string" ? r.testPlan : null;
@@ -442,13 +452,7 @@ export class Snapshot {
       async () => {
         const links: DefectLinks = { byTestCase: new Map(), byDefect: new Map() };
         for (const period of ["C1D", "L1D"]) {
-          const result = await this.calm.queryAnalytics({
-            dataset: "Defects",
-            period,
-            limit: 200,
-          });
-          if (result.truncated) this.truncated = true;
-          const mine = result.rows.filter(
+          const mine = (await this.analyticsRows("Defects", period)).filter(
             (r) => String(r.project ?? "").toLowerCase() === this.pid.toLowerCase(),
           );
           for (const r of mine) {
