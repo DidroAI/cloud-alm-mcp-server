@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
 import { type Check, keyChecks, nodeCheck } from "./checks.js";
 import { clientSnippets, PACKAGE_NAME, packageSpec } from "./clients.js";
@@ -22,6 +22,17 @@ import {
   SERVICE_KEY_ENV,
   savedKeyPath,
 } from "./key.js";
+import {
+  CLIENTS,
+  type Client,
+  LABEL,
+  configureClient,
+  defaultSetupEnv,
+  detectClients,
+  findDownloadedKey,
+  parseClients,
+  type SetupEnv,
+} from "./setup.js";
 
 /** Everything the commands touch outside the file system, for tests. */
 export type Io = {
@@ -33,6 +44,8 @@ export type Io = {
   fetch?: typeof fetch;
   platform?: NodeJS.Platform;
   nodeVersion?: string;
+  /** setup: where clients live and how to run their CLIs. */
+  setup?: Partial<SetupEnv>;
 };
 
 export function version(): string {
@@ -48,14 +61,20 @@ export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM
 Usage:
   ${PACKAGE_NAME} [stdio]          Start the MCP server on stdio (default)
   ${PACKAGE_NAME} http             Start the streamable HTTP server (bearer per request)
+  ${PACKAGE_NAME} setup [file|-]   Find, check and save the service key, then add
+                                   the server to Claude Code, Codex, Claude
+                                   Desktop and Cursor (the ones installed)
+      --client <list>              Only these: claude-code,codex,claude-desktop,
+                                   cursor, all or none
   ${PACKAGE_NAME} init [file|-]    Check a service key, save it, print client config
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
   ${PACKAGE_NAME} doctor           Check the setup: key, token, scopes, API, Node
   ${PACKAGE_NAME} --version | --help
 
-init reads the service key JSON from the file given, or from stdin
-("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
+setup without a file takes the newest service key JSON downloaded to
+~/Downloads in the last week (or in the current directory). init reads the
+file given, or stdin ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
 by you, at:
   ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
   (%APPDATA%\\${PACKAGE_NAME}\\service-key.json on Windows)
@@ -103,19 +122,29 @@ export function writeSecretFile(path: string, text: string) {
   renameSync(tmp, path);
 }
 
-type Flags = { positional: string[]; force: boolean; skipCheck: boolean };
+type Flags = { positional: string[]; force: boolean; skipCheck: boolean; clients?: Client[] };
 
-function parseFlags(args: string[]): Flags {
+function parseFlags(args: string[], command = "init"): Flags {
   const flags: Flags = { positional: [], force: false, skipCheck: false };
-  for (const arg of args) {
-    if (arg === "--force") flags.force = true;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (arg === "--force" && command === "init") flags.force = true;
     else if (arg === "--skip-check") flags.skipCheck = true;
+    else if (command === "setup" && (arg === "--client" || arg.startsWith("--client="))) {
+      const value = arg.includes("=") ? arg.slice(9) : args[++i];
+      if (!value) throw new UsageError("--client needs a value.");
+      try {
+        flags.clients = parseClients(value);
+      } catch (error) {
+        throw new UsageError((error as Error).message);
+      }
+    }
     else if (arg.startsWith("--") && arg !== "-")
       throw new UsageError(`Unknown option ${arg}.`);
     else flags.positional.push(arg);
   }
   if (flags.positional.length > 1)
-    throw new UsageError("init takes one service key file at most.");
+    throw new UsageError(`${command} takes one service key file at most.`);
   return flags;
 }
 
@@ -140,35 +169,115 @@ async function readKeyInput(
   return { text: await io.readStdin(), origin: "The pasted text" };
 }
 
-async function init(io: Io, args: string[]): Promise<number> {
-  const flags = parseFlags(args);
-  const input = await readKeyInput(io, flags.positional[0]);
+/**
+ * Check a key and save it. Undefined when the key did not give a token
+ * (nothing saved) or a different key is saved and replacing is not allowed.
+ */
+async function checkAndSave(
+  io: Io,
+  input: { text: string; origin: string; file?: string },
+  options: { replace: boolean; skipCheck: boolean },
+): Promise<string | undefined> {
   const key = parseServiceKeyText(input.text, input.origin);
   const target = savedKeyPath(io.env);
   const text = `${input.text.trim()}\n`;
-  const unchanged = existsSync(target) && readFileSync(target, "utf8") === text;
-  if (existsSync(target) && !unchanged && !flags.force) {
+  const exists = existsSync(target);
+  const unchanged = exists && readFileSync(target, "utf8") === text;
+  if (exists && !unchanged && !options.replace) {
     io.err(
       `A different key is already saved at ${target}. Pass --force to replace it.`,
     );
-    return 1;
+    return undefined;
   }
 
-  if (!flags.skipCheck) {
+  if (!options.skipCheck) {
     const checks = await keyChecks(key, fetchOption(io));
     printChecks(io, checks);
     if (checks.some((c) => c.name === "Token" && c.status === "fail")) {
       io.err("\nNot saved: the key did not give a token.");
-      return 1;
+      return undefined;
     }
   }
 
   if (!unchanged) writeSecretFile(target, text);
-  io.out(`\nKey ${unchanged ? "already saved" : "saved"} at ${target} (mode 600).`);
+  const how = unchanged ? "already saved" : exists ? "saved, replacing the one before," : "saved";
+  io.out(`\nKey ${how} at ${target} (mode 600).`);
+  return target;
+}
+
+async function init(io: Io, args: string[]): Promise<number> {
+  const flags = parseFlags(args);
+  const input = await readKeyInput(io, flags.positional[0]);
+  const target = await checkAndSave(io, input, { replace: flags.force, skipCheck: flags.skipCheck });
+  if (!target) return 1;
   if (input.file && resolve(input.file) !== resolve(target))
     io.out(`You can now delete ${input.file}.`);
   printSnippets(io, target);
   return 0;
+}
+
+
+async function setup(io: Io, args: string[]): Promise<number> {
+  const flags = parseFlags(args, "setup");
+  const e: SetupEnv = { ...defaultSetupEnv(io.env), platform: io.platform ?? process.platform, ...io.setup };
+
+  let input: { text: string; origin: string; file?: string };
+  const arg = flags.positional[0];
+  if (arg) input = await readKeyInput(io, arg);
+  else {
+    const found = findDownloadedKey([join(e.home, "Downloads"), process.cwd()]);
+    if (found) {
+      io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
+      input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
+    } else if (io.stdinIsTTY) input = await readKeyInput(io, undefined);
+    else {
+      io.err(
+        "No service key found in ~/Downloads from the last week. Download the key's JSON from SAP BTP, or run: " +
+          `${PACKAGE_NAME} setup <file>`,
+      );
+      return 1;
+    }
+  }
+
+  const target = await checkAndSave(io, input, { replace: true, skipCheck: flags.skipCheck });
+  if (!target) return 1;
+
+  const spec = packageSpec(version());
+  const clients = flags.clients ?? (await detectClients(e));
+  if (!clients.length) {
+    io.out("\nNo MCP client found to set up.");
+    printSnippets(io, target);
+    return 0;
+  }
+  io.out("\nMCP clients:");
+  const snippets = clientSnippets(target, e.platform, spec);
+  let failures = 0;
+  for (const client of clients) {
+    const r = await configureClient(client, e, target, spec, writeConfigFile);
+    io.out(`${r.ok ? MARK.ok : MARK.fail} ${r.label.padEnd(14)} ${r.detail}`);
+    if (!r.ok) {
+      failures++;
+      const s = snippets.find((x) => x.client === LABEL[client]);
+      if (s) io.out(`  Add it by hand (${s.where}):\n${s.text.replace(/^/gm, "    ")}`);
+    }
+  }
+  const missing = CLIENTS.filter((c) => !clients.includes(c)).map((c) => LABEL[c]);
+  if (missing.length && !flags.clients)
+    io.out(`  Not found: ${missing.join(", ")}. Run \`${PACKAGE_NAME} init\` to print their configuration.`);
+
+  if (input.file && resolve(input.file) !== resolve(target))
+    io.out(`\nYou can now delete ${input.file}.`);
+  io.out('Open a new chat and ask: "Where does my Cloud ALM project stand?"');
+  io.out(`Check the setup any time with: ${PACKAGE_NAME} doctor`);
+  return failures ? 1 : 0;
+}
+
+/** Write a client's config file, keeping its directory. */
+function writeConfigFile(path: string, text: string) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, path);
 }
 
 function printSnippets(io: Io, keyPath: string) {
@@ -190,7 +299,7 @@ async function doctor(io: Io): Promise<number> {
     checks.push({
       name: "Key",
       status: "fail",
-      detail: `none found: run \`${PACKAGE_NAME} init\` or set ${SERVICE_KEY_ENV}`,
+      detail: `none found: run \`${PACKAGE_NAME} setup\` or set ${SERVICE_KEY_ENV}`,
     });
     printChecks(io, checks);
     return 1;
@@ -214,7 +323,7 @@ async function doctor(io: Io): Promise<number> {
   return failed(checks) ? 1 : 0;
 }
 
-export const COMMANDS = ["init", "doctor", "help", "--help", "-h", "--version", "-v", "version"];
+export const COMMANDS = ["setup", "init", "doctor", "help", "--help", "-h", "--version", "-v", "version"];
 
 /** Run a setup command; returns the exit code. Never prints a secret. */
 export async function runCommand(io: Io, argv: string[]): Promise<number> {
@@ -232,6 +341,8 @@ export async function runCommand(io: Io, argv: string[]): Promise<number> {
       case "-h":
         io.out(HELP);
         return 0;
+      case "setup":
+        return await setup(io, rest);
       case "init":
         return await init(io, rest);
       case "doctor":

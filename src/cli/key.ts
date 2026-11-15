@@ -62,6 +62,16 @@ export function parseServiceKeyText(text: string, origin: string): ServiceKey {
   }
 }
 
+/** True when the text is a Cloud ALM API service key. */
+export function isServiceKey(text: string): boolean {
+  try {
+    parseServiceKey(JSON.parse(text));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Where the key came from, for messages. Never the key itself. */
 export type KeySource =
   | { kind: "inline"; label: string }

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -9,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clientSnippets, shellQuote } from "../src/cli/clients.js";
+import { clientSnippets, packageSpec, shellQuote } from "../src/cli/clients.js";
 import { nodeCheck } from "../src/cli/checks.js";
 import {
   configDir,
@@ -187,7 +188,7 @@ describe("doctor", () => {
   test("without a key, says how to get one", async () => {
     const t = io();
     expect(await runCommand(t.io, ["doctor"])).toBe(1);
-    expect(t.all()).toContain("run `cloud-alm-mcp-server init`");
+    expect(t.all()).toContain("run `cloud-alm-mcp-server setup`");
   });
 
   test("checks the saved key end to end", async () => {
@@ -361,4 +362,87 @@ test("a prerelease pins its version in the setup lines", async () => {
   const lines = clientSnippets("/k.json", "linux", packageSpec("0.1.0-beta.0")).map((s) => s.text).join("\n");
   expect(lines).toContain("npx -y cloud-alm-mcp-server@0.1.0-beta.0");
   expect(lines).toContain('"cloud-alm-mcp-server@0.1.0-beta.0"');
+});
+
+describe("setup", () => {
+  function machine(options: { claude?: boolean; codex?: boolean; desktop?: string; cursor?: boolean } = {}) {
+    const home = join(dir, "home");
+    const nodeDir = join(dir, "node", "bin");
+    mkdirSync(join(home, "Downloads"), { recursive: true });
+    mkdirSync(nodeDir, { recursive: true });
+    writeFileSync(join(nodeDir, "npx"), "");
+    if (options.desktop !== undefined) {
+      mkdirSync(join(home, ".config", "Claude"), { recursive: true });
+      if (options.desktop) writeFileSync(join(home, ".config", "Claude", "claude_desktop_config.json"), options.desktop);
+    }
+    if (options.cursor) mkdirSync(join(home, ".cursor"), { recursive: true });
+    const calls: string[] = [];
+    const exec = async (cmd: string, args: string[]) => {
+      calls.push([cmd, ...args].join(" "));
+      const installed = (cmd === "claude" && options.claude) || (cmd === "codex" && options.codex);
+      return { code: installed ? 0 : 127, stdout: "", stderr: installed ? "" : "not found" };
+    };
+    return { home, nodeDir, calls, setup: { home, exec, execPath: join(nodeDir, "node"), env: {} } };
+  }
+
+  test("takes the newest key in Downloads, saves it and adds the server to the clients found", async () => {
+    const m = machine({ claude: true, desktop: JSON.stringify({ mcpServers: { other: { command: "x" } }, theme: "dark" }), cursor: true });
+    writeFileSync(join(m.home, "Downloads", "notes.json"), '{"a":1}');
+    const keyPath = join(m.home, "Downloads", "calm-demo-key.json");
+    writeFileSync(keyPath, KEY_TEXT);
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup"])).toBe(0);
+    const saved = savedKeyPath(t.io.env);
+    const all = t.all();
+    expect(all).toContain(`Service key: ${keyPath}`);
+    expect(JSON.parse(readFileSync(saved, "utf8"))).toEqual(KEY);
+    expect(m.calls).toContain(`claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=${saved} -- npx -y ${packageSpec(version())}`);
+    expect(m.calls.some((c) => c.startsWith("codex mcp add"))).toBe(false);
+    const desktop = JSON.parse(readFileSync(join(m.home, ".config", "Claude", "claude_desktop_config.json"), "utf8"));
+    expect(desktop.theme).toBe("dark");
+    expect(desktop.mcpServers.other).toEqual({ command: "x" });
+    expect(desktop.mcpServers["cloud-alm"].command).toBe(join(m.nodeDir, "npx"));
+    expect(desktop.mcpServers["cloud-alm"].env.CALM_SERVICE_KEY).toBe(saved);
+    expect(desktop.mcpServers["cloud-alm"].env.PATH.split(":")[0]).toBe(m.nodeDir);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
+    expect(all).toContain("✓ Claude Code");
+    expect(all).toContain("Not found: Codex");
+    expect(all).toContain(`You can now delete ${keyPath}`);
+    expect(all).not.toContain(SECRET);
+    expect(all).not.toContain(CLIENT_ID);
+  });
+
+  test("replaces a key saved before; a broken client config fails with the snippet to add by hand", async () => {
+    const m = machine({ desktop: "{ not json" });
+    const first = io({ fetch: fakeFetch().fetcher });
+    first.io.setup = m.setup;
+    await runCommand(first.io, ["init", keyFile()]);
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    const other = keyFile(JSON.stringify({ ...KEY, extra: "new" }));
+    expect(await runCommand(t.io, ["setup", other])).toBe(1);
+    expect(t.all()).toContain("replacing the one before");
+    expect(t.all()).toContain("✗ Claude Desktop");
+    expect(t.all()).toContain("Add it by hand");
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8")).extra).toBe("new");
+  });
+
+  test("without a key in Downloads and no terminal, says where to get one", async () => {
+    const m = machine();
+    const t = io();
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup"])).toBe(1);
+    expect(t.all()).toContain("No service key found in ~/Downloads");
+  });
+
+  test("--client none saves the key and prints the configuration", async () => {
+    const m = machine({ claude: true });
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile(), "--client", "none"])).toBe(0);
+    expect(m.calls.filter((c) => c.includes("mcp add"))).toEqual([]);
+    expect(t.all()).toContain("[mcp_servers.cloud-alm]");
+    expect(await runCommand(t.io, ["setup", "--client", "vim"])).toBe(2);
+  });
 });

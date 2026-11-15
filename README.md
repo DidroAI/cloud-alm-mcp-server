@@ -24,31 +24,47 @@ an MCP Apps card, the chat, or the client's confirm dialog.
 Requires Node 22 or later.
 
 1. Get a Cloud ALM API service key (below) and download its JSON.
-2. Check it and save it:
+2. Run:
 
    ```sh
-   npx -y cloud-alm-mcp-server init ~/Downloads/calm-read.json
+   npx -y cloud-alm-mcp-server@beta setup
    ```
 
-   `init` gets a token to prove the key works, lists which areas of Cloud
-   ALM its scopes can read, makes one read, then saves the key readable
-   only by you (mode 600) in `~/.config/cloud-alm-mcp-server/` and prints
-   the configuration for Claude Code, Codex, Claude Desktop and Cursor.
-   Paste the JSON instead of naming a file: `init` alone reads stdin.
-   You can delete the downloaded copy afterwards.
-3. Add the server to your client with the printed line, e.g.
+   `setup` takes the newest service key JSON in `~/Downloads` (or the
+   file you name: `setup ~/keys/calm.json`), gets a token to prove it
+   works, lists which areas of Cloud ALM its scopes can read, makes one
+   read, saves the key readable only by you (mode 600) in
+   `~/.config/cloud-alm-mcp-server/`, and adds the server to every client
+   it finds: Claude Code, Codex, Claude Desktop and Cursor. Run it again
+   after rotating the key. You can delete the downloaded copy afterwards.
+3. Open a new chat (quit and reopen Claude Desktop) and ask: *"Where does
+   my Cloud ALM project stand?"*
 
-   ```sh
-   claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=$HOME/.config/cloud-alm-mcp-server/service-key.json -- npx -y cloud-alm-mcp-server
-   ```
+Any time later, `npx -y cloud-alm-mcp-server@beta doctor` checks the key,
+token, scopes, API and Node version.
 
-4. Any time later: `npx -y cloud-alm-mcp-server doctor` checks the key,
-   token, scopes, API and Node version.
+### Let your agent set it up
+
+Download the key, then give Claude Code, Codex or any agent with a
+terminal this prompt:
+
+> Set up the SAP Cloud ALM MCP server for me: run
+> `npx -y cloud-alm-mcp-server@beta setup` in a terminal. It finds the
+> service key JSON I downloaded from SAP BTP, checks it, saves it and adds
+> the server to my MCP clients. Don't open or print the key file. If it
+> finds no key, ask me for the file's path and run
+> `npx -y cloud-alm-mcp-server@beta setup <path>`. Then tell me what it
+> printed and which apps to restart.
+
+`setup --client claude-code,codex` limits it to some clients;
+`--client none` only saves the key and prints the configuration to add by
+hand, as `init` does.
 
 | Command | Does |
 | --- | --- |
 | `cloud-alm-mcp-server` | starts the stdio server (default) |
 | `cloud-alm-mcp-server http` | starts the streamable HTTP server |
+| `cloud-alm-mcp-server setup [file\|-] [--client <list>]` | finds, checks and saves the key, adds the server to the clients installed |
 | `cloud-alm-mcp-server init [file\|-] [--force] [--skip-check]` | checks and saves a key, prints client config |
 | `cloud-alm-mcp-server doctor` | checks the setup |
 | `cloud-alm-mcp-server --version` / `--help` | |
@@ -101,8 +117,8 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
    own (`…metrics.read`, `…jobs.read`, `…exm.read` …). Personal fields
    (assignee names) need `calm-api.tasks.personal.read` and its siblings.
 4. Create a **service binding** (the key) on the instance and download its
-   JSON. Run `cloud-alm-mcp-server init <file>` on it: it saves a copy
-   readable only by you. Never put it in a repository.
+   JSON. Run `cloud-alm-mcp-server setup` (it finds the file in
+   `~/Downloads`): it saves a copy readable only by you. Never put it in a repository.
 
 The key holds `uaa.url`, `uaa.clientid`, `uaa.clientsecret` and
 `endpoints.Api` (e.g. `https://eu20.alm.cloud.sap/api`, regional; the token
@@ -110,7 +126,7 @@ selects your tenant). The token carries no user: calls run as a machine
 with access to the whole tenant. SAP cannot limit a key to one project.
 
 Changed the scopes? The token reflects them at once: rerun
-`cloud-alm-mcp-server doctor`. Rotated the key? `init --force <new file>`.
+`cloud-alm-mcp-server doctor`. Rotated the key? Download the new one and run `setup` again.
 
 ## Tools
 

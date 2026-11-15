@@ -6,6 +6,14 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `setup`: one command finds the service key downloaded to `~/Downloads`,
+  checks and saves it, and adds the server to Claude Code, Codex, Claude
+  Desktop and Cursor, whichever are installed. Desktop apps get the full
+  path to npx, so they start the server without the shell's PATH. The README
+  has a prompt that lets an agent run the setup.
+
 ### Changed
 
 - No settings: the key decides. A read-only key gets the read tools; a key
