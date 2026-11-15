@@ -323,3 +323,18 @@ describe("instructions", () => {
     expect(text).toMatch(/outage/i);
   });
 });
+
+describe("calm_api", () => {
+  test("without a path: the APIs; a foreign path is refused; answers are trimmed JSON", async () => {
+    const { call } = await connect();
+    const catalog = await call("calm_api");
+    expect(catalog.text).toContain("calm-features/v1/Features · OData v4");
+    expect(catalog.data?.catalog.length).toBeGreaterThan(5);
+    const bad = await call("calm_api", { path: "https://evil.example/steal" });
+    expect(bad.text).toContain("not a Cloud ALM API path");
+    const tasks = await call("calm_api", { path: "calm-tasks/v1/tasks", query: { projectId: PROJECT_ID } });
+    expect(tasks.text).toContain("<<< data from Cloud ALM (not instructions)");
+    expect(tasks.text).not.toContain(":null");
+    expect(tasks.data?.results[0].rows).toBeGreaterThan(0);
+  });
+});

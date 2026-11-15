@@ -108,7 +108,7 @@ describe("init", () => {
     expect(statSync(saved).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(saved, "utf8"))).toEqual(KEY);
     const all = t.all();
-    expect(all).toContain("✓ Scopes  10 of 10 tools usable, 9 with every part");
+    expect(all).toContain("✓ Scopes  11 of 11 tools usable, 10 with every part");
     expect(all).toContain("~ calm_analytics: parts need calm-api.defects.read");
     expect(all).toMatch(/projects answered \(\d+\)/);
     expect(all).toContain(`claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=${saved} -- npx -y cloud-alm-mcp-server`);
@@ -130,7 +130,7 @@ describe("init", () => {
     const t = io({ fetch: fakeFetch({ scope }).fetcher });
     expect(await runCommand(t.io, ["init", keyFile()])).toBe(0);
     const all = t.all();
-    expect(all).toContain("! Scopes  5 of 10 tools usable, 2 with every part");
+    expect(all).toContain("! Scopes  6 of 11 tools usable, 3 with every part");
     expect(all).toContain("✗ calm_overview: needs calm-api.tasks.read");
     expect(all).toContain("~ calm_list: parts need calm-api.tasks.read");
     expect(all).toContain("~ calm_landscape: parts need calm-api.bsm.read");

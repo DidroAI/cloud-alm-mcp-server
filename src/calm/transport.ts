@@ -188,7 +188,7 @@ export class Session {
    * service names and validated ids) and return the parsed JSON.
    */
   async get(path: string, query?: Query): Promise<unknown> {
-    if (!/^[A-Za-z0-9_\-/]+$/.test(path) || path.startsWith("/"))
+    if (!/^[A-Za-z0-9_\-/]+(\/\$metadata)?$/.test(path) || path.startsWith("/"))
       throw new CloudAlmError("bad_request", "bad path");
     const url = `${this.root}/${path}${queryString(query)}`;
     for (let attempt = 0; ; attempt++) {

@@ -39,6 +39,7 @@ import {
   tag,
 } from "./views/write.js";
 import { forgetSnapshots } from "./views/snapshot.js";
+import { api } from "./views/api.js";
 import { GAPS_OUT, GET_OUT, LIST_OUT, LOOSE_OUT } from "./schemas.js";
 import { NOTHING_TO_DO } from "./views/items.js";
 import {
@@ -442,6 +443,20 @@ export function createServer(
     },
     LOOSE_OUT,
   );
+  const apiPath = z.string().min(3).max(300).describe("Path under the API root, e.g. calm-features/v1/Features or calm-tasks/v1/tasks/{id}/comments");
+  const apiQuery = z.record(z.string(), z.string().max(1000)).optional().describe('Query options, e.g. {"$filter":"contains(title,\'credit\')","$top":"20"} or {"projectId":"…","type":"CALMDEF"}');
+  tool(
+    "calm_api",
+    "Read the Cloud ALM API",
+    "Read any Cloud ALM API (GET only) when no other tool answers: compose your own calls, e.g. OData $filter/$expand on features, documents, test cases. Without a path: the APIs and their query options. Up to 5 requests at once; answers are trimmed JSON.",
+    {
+      path: apiPath.optional(),
+      query: apiQuery,
+      requests: z.array(z.object({ path: apiPath, query: apiQuery })).max(5).optional().describe("Several GETs in one call"),
+    },
+    (a) => api(calm, defined(a)),
+    LOOSE_OUT,
+  );
   tool(
     "calm_landscape",
     "Landscape and service status",
@@ -733,5 +748,6 @@ export const TOOL_NAMES = [
   "calm_trace",
   "calm_gaps",
   "calm_analytics",
+  "calm_api",
   "calm_landscape",
 ] as const;

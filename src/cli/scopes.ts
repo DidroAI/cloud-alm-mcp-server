@@ -17,6 +17,7 @@ export const TOOL_SCOPES: Record<string, ToolScopes> = {
   calm_projects: { core: s("projects.read"), extra: [] },
   calm_team: { core: s("projects.read"), extra: [] },
   calm_changes: { core: s("projects.read", "tasks.read"), extra: s("features.read", "documents.read", "testcases.read", "analytics.read", "tests.read") },
+  calm_api: { core: s("projects.read"), extra: [] },
   calm_list: {
     core: s("projects.read"),
     extra: s("tasks.read", "features.read", "documents.read", "testcases.read", "testplans.read", "processmanagement.read", "lib.read"),
