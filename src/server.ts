@@ -529,6 +529,7 @@ export function createServer(
         assignee: z.string().min(1).max(100).optional().describe("User id of a project team member"),
         startDate: z.string().optional().describe("YYYY-MM-DD"),
         dueDate: z.string().optional().describe("YYYY-MM-DD"),
+        testCase: ref.optional().describe("Defects: the test case it was found in (named in the description; warns if an open defect already covers it)"),
         tags: z.array(z.string().min(1).max(256)).max(20).optional(),
         projectId,
         dryRun,
@@ -540,7 +541,7 @@ export function createServer(
     tool(
       "calm_update",
       "Change items",
-      "Change 1–20 tasks, features or manual test cases (same changes for each). Tasks: title, description, status, priority, assignee, startDate, dueDate, timebox, obsolete. Features: title, description, status, priority. Manual test cases: title, prepared, priority, addActivity (appends an activity with steps). Only changed fields are sent; answers before → after per field. Documents cannot be changed after create.",
+      "Change 1–20 tasks, features or manual test cases (same changes for each). Tasks: title, description, status, priority, assignee, startDate, dueDate, timebox, obsolete, comment. Features: title, description, status, priority. Manual test cases: title, prepared, priority, addActivity (appends an activity with steps). Only changed fields are sent; answers before → after per field. Documents cannot be changed after create.",
       {
         ids: z.array(ref).min(1).max(20),
         title: z.string().min(1).max(250).optional().describe("One item at a time"),
@@ -564,6 +565,7 @@ export function createServer(
           .object({ title: z.string().min(1).max(250), steps: z.array(step).min(1).max(50) })
           .optional()
           .describe("Test cases: append an activity with these steps"),
+        comment: z.string().min(1).max(4000).optional().describe("Tasks: add this comment with the change (one approval)"),
         projectId,
         dryRun,
       },

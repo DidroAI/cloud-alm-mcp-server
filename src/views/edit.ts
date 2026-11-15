@@ -193,13 +193,15 @@ export type UpdateInput = {
   obsolete?: boolean;
   prepared?: boolean;
   addActivity?: { title: string; steps: Step[] };
+  /** Tasks: a comment added with the change, under the same approval. */
+  comment?: string;
   projectId?: string;
   dryRun?: boolean;
 };
 type Field = Exclude<keyof UpdateInput, "ids" | "projectId" | "dryRun">;
 
 const FIELDS: Record<Item["kind"], Field[]> = {
-  task: ["title", "description", "status", "priority", "assignee", "startDate", "dueDate", "timebox", "obsolete"],
+  task: ["title", "description", "status", "priority", "assignee", "startDate", "dueDate", "timebox", "obsolete", "comment"],
   feature: ["title", "description", "status", "priority"],
   testCase: ["title", "prepared", "priority", "addActivity"],
   document: [],
@@ -258,7 +260,7 @@ function refuseFields(items: Item[], input: UpdateInput) {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-async function planTask(calm: CloudAlm, snap: Snapshot, item: Item & { kind: "task" }, input: UpdateInput): Promise<Planned> {
+async function planTask(calm: CloudAlm, writer: CloudAlmWriter, snap: Snapshot, item: Item & { kind: "task" }, input: UpdateInput): Promise<Planned> {
   const t = item.task;
   const before = await readRow(calm, `${PATHS.tasks}/${t.id}`);
   const type = str(before.type) ?? t.type ?? "";
@@ -310,7 +312,17 @@ async function planTask(calm: CloudAlm, snap: Snapshot, item: Item & { kind: "ta
     parts.push({ field: "timebox", body: { timeboxId: box.id }, show: name });
   }
   if (input.obsolete !== undefined) parts.push({ field: "obsolete", body: { obsolete: input.obsolete }, show: (r) => (r.obsolete === true ? "yes" : "no") });
-  return { item, path: `${PATHS.tasks}/${t.id}`, scope: "tasks.write", before, parts, notes };
+  const text = input.comment?.trim();
+  const extra = text
+    ? {
+        line: `comment: "${text.length > 300 ? `${text.slice(0, 300)}…` : text}"`,
+        run: async () => {
+          await needing("tasks.write", () => writer.post(`${PATHS.tasks}/${t.id}/comments`, { text: textToHtml(text) }));
+          return "comment added";
+        },
+      }
+    : undefined;
+  return { item, path: `${PATHS.tasks}/${t.id}`, scope: "tasks.write", before, parts, notes, ...(extra ? { extra } : {}) };
 }
 
 async function planFeature(calm: CloudAlm, item: Item & { kind: "feature" }, input: UpdateInput): Promise<Planned> {
@@ -410,7 +422,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
   refuseFields(items, input);
   const plans: Planned[] = [];
   for (const item of items) {
-    if (item.kind === "task") plans.push(await planTask(calm, snap, item, input));
+    if (item.kind === "task") plans.push(await planTask(calm, writer, snap, item, input));
     else if (item.kind === "feature") plans.push(await planFeature(calm, item, input));
     else if (item.kind === "testCase") plans.push(await planTestCase(calm, writer, item, input));
   }
@@ -507,8 +519,24 @@ export async function remove(
   if (refused.length) throw new CloudAlmError("bad_request", refused.join("; "));
   const plans: DeletePlan[] = [];
   for (const item of items) plans.push(await deletePlan(calm, writer, snap, item, input));
+  // Warn about what a bulk delete takes with it.
+  const warnings: string[] = [];
+  const hardTasks = items.filter((i): i is Item & { kind: "task" } => i.kind === "task" && !input.soft);
+  if (hardTasks.length) {
+    const tasks = await snap.tasks();
+    const byType = new Map<string, number>();
+    for (const i of hardTasks) byType.set(i.task.type ?? "", (byType.get(i.task.type ?? "") ?? 0) + 1);
+    for (const [type, n] of byType) {
+      const all = tasks.filter((t) => t.type === type).length;
+      if (n === all && n > 1) warnings.push(`this deletes every ${typeLabel(type)} in the project (${n} of ${n})`);
+    }
+    const links = await snap.defects().catch(() => null);
+    const fromTests = hardTasks.filter((i) => links?.byDefect.has(i.task.id.toLowerCase())).length;
+    if (fromTests) warnings.push(`${fromTests} of them record a failed test (their test case loses its defect)`);
+    if (hardTasks.length >= 3 || warnings.length) warnings.push("soft: true marks them obsolete instead, which can be undone");
+  }
   if (dry(o, input.dryRun))
-    return [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`)].join("\n");
+    return [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`), ...(warnings.length ? [`Warning: ${warnings.join("; ")}.`] : [])].join("\n");
   const lines: string[] = [];
   let failed = 0;
   let firstError: unknown;

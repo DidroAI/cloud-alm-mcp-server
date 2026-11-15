@@ -315,6 +315,7 @@ describe("calm_delete", () => {
         "Dry run, nothing sent. Would:",
         '- delete 3-4 defect "Credit block not set for export orders" (status open) with its comments and links; cannot be undone (soft: true marks it obsolete instead, which SAP recommends)',
         '- delete 7-1 document "Credit design" (solution design, with its 3 links); cannot be undone',
+        "Warning: 1 of them record a failed test (their test case loses its defect); soft: true marks them obsolete instead, which can be undone.",
       ].join("\n"),
     );
     const f = await call("calm_delete", { ids: ["3-4", "6-1"] });
@@ -420,4 +421,29 @@ describe("title codes in write tools", () => {
     const c = await call("calm_comment", { task: "REQ-01", text: "x", dryRun: true });
     expect(c.text).toContain("3-1");
   });
+});
+
+test("a defect from a test case names it, and warns about an open defect for it", async () => {
+  const { call, posts } = await connect();
+  const r = await call("calm_create_task", { type: "defect", title: "Block missing again", testCase: "8-1-1", dryRun: true });
+  expect(r.text).toContain('Found in test case 8-1-1 "Order blocked by credit limit"');
+  expect(r.text).toContain("an open defect already exists for 8-1-1");
+  expect(posts).toEqual([]);
+  const bad = await call("calm_create_task", { type: "requirement", title: "x", testCase: "8-1-1", dryRun: true });
+  expect(bad.text).toContain("testCase is for defects");
+});
+
+test("calm_update adds a comment with the change, in one call", async () => {
+  const { call } = await connect();
+  const r = await call("calm_update", { ids: ["3-3"], status: "blocked", comment: "Waiting for the credit team.", dryRun: true });
+  expect(r.text).toContain('comment: "Waiting for the credit team."');
+});
+
+test("deleting defects raised from tests warns, and points to soft", async () => {
+  const { call } = await connect();
+  const all = await call("calm_list", { types: ["defect"], limit: 100 });
+  const ids = [...all.text.matchAll(/- (3-\d+) · defect/g)].map((m) => m[1]);
+  const r = await call("calm_delete", { ids, dryRun: true });
+  expect(r.text).toContain("record a failed test");
+  expect(r.text).toContain("soft: true marks them obsolete instead");
 });

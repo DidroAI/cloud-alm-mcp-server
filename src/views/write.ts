@@ -115,8 +115,11 @@ export async function createTestCase(
   };
   const steps = input.activities.reduce((n, a) => n + a.steps.length, 0);
   const plan = `test case "${body.title}" in scope "${scopeName}" with ${input.activities.length} activities and ${steps} steps${covered.length ? `, covering ${covered.map(label).join("; ")}` : ""}`;
+  const outline = input.activities
+    .flatMap((a, i) => [`${i + 1}. ${a.title}`, ...a.steps.map((st, j) => `   ${i + 1}.${j + 1} ${st.title} — do: ${st.description} — expect: ${st.expected}${st.evidence ? " [evidence]" : ""}`)])
+    .join("\n");
   if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\nNote: test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope.`;
+    return `${dryNote(o)} Would create ${plan}.\n${outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline}\nNote: test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope.`;
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
     uuid?: string;
     displayId?: string;
@@ -423,12 +426,14 @@ export async function createTask(
     startDate?: string;
     dueDate?: string;
     tags?: string[];
+    testCase?: string;
     projectId?: string;
     dryRun?: boolean;
   },
   o: WriteOptions,
 ) {
   for (const t of input.tags ?? []) checkTag(t);
+  if (input.testCase && input.type !== "defect") throw new CloudAlmError("bad_request", "testCase is for defects: the test case the defect was found in");
   for (const field of ["startDate", "dueDate"] as const)
     if (input[field] && !/^\d{4}-\d{2}-\d{2}$/.test(input[field] as string))
       throw new CloudAlmError("bad_request", `${field} must be YYYY-MM-DD`);
@@ -449,11 +454,30 @@ export async function createTask(
     throw new CloudAlmError("bad_request", `the project has ${scopes.length} scopes; give a requirement, or create it in the Cloud ALM UI`);
   const scopeId = parent?.scopeId ?? scopes[0]?.id;
   const scopeName = parent?.scopeName ?? scopes[0]?.name ?? null;
+  // The test case a defect was found in. Cloud ALM's API refuses to link a
+  // defect to a test case ("must be a User Story or Requirement"), so the
+  // test case is named at the top of the description.
+  const warnings: string[] = [];
+  let found = "";
+  if (input.testCase) {
+    const item = (await itemsByRef(snap, [input.testCase]))[0];
+    if (item?.kind !== "testCase") throw new CloudAlmError("bad_request", `${input.testCase} is not a test case`);
+    const tc = item.testCase;
+    const [results, links] = await Promise.all([snap.testResults().catch(() => new Map()), snap.defects().catch(() => null)]);
+    const latest = (results.get(tc.id) ?? []) as { status: string; plan: string; passed: number; steps: number }[];
+    found = `Found in test case ${tc.displayId} "${tc.title ?? ""}"${latest.length ? ` (latest: ${latest.map((r) => `${r.status.toLowerCase()}, ${r.passed} of ${r.steps} steps passed in ${r.plan}`).join("; ")})` : ""}.`;
+    const open = (links?.byTestCase.get(tc.id.toLowerCase()) ?? [])
+      .map((id) => tasks.find((t) => t.id.toLowerCase() === id))
+      .filter((t): t is NonNullable<typeof t> => !!t && !/DONE|CLOSE|NO$|NR$/.test(t.status ?? ""));
+    if (open.length) warnings.push(`an open defect already exists for ${tc.displayId}: ${open.map((t) => label(t)).join(", ")}; check it is not the same problem`);
+    warnings.push(`Cloud ALM's API cannot link a defect to a test case: the description names ${tc.displayId}`);
+  }
+  const description = [found, input.description?.trim()].filter(Boolean).join("\n\n");
   const body = {
     projectId: snap.project.id,
     type: TASK_TYPES[input.type],
     title,
-    ...(input.description ? { description: textToHtml(input.description) } : {}),
+    ...(description ? { description: textToHtml(description) } : {}),
     priorityId: input.priority ?? 30,
     ...(input.assignee ? { assigneeId: input.assignee } : {}),
     ...(input.startDate ? { startDate: input.startDate } : {}),
@@ -462,7 +486,8 @@ export async function createTask(
     ...(parent ? { parentId: parent.id } : {}),
   };
   const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.assignee ? `, assigned to ${input.assignee}` : ""}${input.startDate ? `, start ${input.startDate}` : ""}${input.dueDate ? `, due ${input.dueDate}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
-  if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.`;
+  const extra = `${description ? `\nDescription: ${description.length > 600 ? `${description.slice(0, 600)} …` : description}` : ""}${warnings.length ? `\nNote: ${warnings.join("; ")}.` : ""}`;
+  if (dry(o, input.dryRun)) return `${dryNote(o)} Would create ${plan}.${extra}`;
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
   if (!created?.id)
     return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
