@@ -73,18 +73,18 @@ Or pick your client:
 
 All channels, by hand and in detail: [docs/install.md](docs/install.md).
 
-### Let your agent set it up
+### Or let your agent do it
 
-Download the key, then give Claude Code, Codex or any agent with a terminal
-this prompt:
+Download the key, then paste this into Claude Code, Codex, Cursor's agent or
+any assistant with a terminal:
 
-> Set up the SAP Cloud ALM MCP server for me: run
-> `npx -y cloud-alm-mcp-server@beta setup` in a terminal. It finds the
-> service key JSON I downloaded from SAP BTP, checks it, saves it and adds
-> the server to my MCP clients. Don't open or print the key file. If it
-> finds no key, ask me for the file's path and run
-> `npx -y cloud-alm-mcp-server@beta setup <path>`. Then tell me what it
-> printed and which apps to restart.
+```text
+Set up the SAP Cloud ALM MCP server for me: run `npx -y cloud-alm-mcp-server@beta setup` and follow what it prints (instructions for agents: https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/agent-setup.md). Never open or print my service key file.
+```
+
+Tested with Codex and Claude Code: they run `setup`, check with `doctor`,
+and tell you what to restart, without reading the key.
+[What the agent follows](docs/agent-setup.md).
 
 ## 3. Ask
 

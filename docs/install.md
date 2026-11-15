@@ -25,6 +25,12 @@ npx -y cloud-alm-mcp-server@beta doctor      # check key, token, scopes, API
 npx -y cloud-alm-mcp-server@beta uninstall   # remove it from the clients (--key: and the saved key)
 ```
 
+## Paste a prompt into your agent
+
+```text
+Set up the SAP Cloud ALM MCP server for me: run `npx -y cloud-alm-mcp-server@beta setup` and follow what it prints (instructions for agents: https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/agent-setup.md). Never open or print my service key file.
+```
+
 ## 2. Claude Desktop: one-click extension (.mcpb)
 
 No terminal, no Node.js to install.
