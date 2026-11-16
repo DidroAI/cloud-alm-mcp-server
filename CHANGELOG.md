@@ -12,7 +12,7 @@ First release. The same server as 0.1.0-beta.3, plus:
 
 ### Added
 
-- A 2-minute setup video with narration (`docs/media/setup-tutorial.mp4`),
+- A 2-minute setup video with narration, played in the README
   linked from the README and the service key guide.
 - Instructions for AI agents (`docs/agent-setup.md`) and a one-paragraph
   prompt that sets the server up from Claude Code, Codex or Cursor.
