@@ -1,3 +1,5 @@
+<img src="assets/icon.png" alt="" width="72" align="right">
+
 # SAP Cloud ALM for your AI assistant
 
 [![npm](https://img.shields.io/npm/v/cloud-alm-mcp-server?label=npm)](https://www.npmjs.com/package/cloud-alm-mcp-server)

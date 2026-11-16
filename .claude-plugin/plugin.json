@@ -1,15 +1,15 @@
 {
   "name": "cloud-alm",
   "description": "SAP Cloud ALM for agents: an MCP server whose tools follow your service key's scopes (every write waits for your approval) and skills for fit-gap, workshops, status reports, test readiness, defect triage and test design",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": {
     "name": "Didro",
-    "url": "https://github.com/DidroAI"
+    "url": "https://didro.ai"
   },
   "homepage": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
   "repository": "https://github.com/DidroAI/cloud-alm-mcp-server",
   "license": "MIT",
-  "keywords": ["sap", "cloud-alm", "mcp"],
+  "keywords": ["sap", "sap-cloud-alm", "cloud-alm", "sap-btp", "alm", "requirements", "test-management", "fit-gap", "mcp"],
   "userConfig": {
     "service_key_file": {
       "type": "file",

@@ -23,7 +23,7 @@ manifest="$(node -p 'require(process.argv[1]).version' "$root/manifest.json")"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-cp -R "$root/dist" "$root/skills" "$root/scopes" "$stage/"
+cp -R "$root/dist" "$root/skills" "$root/scopes" "$root/assets" "$stage/"
 cp "$root/package.json" "$root/LICENSE" "$root/manifest.json" "$root/PRIVACY.md" "$root/.mcpbignore" "$stage/"
 
 # Production dependencies only; no install scripts run.

@@ -3,7 +3,10 @@
   "name": "io.github.DidroAI/cloud-alm-mcp-server",
   "title": "SAP Cloud ALM",
   "description": "SAP Cloud ALM: requirements, features, tests, defects, landscape; writes wait for your approval.",
-  "version": "0.1.1",
+  "version": "0.1.2",
+  "icons": [
+    { "src": "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", "mimeType": "image/png", "sizes": ["512x512"] }
+  ],
   "websiteUrl": "https://github.com/DidroAI/cloud-alm-mcp-server#readme",
   "repository": {
     "url": "https://github.com/DidroAI/cloud-alm-mcp-server",
@@ -14,7 +17,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "cloud-alm-mcp-server",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "environmentVariables": [

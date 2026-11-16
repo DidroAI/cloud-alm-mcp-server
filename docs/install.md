@@ -43,6 +43,13 @@ No terminal, no Node.js to install.
    (JSON file)".
 4. Open a new chat and ask: "Where does my Cloud ALM project stand?"
 
+Claude Desktop warns that the extension gets access to your computer and
+that its developer information is not verified by Anthropic. It shows this
+for every extension installed from a file rather than from Anthropic's
+directory. The extension runs `dist/cli.js` from this repository on your
+machine and talks only to SAP ([PRIVACY.md](../PRIVACY.md)); each release is
+built by GitHub Actions from a tagged commit.
+
 Badge:
 
 ```markdown

@@ -6,6 +6,14 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-16
+
+### Added
+
+- An icon for the Claude Desktop extension, the MCP Registry listing and the
+  server's `serverInfo` (with a title and website), and a social preview.
+- The extension and the plugin name didro.ai as their publisher.
+
 ### Changed
 
 - Releases publish through npm trusted publishing only (no token); the

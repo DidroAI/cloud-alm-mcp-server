@@ -59,7 +59,7 @@ import {
   type ViewOptions,
 } from "./views/tools.js";
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.1.1";
+export const SERVER_VERSION = "0.1.2";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
@@ -167,7 +167,13 @@ export function createServer(
 ): McpServer {
   const subject = options.approvalSubject ?? "local";
   const server = new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      title: "SAP Cloud ALM",
+      websiteUrl: "https://github.com/DidroAI/cloud-alm-mcp-server",
+      icons: [{ src: "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", mimeType: "image/png", sizes: ["512x512"] }],
+    },
     {
       instructions: `${INSTRUCTIONS} ${
         options.writer && options.writeMode === "on"
