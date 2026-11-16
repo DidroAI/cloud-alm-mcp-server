@@ -36,7 +36,7 @@ export function packageSpec(version?: string): string {
 
 /**
  * How to run this CLI again, as the user must type it: the bare command
- * from a global install, else through npx (`npx -y cloud-alm-mcp-server@beta`).
+ * from a global install, else through npx (`npx -y cloud-alm-mcp-server`).
  */
 export function cliCommand(
   spec: string,

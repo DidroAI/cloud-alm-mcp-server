@@ -6,6 +6,25 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-16
+
+First release. The same server as 0.1.0-beta.3, plus:
+
+### Added
+
+- A 2-minute setup video with narration (`docs/media/setup-tutorial.mp4`),
+  linked from the README and the service key guide.
+- Instructions for AI agents (`docs/agent-setup.md`) and a one-paragraph
+  prompt that sets the server up from Claude Code, Codex or Cursor.
+- Contributor guides: how a change lands, issue templates for bugs,
+  features and questions, `SUPPORT.md`, code owners.
+
+### Changed
+
+- Install with `npx -y cloud-alm-mcp-server`, without `@beta`; `setup`
+  writes the bare name into client configurations. Configurations from the
+  beta keep working: the `beta` tag follows the release.
+
 ## [0.1.0-beta.3] - 2026-11-15
 
 ### Added
@@ -252,7 +271,7 @@ All notable changes to this package. The format follows
   workflow (tag `v*` → `npm publish --provenance`) that stays inert until
   an `NPM_TOKEN` secret exists.
 
-## 0.1.0
+## Before the betas
 
 - First version: read-only Cloud ALM reader and MCP server, stdio mode
   with a service key, streamable HTTP mode with a bearer per request.

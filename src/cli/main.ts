@@ -57,7 +57,7 @@ export type Io = {
 
 export { version };
 
-/** This CLI as the user must type it: `npx -y cloud-alm-mcp-server@beta`, or the bare name from a global install. */
+/** This CLI as the user must type it: `npx -y cloud-alm-mcp-server` (`@beta` for a prerelease), or the bare name from a global install. */
 const cli = (io: Io) => cliCommand(packageSpec(version()), io.env, io.scriptPath);
 
 export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM

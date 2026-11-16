@@ -207,7 +207,7 @@ describe("doctor", () => {
   test("without a key, says how to get one", async () => {
     const t = io();
     expect(await runCommand(t.io, ["doctor"])).toBe(1);
-    expect(t.all()).toContain("run `npx -y cloud-alm-mcp-server@beta setup`");
+    expect(t.all()).toContain("run `npx -y cloud-alm-mcp-server setup`");
   });
 
   test("checks the saved key end to end", async () => {
@@ -392,7 +392,7 @@ test("a prerelease runs under the beta tag, a release under the bare name", () =
 });
 
 describe("follow-up commands are runnable as printed", () => {
-  const spec = "cloud-alm-mcp-server@beta";
+  const spec = "cloud-alm-mcp-server";
   test("through npx unless the CLI is installed globally", () => {
     expect(cliCommand(spec, {}, "/home/u/.npm/_npx/ab12/node_modules/cloud-alm-mcp-server/dist/cli.js")).toBe(`npx -y ${spec}`);
     expect(cliCommand(spec, { npm_command: "exec" }, "/x/node_modules/cloud-alm-mcp-server/dist/cli.js")).toBe(`npx -y ${spec}`);
@@ -404,10 +404,10 @@ describe("follow-up commands are runnable as printed", () => {
   test("init, doctor and usage errors name the npx command; a global install the bare one", async () => {
     const t = io({ fetch: fakeFetch().fetcher });
     expect(await runCommand(t.io, ["init", keyFile()])).toBe(0);
-    expect(t.all()).toContain("check the setup any time with: npx -y cloud-alm-mcp-server@beta doctor");
+    expect(t.all()).toContain("check the setup any time with: npx -y cloud-alm-mcp-server doctor");
     const u = io();
     expect(await runCommand(u.io, ["init", "--nope"])).toBe(2);
-    expect(u.all()).toContain("See npx -y cloud-alm-mcp-server@beta --help.");
+    expect(u.all()).toContain("See npx -y cloud-alm-mcp-server --help.");
     const g = io({ env: { CALM_CONFIG_DIR: join(dir, "empty") } });
     g.io.scriptPath = "/usr/local/lib/node_modules/cloud-alm-mcp-server/dist/cli.js";
     expect(await runCommand(g.io, ["doctor"])).toBe(1);
@@ -416,7 +416,7 @@ describe("follow-up commands are runnable as printed", () => {
 
   test("the stdio server without a key says how to set up", () => {
     expect(() => stdioServer({ CALM_CONFIG_DIR: join(dir, "none") })).toThrow(
-      /not set up yet.*npx -y cloud-alm-mcp-server@beta setup/,
+      /not set up yet.*npx -y cloud-alm-mcp-server setup/,
     );
   });
 });
@@ -501,7 +501,7 @@ describe("setup", () => {
     expect(await runCommand(t.io, ["setup", "--client", "none"])).toBe(0);
     const err = t.err.join("\n");
     expect(err).toContain("No service key found in ~/Downloads from the last week.");
-    expect(err).toContain("npx -y cloud-alm-mcp-server@beta setup <file>");
+    expect(err).toContain("npx -y cloud-alm-mcp-server setup <file>");
     expect(err.indexOf("No service key found")).toBeLessThan(err.indexOf("Paste the service key JSON"));
     expect(existsSync(savedKeyPath(t.io.env))).toBe(true);
   });
@@ -543,10 +543,10 @@ describe("setup", () => {
     const t = io({ fetch: fakeFetch().fetcher });
     t.io.setup = m.setup;
     expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
-    expect(t.all()).toContain("Check the setup any time with: npx -y cloud-alm-mcp-server@beta doctor");
-    expect(t.all()).toContain("Run `npx -y cloud-alm-mcp-server@beta init`");
+    expect(t.all()).toContain("Check the setup any time with: npx -y cloud-alm-mcp-server doctor");
+    expect(t.all()).toContain("Run `npx -y cloud-alm-mcp-server init`");
     expect(m.calls).toContain(
-      `claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=${savedKeyPath(t.io.env)} -- npx -y cloud-alm-mcp-server@beta`,
+      `claude mcp add cloud-alm --scope user -e CALM_SERVICE_KEY=${savedKeyPath(t.io.env)} -- npx -y cloud-alm-mcp-server`,
     );
   });
 
@@ -568,7 +568,7 @@ describe("setup", () => {
       const config = JSON.parse(readFileSync(join(folder, "claude_desktop_config.json"), "utf8"));
       expect(config.mcpServers["cloud-alm"]).toEqual({
         command: "npx",
-        args: ["-y", "cloud-alm-mcp-server@beta"],
+        args: ["-y", "cloud-alm-mcp-server"],
         env: { CALM_SERVICE_KEY: savedKeyPath(t.io.env) },
       });
     }
@@ -670,7 +670,7 @@ describe("uninstall", () => {
     expect(all).toContain("✓ Codex          not installed");
     expect(all).toContain("✓ Cursor         was not set up");
     expect(existsSync(savedKeyPath(t.io.env))).toBe(true);
-    expect(all).toContain("npx -y cloud-alm-mcp-server@beta uninstall --key");
+    expect(all).toContain("npx -y cloud-alm-mcp-server uninstall --key");
   });
 
   test("--key also deletes the saved key; --client narrows; a second run changes nothing", async () => {
