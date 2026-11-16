@@ -31,8 +31,9 @@ jobs:
       - run: bun run test
       - run: bun run build
 
-  # Trusted publishing (OIDC): npm trusts this workflow, no token needed.
-  # NPM_TOKEN, if still set, is the fallback until trusted publishing is on.
+  # Trusted publishing (OIDC): npm trusts this workflow, no token needed. The
+  # trusted publisher may publish but not move dist-tags: a prerelease goes
+  # out under beta, a release under latest, and nothing else is retagged.
   publish:
     needs: check
     runs-on: ubuntu-latest
@@ -58,39 +59,13 @@ jobs:
       - run: bun run build
       # Trusted publishing needs npm 11.5.1 or later.
       - run: npm install -g npm@11
-      # Checked by the check job; no scripts run with the token.
+      # Checked by the check job; no package scripts run while publishing.
       # A prerelease version (0.1.0-beta.0) goes out under the beta tag.
       - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           tag=latest
           case "$(node -p 'require("./package.json").version')" in *-*) tag=beta ;; esac
           npm publish --provenance --access public --tag "$tag" --ignore-scripts
-      # Until a release exists, latest follows the newest beta, so a bare
-      # `npx cloud-alm-mcp-server` gets it.
-      - name: Point latest at the beta while there is no release
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          # Trusted publishing covers publish only; moving a tag needs a token.
-          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::notice::no NPM_TOKEN: latest not moved"; exit 0; fi
-          version="$(node -p 'require("./package.json").version')"
-          latest="$(npm view cloud-alm-mcp-server dist-tags.latest 2>/dev/null || true)"
-          case "$version" in *-*)
-            case "$latest" in ""|*-*) npm dist-tag add "cloud-alm-mcp-server@$version" latest ;; esac ;;
-          esac
-      # Configurations written during the beta run `cloud-alm-mcp-server@beta`:
-      # a release moves the beta tag too, so they get it.
-      - name: Point beta at the release
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::notice::no NPM_TOKEN: beta not moved"; exit 0; fi
-          version="$(node -p 'require("./package.json").version')"
-          case "$version" in *-*) exit 0 ;; esac
-          npm dist-tag add "cloud-alm-mcp-server@$version" beta
-
       # Official MCP Registry: server.json, proven by this repository's OIDC
       # token (namespace io.github.DidroAI) and by "mcpName" in the package
       # just published. Never fatal: the npm release above stands.

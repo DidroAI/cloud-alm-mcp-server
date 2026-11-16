@@ -6,6 +6,11 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Releases publish through npm trusted publishing only (no token); the
+  `beta` tag stays on 0.1.0.
+
 ## [0.1.1] - 2026-11-16
 
 ### Security
@@ -30,7 +35,7 @@ First release. The same server as 0.1.0-beta.3, plus:
 
 - Install with `npx -y cloud-alm-mcp-server`, without `@beta`; `setup`
   writes the bare name into client configurations. Configurations from the
-  beta keep working: the `beta` tag follows the release.
+  beta stay on 0.1.0 until `setup` runs again.
 
 ## [0.1.0-beta.3] - 2026-11-15
 

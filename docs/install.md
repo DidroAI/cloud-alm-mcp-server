@@ -3,8 +3,9 @@
 Every way to install the server, one per client. Back to the
 [README](../README.md).
 
-Configurations written during the beta name `cloud-alm-mcp-server@beta`;
-they keep working, as the `beta` tag follows each release too.
+Configurations written during the beta name `cloud-alm-mcp-server@beta`,
+which stays on 0.1.0. Run `npx -y cloud-alm-mcp-server setup` again to switch
+them to the release line.
 
 The key, in every channel: a service key of the "SAP Cloud ALM API" instance
 in SAP BTP, downloaded as a JSON file.
