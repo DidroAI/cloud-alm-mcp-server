@@ -23,7 +23,7 @@ their package manager), then continue.
 ## 2. Run setup
 
 ```sh
-npx -y cloud-alm-mcp-server@beta setup
+npx -y cloud-alm-mcp-server setup
 ```
 
 `setup` looks for the newest service key JSON in `~/Downloads` (downloaded
@@ -37,9 +37,9 @@ Read the output:
 | Output | What to do |
 | --- | --- |
 | `✓` lines and `Key saved at …` | Go to step 3. |
-| `No service key found in ~/Downloads` | Ask the user where the key JSON is, then run `npx -y cloud-alm-mcp-server@beta setup "<path>"`. If they have no key yet, go to "No key yet" below. |
+| `No service key found in ~/Downloads` | Ask the user where the key JSON is, then run `npx -y cloud-alm-mcp-server setup "<path>"`. If they have no key yet, go to "No key yet" below. |
 | `A key for another tenant … is saved` | Ask the user whether to switch tenants. Only on their yes, run `setup "<path>"` with the file they name, or add `--force`. |
-| `✗ Token …` | The key was refused or SAP did not answer. Run `npx -y cloud-alm-mcp-server@beta doctor` and report its lines. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
+| `✗ Token …` | The key was refused or SAP did not answer. Run `npx -y cloud-alm-mcp-server doctor` and report its lines. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
 | `! Scopes … needs …` | The key works but lacks scopes for some tools. Report which; the user's BTP admin can add them (see `docs/service-key.md`). |
 | `✗ <client>` with "Add it by hand" | Show the user the snippet `setup` printed for that client. |
 
@@ -56,7 +56,7 @@ Then suggest a first question: *"Where does my Cloud ALM project stand?"*
 ## 4. Check (optional)
 
 ```sh
-npx -y cloud-alm-mcp-server@beta doctor
+npx -y cloud-alm-mcp-server doctor
 ```
 
 prints the API address, the token, the scopes, the write tools the key allows, and
@@ -75,6 +75,6 @@ stop until they have the file.
 ## Undo
 
 ```sh
-npx -y cloud-alm-mcp-server@beta uninstall          # remove from all clients
-npx -y cloud-alm-mcp-server@beta uninstall --key    # and delete the saved key
+npx -y cloud-alm-mcp-server uninstall          # remove from all clients
+npx -y cloud-alm-mcp-server uninstall --key    # and delete the saved key
 ```

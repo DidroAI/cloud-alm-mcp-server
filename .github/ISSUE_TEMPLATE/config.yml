@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Report a security problem
     url: https://github.com/DidroAI/cloud-alm-mcp-server/security/advisories/new
-    about: Privately, not in a public issue.
+    about: Privately, never in a public issue.
+  - name: Setup guide and troubleshooting
+    url: https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/install.md
+    about: Most setup problems are answered here; `npx -y cloud-alm-mcp-server doctor` names the failing step.

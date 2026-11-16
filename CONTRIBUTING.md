@@ -10,6 +10,21 @@ Thanks for helping. Issues and pull requests are welcome.
   them.
 - Security problems go through the private channel in [SECURITY.md](SECURITY.md).
 
+## How a change lands
+
+1. Fork the repository and create a branch.
+2. Make the change with its test; run the checks below.
+3. Open a pull request against `main` and fill in the template.
+4. CI must pass (typecheck, tests, build on Node 22 and 24). For a pull
+   request from a fork, a maintainer approves the CI run first.
+5. A maintainer reviews it. Only maintainers can merge; `main` accepts
+   changes through reviewed pull requests only, and pull requests are
+   squash-merged.
+
+Looking for a place to start? See the issues labelled
+[good first issue](https://github.com/DidroAI/cloud-alm-mcp-server/labels/good%20first%20issue)
+and [help wanted](https://github.com/DidroAI/cloud-alm-mcp-server/labels/help%20wanted).
+
 ## Develop
 
 Bun for development and tests, Node 22+ for the built package:
@@ -56,7 +71,7 @@ By contributing you agree that your contribution is licensed under the
 
 ## Releases
 
-A release changes the version in `package.json`, `server.json` (the server
+Maintainers release; only they can push `v*` tags. A release changes the version in `package.json`, `server.json` (the server
 and its npm package), `manifest.json` and `.claude-plugin/plugin.json`;
 `test/distribution.test.ts` fails when they differ. Pushing the tag `v<version>`
 on main publishes to npm and the MCP Registry and attaches the Claude Desktop

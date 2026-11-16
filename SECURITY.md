@@ -14,7 +14,7 @@ users can update.
 
 ## Supported versions
 
-The latest release (and, before 0.1.0, the latest beta) gets fixes.
+The latest release gets fixes.
 
 ## What matters most
 

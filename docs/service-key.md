@@ -2,6 +2,9 @@
 
 For whoever administers the SAP BTP subaccount of your Cloud ALM tenant. Back to the [README](../README.md).
 
+[![Setup video](images/setup-video.png)](media/setup-tutorial.mp4)
+
+The [setup video](media/setup-tutorial.mp4) (2 minutes) shows every click below.
 
 Cloud ALM's APIs take an OAuth token from a **service key** of the "SAP Cloud
 ALM API" service, created in the BTP subaccount where your Cloud ALM tenant

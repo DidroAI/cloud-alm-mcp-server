@@ -1,6 +1,6 @@
 # SAP Cloud ALM for your AI assistant
 
-[![npm](https://img.shields.io/npm/v/cloud-alm-mcp-server/beta?label=npm)](https://www.npmjs.com/package/cloud-alm-mcp-server)
+[![npm](https://img.shields.io/npm/v/cloud-alm-mcp-server?label=npm)](https://www.npmjs.com/package/cloud-alm-mcp-server)
 [![CI](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
@@ -22,7 +22,7 @@ server, `cloud-alm-mcp-server`.
 <img src="docs/images/update-light.png" alt="Approval card: priority very high → high, due date, new comment, Approve / Reject" width="49%">
 </p>
 
-> Beta (0.1.0-beta.3). MIT licence. An independent open-source project, not
+> MIT licence. An independent open-source project, not
 > affiliated with or endorsed by SAP. SAP and SAP Cloud ALM are trademarks of
 > SAP SE.
 
@@ -38,6 +38,13 @@ server, `cloud-alm-mcp-server`.
 - **Links back to Cloud ALM.** Items come with a link that opens them in the
   Cloud ALM UI, and you can paste a Cloud ALM link wherever an id is asked.
 
+## Setup in 2 minutes (video)
+
+[![Setup video: get a service key in SAP BTP, then one command or one prompt to your agent](docs/images/setup-video.png)](https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/media/setup-tutorial.mp4)
+
+Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
+coding agent. With narration, 2 minutes.
+
 ## 1. Get a service key
 
 Someone with admin rights in the SAP BTP subaccount of your Cloud ALM tenant
@@ -45,14 +52,15 @@ creates an instance of the **SAP Cloud ALM API** service with the scopes in
 [scopes/read-only.json](scopes/read-only.json) (or
 [read-write.json](scopes/read-write.json)), creates a binding, and downloads
 its JSON. Step by step, with an e-mail you can send to your BTP admin:
-[docs/service-key.md](docs/service-key.md).
+[docs/service-key.md](docs/service-key.md), or watch it in the
+[setup video](https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/media/setup-tutorial.mp4).
 
 ## 2. Install
 
 **Any client, one command** (needs [Node.js 22+](https://nodejs.org)):
 
 ```sh
-npx -y cloud-alm-mcp-server@beta setup
+npx -y cloud-alm-mcp-server setup
 ```
 
 It finds the key you downloaded in `~/Downloads`, checks it against SAP,
@@ -67,9 +75,9 @@ Or pick your client:
 | --- | --- |
 | Claude Desktop | [![Install in Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Install_extension-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) Download, double-click, choose your key file. No terminal, no Node.js. |
 | Claude Code | `/plugin install cloud-alm --marketplace DidroAI/cloud-alm-mcp-server` (server and skills) |
-| Cursor | [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=cloud-alm&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImNsb3VkLWFsbS1tY3Atc2VydmVyQGJldGEiXX0%3D) after `setup` saved the key |
-| VS Code (Copilot) | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522cloud-alm%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522cloud-alm-mcp-server%2540beta%2522%255D%257D) after `setup` saved the key |
-| Codex | `setup` adds it; by hand: `codex mcp add cloud-alm -- npx -y cloud-alm-mcp-server@beta` |
+| Cursor | [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=cloud-alm&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImNsb3VkLWFsbS1tY3Atc2VydmVyIl19) after `setup` saved the key |
+| VS Code (Copilot) | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522cloud-alm%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522cloud-alm-mcp-server%2522%255D%257D) after `setup` saved the key |
+| Codex | `setup` adds it; by hand: `codex mcp add cloud-alm -- npx -y cloud-alm-mcp-server` |
 
 All channels, by hand and in detail: [docs/install.md](docs/install.md).
 
@@ -79,7 +87,7 @@ Download the key, then paste this into Claude Code, Codex, Cursor's agent or
 any assistant with a terminal:
 
 ```text
-Set up the SAP Cloud ALM MCP server for me: run `npx -y cloud-alm-mcp-server@beta setup` and follow what it prints (instructions for agents: https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/agent-setup.md). Never open or print my service key file.
+Set up the SAP Cloud ALM MCP server for me: run `npx -y cloud-alm-mcp-server setup` and follow what it prints (instructions for agents: https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/agent-setup.md). Never open or print my service key file.
 ```
 
 Tested with Codex and Claude Code: they run `setup`, check with `doctor`,
@@ -133,12 +141,12 @@ server checks the change still matches what you saw. Details and limits:
 ## Update, rotate, uninstall
 
 ```sh
-npx -y cloud-alm-mcp-server@beta doctor      # check key, token, scopes, API, Node
-npx -y cloud-alm-mcp-server@beta setup       # again after rotating the key
-npx -y cloud-alm-mcp-server@beta uninstall   # remove it from your apps (--key: also the saved key)
+npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API, Node
+npx -y cloud-alm-mcp-server setup       # again after rotating the key
+npx -y cloud-alm-mcp-server uninstall   # remove it from your apps (--key: also the saved key)
 ```
 
-Client configs run `cloud-alm-mcp-server@beta`, so you get updates on the
+Client configs run `cloud-alm-mcp-server`, so you get updates on the
 next start.
 
 ## Troubleshooting

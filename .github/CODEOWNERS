@@ -1,0 +1,9 @@
+# Every change needs a review from a maintainer before it lands on main.
+*                       @p-haas
+# Release, CI and distribution files: a maintainer as well.
+/.github/               @p-haas
+/package.json           @p-haas
+/server.json            @p-haas
+/manifest.json          @p-haas
+/.claude-plugin/        @p-haas
+/scripts/               @p-haas

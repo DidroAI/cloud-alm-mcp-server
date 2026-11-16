@@ -80,6 +80,16 @@ jobs:
           case "$version" in *-*)
             case "$latest" in ""|*-*) npm dist-tag add "cloud-alm-mcp-server@$version" latest ;; esac ;;
           esac
+      # Configurations written during the beta run `cloud-alm-mcp-server@beta`:
+      # a release moves the beta tag too, so they get it.
+      - name: Point beta at the release
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::notice::no NPM_TOKEN: beta not moved"; exit 0; fi
+          version="$(node -p 'require("./package.json").version')"
+          case "$version" in *-*) exit 0 ;; esac
+          npm dist-tag add "cloud-alm-mcp-server@$version" beta
 
       # Official MCP Registry: server.json, proven by this repository's OIDC
       # token (namespace io.github.DidroAI) and by "mcpName" in the package
