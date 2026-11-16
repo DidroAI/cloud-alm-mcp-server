@@ -6,6 +6,11 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- zod 4.6.7 (was 4.5.4): fixes memory exhaustion when validating oversized
+  constrained collections (GHSA, high).
+
 ## [0.1.0] - 2026-11-16
 
 First release. The same server as 0.1.0-beta.3, plus:
