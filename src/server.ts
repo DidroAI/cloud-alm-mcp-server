@@ -59,7 +59,7 @@ import {
   type ViewOptions,
 } from "./views/tools.js";
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.1.1";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122

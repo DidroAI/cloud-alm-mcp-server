@@ -6,6 +6,8 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-16
+
 ### Security
 
 - zod 4.6.7 (was 4.5.4): fixes memory exhaustion when validating oversized
