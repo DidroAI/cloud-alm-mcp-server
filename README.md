@@ -40,7 +40,7 @@ server, `cloud-alm-mcp-server`.
 
 ## Setup in 2 minutes (video)
 
-[![Setup video: get a service key in SAP BTP, then one command or one prompt to your agent](docs/images/setup-video.png)](https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/media/setup-tutorial.mp4)
+https://github.com/user-attachments/assets/747194c4-332f-4be5-8da9-47faf746ee4c
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
 coding agent. With narration, 2 minutes.
@@ -53,7 +53,7 @@ creates an instance of the **SAP Cloud ALM API** service with the scopes in
 [read-write.json](scopes/read-write.json)), creates a binding, and downloads
 its JSON. Step by step, with an e-mail you can send to your BTP admin:
 [docs/service-key.md](docs/service-key.md), or watch it in the
-[setup video](https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/media/setup-tutorial.mp4).
+[setup video](#setup-in-2-minutes-video).
 
 ## 2. Install
 
