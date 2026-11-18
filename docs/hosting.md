@@ -2,6 +2,7 @@
 
 Local (stdio) with your own key, or as a shared HTTP endpoint where each request brings its own token. Back to the [README](../README.md).
 
+Try the [hosted preview with synthetic data](hosted-preview.md) to test the cards in Claude or ChatGPT before connecting SAP.
 
 ### stdio, with your own key (default)
 
