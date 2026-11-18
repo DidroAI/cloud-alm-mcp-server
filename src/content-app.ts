@@ -159,21 +159,28 @@ h1 {
   color: #354a5f;
   font-size: 13px;
 }
-.detail {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
-}
-.detail h2 {
-  font-size: 15px;
-  margin: 0;
-}
 .detail h3 {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 16px 0 4px;
+  font-size: 13px;
+  margin: 14px 0 4px;
 }
 .detail p {
   margin: 4px 0;
+}
+.plan-cases {
+  margin-top: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.plan-cases summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-weight: 600;
+}
+.plan-cases ul {
+  padding-inline-start: 20px;
+}
+.plan-cases li {
+  margin: 6px 0;
 }
 .facts {
   display: flex;
@@ -355,10 +362,44 @@ function safeLink(value) {
     return null;
   }
 }
-function row(item, showType = true) {
+function appendDetails(body, item) {
+  if (item.description)
+    body.append(node("div", item.description, "description"));
+  for (const step of item.steps || []) {
+    body.append(node("h3", "Step " + step.step), node("p", step.do));
+    if (step.expect) body.append(node("p", "Expected: " + step.expect));
+  }
+  if (itemKind(item) !== "test_plan") return;
+  const progress = item.fields?.progress;
+  if (progress) {
+    body.append(node("h3", "Execution progress"));
+    if (progress.total === 0) {
+      body.append(node("p", "No test cases assigned."));
+    } else {
+      body.append(node("p", progress.executed + " of " + progress.total +
+        " executed · " + progress.passed + " passed"));
+      if (progress.executed > 0)
+        body.append(node("p", "Pass rate among executed cases: " + progress.passRate + "%"));
+    }
+  }
+  if (!item.testCases?.length) return;
+  const cases = node("details", null, "plan-cases");
+  cases.append(node("summary", "Test cases (" + item.testCases.length + ")"));
+  const list = node("ul");
+  for (const testCase of item.testCases) {
+    const entry = node("li", [testCase.id, testCase.title].filter(Boolean).join(" · "));
+    if (testCase.result) entry.append(node("p", testCase.result));
+    if (testCase.defects?.length)
+      entry.append(node("p", "Defects: " + testCase.defects.join(", ")));
+    list.append(entry);
+  }
+  cases.append(list);
+  body.append(cases);
+}
+function row(item, showType, isDetails) {
   const li = node("li", null, "item"),
-    body = node("div", null, "body"),
-    title = node("p", null, "name"),
+    body = node("div", null, isDetails ? "body detail" : "body"),
+    title = node(isDetails ? "h2" : "p", null, "name"),
     label = item.title || item.name || item.id;
   const url = safeLink(item.url);
   if (url) {
@@ -408,6 +449,7 @@ function row(item, showType = true) {
   if (item.status) meta.append(badge(item.status));
   if (item.result) meta.append(badge(item.result));
   body.append(meta);
+  if (isDetails) appendDetails(body, item);
   li.append(body);
   return li;
 }
@@ -449,24 +491,10 @@ function render(result, args = {}) {
   if (list) {
     const visible = expanded ? items : items.slice(0, 5);
     const ul = node("ul", null, "items");
-    for (const item of visible) ul.append(row(item, kinds.length !== 1));
+    for (const item of visible) ul.append(row(item, kinds.length !== 1, isDetails));
     root.append(ul);
     if (!items.length)
       root.append(node("p", "No items match this request.", "empty"));
-    if (isDetails)
-      for (const item of visible) {
-        const section = node("section", null, "detail");
-        if (visible.length > 1)
-          section.append(node("h2", item.title || item.id));
-        if (item.description)
-          section.append(node("div", item.description, "description"));
-        for (const step of item.steps || []) {
-          section.append(node("h3", "Step " + step.step), node("p", step.do));
-          if (step.expect)
-            section.append(node("p", "Expected: " + step.expect));
-        }
-        root.append(section);
-      }
     const total = typeof data.total === "number" ? data.total : items.length;
     const offset = data.offset || 0;
     $("count").textContent = total
