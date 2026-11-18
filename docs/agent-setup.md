@@ -39,7 +39,9 @@ Read the output:
 | `✓` lines and `Key saved at …` | Go to step 3. |
 | `No service key found in ~/Downloads` | Ask the user where the key JSON is, then run `npx -y cloud-alm-mcp-server setup "<path>"`. If they have no key yet, go to "No key yet" below. |
 | `A key for another tenant … is saved` | Ask the user whether to switch tenants. Only on their yes, run `setup "<path>"` with the file they name, or add `--force`. |
-| `✗ Token …` | The key was refused or SAP did not answer. Run `npx -y cloud-alm-mcp-server doctor` and report its lines. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
+| `✗ Token …` | The key was refused or SAP did not answer. Report the Token message and retry setup with the same key after resolving the issue. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
+| `✗ Scopes … it can read nothing` | Setup stopped before saving the key or configuring clients. Ask the BTP admin for a key with the listed read scopes, then run setup again. |
+| `✗ Read …` | The token exchange worked and the API read failed. Use the Read message to diagnose the issue and retry setup. |
 | `! Scopes … needs …` | The key works but lacks scopes for some tools. Report which; the user's BTP admin can add them (see `docs/service-key.md`). |
 | `✗ <client>` with "Add it by hand" | Show the user the snippet `setup` printed for that client. |
 
@@ -51,7 +53,7 @@ Read the output:
   the next session.
 - **Cursor:** reload the window.
 
-Then suggest a first question: *"Where does my Cloud ALM project stand?"*
+If the project read succeeded, suggest *"Which Cloud ALM projects can I access?"*. If projects were refused, suggest a question covered by the scopes shown, such as a landscape question for a landscape-only key.
 
 ## 4. Check (optional)
 

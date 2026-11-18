@@ -470,6 +470,45 @@ describe("setup", () => {
     expect(all).not.toContain(CLIENT_ID);
   });
 
+  test("unusable scopes stop setup before changing a saved key or client", async () => {
+    const m = machine({ cursor: true });
+    const config = join(m.home, ".cursor", "mcp.json");
+    writeFileSync(config, "{}");
+    const original = io({ fetch: fakeFetch().fetcher });
+    await runCommand(original.io, ["init", keyFile()]);
+    const saved = savedKeyPath(original.io.env);
+    const before = readFileSync(saved, "utf8");
+    const t = io({ fetch: fakeFetch({ scope: ["unrelated.scope"], projectsStatus: 403 }).fetcher });
+    t.io.setup = m.setup;
+    const replacement = keyFile(JSON.stringify({ ...KEY, extra: "replacement" }));
+    expect(await runCommand(t.io, ["setup", replacement])).toBe(1);
+    expect(t.all()).toContain("Ask your SAP BTP admin");
+    expect(t.all()).not.toContain("Open a new chat");
+    expect(readFileSync(saved, "utf8")).toBe(before);
+    expect(readFileSync(config, "utf8")).toBe("{}");
+  });
+
+  test("a failed API read after token exchange is reported separately from missing scopes", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch({ projectsStatus: 503 }).fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(1);
+    expect(t.all()).toContain("the API read failed");
+    expect(t.all()).not.toContain("Ask your SAP BTP admin");
+    expect(existsSync(savedKeyPath(t.io.env))).toBe(false);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(false);
+  });
+
+  test("a landscape-only key can set up a client when projects are refused", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch({ scope: ["calm-api.landscape.read"], projectsStatus: 403 }).fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
+    expect(t.all()).toContain("Project access was refused");
+    expect(t.all()).not.toContain("Which Cloud ALM projects can I access?");
+  });
+
   test("replaces a key saved before; a broken client config fails with the snippet to add by hand", async () => {
     const m = machine({ desktop: "{ not json" });
     const first = io({ fetch: fakeFetch().fetcher });
