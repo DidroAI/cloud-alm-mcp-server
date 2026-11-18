@@ -14,19 +14,20 @@ export function contentHtml(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root {
-  color-scheme: light;
-  --ink: #243341;
-  --muted: #697782;
-  --blue: #0064d9;
-  --line: #edf0f2;
-  --soft: #f5f8fc;
+  color-scheme: light dark;
+  --surface: var(--color-background-primary, light-dark(#fff, #19232d));
+  --ink: var(--color-text-primary, light-dark(#243341, #edf3f8));
+  --muted: var(--color-text-secondary, light-dark(#586975, #b2bfca));
+  --blue: var(--color-text-info, light-dark(#0064d9, #82bcff));
+  --line: var(--color-border-tertiary, light-dark(#edf0f2, #384652));
+  --error: var(--color-text-danger, light-dark(#aa0808, #ffb6b6));
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   font:
     14px/1.5 "72",
@@ -136,27 +137,25 @@ h1 {
   display: inline-block;
   border-radius: 4px;
   padding: 1px 7px;
-  background: #f3f5f6;
-  color: #56636e;
+  background: var(--color-background-secondary, light-dark(#f3f5f6, #303d48));
+  color: var(--muted);
   border: 0;
   font-size: 11px;
   line-height: 18px;
 }
 .badge.good {
-  color: #256f3a;
-  background: #f1f8f2;
-  border-color: #c6dfc9;
+  color: var(--color-text-success, light-dark(#256f3a, #a3dfac));
+  background: var(--color-background-success, light-dark(#f1f8f2, #203b29));
 }
 .badge.bad {
-  color: #aa0808;
-  background: #fff1f1;
-  border-color: #f3caca;
+  color: var(--error);
+  background: var(--color-background-danger, light-dark(#fff1f1, #512827));
 }
 .description {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin: 12px 0 0;
-  color: #354a5f;
+  color: var(--ink);
   font-size: 13px;
 }
 .detail h3 {
@@ -240,7 +239,7 @@ button:disabled {
   display: none;
 }
 #status.error {
-  color: #aa0808;
+  color: var(--error);
 }
 .empty {
   padding: 24px 0;
@@ -289,7 +288,8 @@ let input = {},
   current = null,
   expanded = false,
   busy = false,
-  canExpand = false;
+  canExpand = false,
+  displayMode = "inline";
 const labels = {
   project: "Project",
   requirement: "Requirement",
@@ -588,20 +588,25 @@ async function call(name, args, append = false) {
     $("more").disabled = false;
   }
 }
-function mode(context) {
+function applyHostContext(context) {
+  if (context?.theme) applyDocumentTheme(context.theme);
+  if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables);
   if (context?.availableDisplayModes)
     canExpand = context.availableDisplayModes.includes("fullscreen");
-  expanded = !canExpand || context?.displayMode === "fullscreen";
+  if (context?.displayMode) displayMode = context.displayMode;
+  const showAll = !canExpand || displayMode === "fullscreen";
+  if (expanded === showAll) return;
+  expanded = showAll;
   document.body.classList.toggle("expanded", expanded);
   if (current) render(current.result, current.args);
 }
-app.onhostcontextchanged = mode;
+app.onhostcontextchanged = applyHostContext;
 $("more").onclick = async () => {
   if (!expanded) {
     if (canExpand) {
       try {
         const r = await app.requestDisplayMode({ mode: "fullscreen" });
-        mode({ displayMode: r.mode });
+        applyHostContext({ displayMode: r.mode });
       } catch {
         status("Use the expand button above to view all results.", true);
       }
@@ -635,11 +640,7 @@ app.ontoolresult = (result) => {
 app.ontoolcancelled = () => status("This request was cancelled.");
 app
   .connect()
-  .then(() => {
-    const context = app.getHostContext();
-    canExpand = context?.availableDisplayModes?.includes("fullscreen") === true;
-    mode(context);
-  })
+  .then(() => applyHostContext(app.getHostContext()))
   .catch(() =>
     status("Open this view in a host that supports MCP Apps.", true),
   );
