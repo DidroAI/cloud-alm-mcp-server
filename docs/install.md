@@ -47,7 +47,7 @@ Claude Desktop warns that the extension gets access to your computer and
 that its developer information is not verified by Anthropic. It shows this
 for every extension installed from a file rather than from Anthropic's
 directory. The extension runs `dist/cli.js` from this repository on your
-machine and talks only to SAP ([PRIVACY.md](../PRIVACY.md)); each release is
+machine and connects only to SAP by default ([PRIVACY.md](../PRIVACY.md)); each release is
 built by GitHub Actions from a tagged commit.
 
 Badge:
@@ -168,6 +168,6 @@ log):
 
 ## Privacy line
 
-No telemetry. The server talks only to your key's SAP token host and to your
+By default the server connects only to your key's SAP token host and to your
 Cloud ALM API (`*.alm.cloud.sap`); what the tools return goes to the AI model
 your client uses. See [PRIVACY.md](../PRIVACY.md).

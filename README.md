@@ -32,7 +32,7 @@ server, `cloud-alm-mcp-server`.
 
 - **Your key, your machine.** The server runs on your computer with a
   service key of the *SAP Cloud ALM API* from your SAP BTP subaccount. No
-  telemetry; it talks only to SAP ([PRIVACY.md](PRIVACY.md)).
+  background telemetry. By default it connects only to SAP ([PRIVACY.md](PRIVACY.md)).
 - **The key decides.** A read-only key reads. A key with write scopes also
   lets the assistant *propose* changes: create, update, comment, link, tag,
   delete. Every change waits for your approval in a card (or your "yes" in
@@ -52,6 +52,52 @@ For a host that supports MCP Apps and tool calls from a card, set
 the final selection. The assistant reads the data, then calls `calm_show`
 with selected IDs or list filters. The card fetches those records when it
 opens. For a text answer or an export, the assistant can skip that last call.
+
+### Try agent feedback on the preview branch
+
+With a receiver configured, the agent can call `calm_report_feedback` when a
+tool behaves unexpectedly or a successful task takes avoidable extra work.
+It reports the affected tool, outcome, a short observation and an optional
+suggestion. The receipt gives you a report ID. Enable the tool once for the
+installation. Your MCP client may apply its own tool permissions.
+
+For a **key-free smoke test**, check out `codex/cloud-alm-agent-preview` and run:
+
+```sh
+bun install --frozen-lockfile
+bun test test/feedback.test.ts
+```
+
+The test sends a synthetic report over MCP to a loopback inbox and checks its
+exact contents. To try it in your local MCP client with your own SAP key, run
+`bun run build` and leave `bun scripts/feedback-inbox.ts` running in a terminal.
+Add a separate server entry to your client's MCP config. Replace both example
+paths with absolute paths on your computer.
+
+```json
+{
+  "mcpServers": {
+    "cloud-alm-preview": {
+      "command": "node",
+      "args": ["/absolute/path/to/cloud-alm-agent-preview/dist/cli.js"],
+      "env": {
+        "CALM_SERVICE_KEY": "/absolute/path/to/service-key.json",
+        "CALM_FEEDBACK_URL": "http://127.0.0.1:4317/reports"
+      }
+    }
+  }
+}
+```
+
+Restart the client and try a read-only question such as “Group the failed
+tests by requirement.” When the agent reports friction, the inbox terminal
+shows exactly what it received. Ordinary successful calls produce no report.
+The same receiver setting works in the server's HTTP mode. A remote collector
+must accept JSON by HTTPS and return 2xx after accepting the report.
+`CALM_FEEDBACK_TOKEN` supplies an optional dedicated receiver credential.
+For a shared HTTP installation, put caller authentication in front of the
+MCP endpoint as described in [hosting](docs/hosting.md). Remove the receiver
+setting and restart to disable reporting.
 
 ## Setup in 2 minutes (video)
 

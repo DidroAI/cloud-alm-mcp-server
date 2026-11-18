@@ -1,3 +1,4 @@
+import { FEEDBACK_TOOL, feedbackSchema, type FeedbackSink } from "./feedback.js";
 import { CONTENT_TOOLS, CONTENT_URI, contentHtml } from "./content-app.js";
 import { registerSkillPrompts } from "./prompts.js";
 import {
@@ -126,6 +127,8 @@ const READ_ONLY = {
 } as const;
 
 export type ServerOptions = ViewOptions & {
+  /** Optional receiver for agent observations about the MCP itself. */
+  feedbackSink?: FeedbackSink;
   /** MCP Apps cards for reads. Default: on. */
   cards?: boolean;
   /** Attach cards to reads by default, or present a final view with calm_show. */
@@ -171,6 +174,7 @@ export function createServer(
   const explicit = options.cards !== false && options.contentPresentation === "explicit";
   const allowed = options.tools ? new Set(options.tools) : null;
   const show = explicit && (!allowed || (allowed.has("calm_show") && [...CONTENT_TOOLS].some(name => allowed.has(name))));
+  const feedback = !allowed || allowed.has(FEEDBACK_TOOL) ? options.feedbackSink : undefined;
   const subject = options.approvalSubject ?? "local";
   const server = new McpServer(
     {
@@ -181,7 +185,7 @@ export function createServer(
       icons: [{ src: "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", mimeType: "image/png", sizes: ["512x512"] }],
     },
     {
-      instructions: `${INSTRUCTIONS}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
+      instructions: `${INSTRUCTIONS}${feedback ? " After encountering unexpected tool behavior or an inefficient workflow, even if successful, call calm_report_feedback once for that distinct observation and continue the task. Only report friction you experienced yourself. Use generic language and omit record values, identifiers, credentials and chat text." : ""}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
         options.writer && options.writeMode === "on"
           ? (options.approval ?? "prefer") !== "off"
             ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${(options.approval ?? "prefer") === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id and the tool's name" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
@@ -601,6 +605,21 @@ export function createServer(
     );
   }
   if (approval !== "off") registerApproval();
+  if (feedback) {
+    server.registerTool(FEEDBACK_TOOL, {
+      title: "Report MCP friction",
+      description: "Send your own observation about tool behavior to the configured feedback inbox. Describe unexpected behavior or extra work, even after success. Use generic language and omit tenant data, credentials and chat text.",
+      inputSchema: feedbackSchema([...TOOL_NAMES, ...WRITE_TOOL_NAMES, ...APPROVAL_TOOL_NAMES, "calm_show"]),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    }, async args => {
+      try {
+        const id = await feedback(args, SERVER_VERSION);
+        return { content: [{ type: "text", text: `Feedback received (${id}). Continue the task.` }] };
+      } catch {
+        return { isError: true, content: [{ type: "text", text: "Feedback delivery unconfirmed. Continue the task without retrying." }] };
+      }
+    });
+  }
   if (show) {
     registerAppTool(server, "calm_show", {
       title: "Show Cloud ALM",
@@ -710,10 +729,11 @@ export function createServer(
  * read-only key gets read tools only), every write waiting for the user's
  * approval. There is nothing else to configure.
  */
-export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[], presentationMode = process.env.CALM_CONTENT_PRESENTATION): ServerOptions {
+export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[], presentationMode = process.env.CALM_CONTENT_PRESENTATION, feedbackSink?: FeedbackSink): ServerOptions {
   const presentation: ServerOptions = presentationMode === "explicit" ? { contentPresentation: "explicit" } : {};
+  if (feedbackSink) presentation.feedbackSink = feedbackSink;
   if (!writer || !writeTools.length) return presentation;
-  return { ...presentation, writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...(presentation.contentPresentation ? ["calm_show"] : []), ...writeTools] };
+  return { ...presentation, writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...(presentation.contentPresentation ? ["calm_show"] : []), ...(feedbackSink ? [FEEDBACK_TOOL] : []), ...writeTools] };
 }
 
 /** Write tools, offered only when writing is on. */
