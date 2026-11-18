@@ -34,7 +34,24 @@ reads these two settings and uses its bundled fixtures for SAP API calls.
    to see all four test cases.
 3. Ask “Show me the steps and expected result for test case 8-1-2 in a
    card.” Look for **Open the worklist** and **The order is listed**.
-4. Inspect the tool list. It offers reads and `calm_show`. A client asking
+4. Ask “Show test plan 8-3-1 as a card.” Expect two of three cases executed,
+   one passed, and a disclosure listing the cases and the defect.
+5. Inspect the tool list. It offers reads and `calm_show`. A client asking
    to write a task should find no write tool.
 
 Stop the server with Ctrl-C and close your HTTPS forwarding session.
+
+## Try agent friction reporting with the example project
+
+In one terminal run `bun scripts/feedback-inbox.ts`. In another, start the
+demo with `bun scripts/hosted-preview.ts --feedback`. This explicitly adds
+`calm_report_feedback` and sends observations to the loopback inbox on port
+4317. Anyone connected to this demo can submit an observation until it stops.
+Use a private testing session for this exercise.
+
+Ask the assistant to do a multi-step task such as “Group the failed test cases
+by requirement.” Look for an observation if it encounters a concrete obstacle.
+A smooth task may produce none. To test delivery separately from the model's
+judgment, ask it to send a clearly labeled synthetic observation. Check for
+the same receipt ID in the MCP result and inbox terminal. The terminal shows
+the exact report.

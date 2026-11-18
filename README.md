@@ -11,6 +11,11 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
+**Trying this branch?** Start the [synthetic MCP demo](docs/hosted-preview.md)
+to see test-plan cards and try agent friction reporting without a service key.
+For local testing with your own SAP connection, use the [preview client entry](#try-agent-feedback-on-the-preview-branch).
+The npm setup command and latest Desktop extension install the released version.
+
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
   requirements without a test."*
@@ -61,7 +66,7 @@ It reports the affected tool, outcome, a short observation and an optional
 suggestion. The receipt gives you a report ID. Enable the tool once for the
 installation. Your MCP client may apply its own tool permissions.
 
-For a **key-free smoke test**, check out `codex/cloud-alm-agent-preview` and run:
+For a **key-free smoke test**, check out `codex/cloud-alm-review-preview` and run:
 
 ```sh
 bun install --frozen-lockfile
@@ -79,7 +84,7 @@ paths with absolute paths on your computer.
   "mcpServers": {
     "cloud-alm-preview": {
       "command": "node",
-      "args": ["/absolute/path/to/cloud-alm-agent-preview/dist/cli.js"],
+      "args": ["/absolute/path/to/cloud-alm-review-preview/dist/cli.js"],
       "env": {
         "CALM_SERVICE_KEY": "/absolute/path/to/service-key.json",
         "CALM_FEEDBACK_URL": "http://127.0.0.1:4317/reports"

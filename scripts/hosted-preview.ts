@@ -1,4 +1,5 @@
 import { createHttpHandler, BASE_URL_HEADER, WEB_URL_HEADER } from "../src/http.js";
+import { feedbackSinkFromEnv, type FeedbackSink } from "../src/feedback.js";
 import { BASE_URL, TENANT } from "../test/tenant.js";
 
 /** The preview's entire SAP transport. Only fixture paths have a response. */
@@ -12,11 +13,11 @@ const fixtureFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return Response.json(TENANT[path]);
 }) as typeof fetch;
 
-export function createHostedPreview() {
+export function createHostedPreview(feedbackSink?: FeedbackSink) {
   const mcp = createHttpHandler({
     baseUrl: BASE_URL,
     reader: { fetch: fixtureFetch },
-    server: { writeMode: "off", contentPresentation: "explicit" },
+    server: { writeMode: "off", contentPresentation: "explicit", ...(feedbackSink ? { feedbackSink } : {}) },
   });
   return async (request: Request) => {
     const path = new URL(request.url).pathname;
@@ -42,7 +43,9 @@ if (import.meta.main) {
   const server = Bun.serve({
     hostname, port,
     maxRequestBodySize: 256 * 1024,
-    fetch: createHostedPreview(),
+    fetch: createHostedPreview(process.argv.includes("--feedback")
+      ? feedbackSinkFromEnv({ CALM_FEEDBACK_URL: "http://127.0.0.1:4317/reports" })
+      : undefined),
   });
   console.info(`Synthetic, read-only Cloud ALM preview: ${new URL("mcp", server.url)}`);
 }
