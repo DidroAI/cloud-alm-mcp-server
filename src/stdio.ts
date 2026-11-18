@@ -99,6 +99,6 @@ export function stdioFactory(
       writeTools = undefined;
       return [] as string[];
     });
-    return createServer(reader, { ...serverOptionsForKey(writer, tools), ...(webUrl ? { webUrl } : {}) });
+    return createServer(reader, { ...serverOptionsForKey(writer, tools, env.CALM_CONTENT_PRESENTATION ?? "legacy"), ...(webUrl ? { webUrl } : {}) });
   };
 }

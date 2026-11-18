@@ -40,6 +40,19 @@ server, `cloud-alm-mcp-server`.
 - **Links back to Cloud ALM.** Items come with a link that opens them in the
   Cloud ALM UI, and you can paste a Cloud ALM link wherever an id is asked.
 
+### Browsing results in chat
+
+In clients with MCP Apps, project lists, search results and item details open
+as cards. Select a linked title to open SAP Cloud ALM. **View all** expands
+a compact list in hosts with fullscreen support. **Load more** fetches the
+next page with the same filters. Clients that use text receive the read result.
+
+For a host that supports MCP Apps and tool calls from a card, set
+`CALM_CONTENT_PRESENTATION=explicit` in the server environment to show only
+the final selection. The assistant reads the data, then calls `calm_show`
+with selected IDs or list filters. The card fetches those records when it
+opens. For a text answer or an export, the assistant can skip that last call.
+
 ## Setup in 2 minutes (video)
 
 https://github.com/user-attachments/assets/747194c4-332f-4be5-8da9-47faf746ee4c

@@ -1,3 +1,4 @@
+import { CONTENT_TOOLS, CONTENT_URI, contentHtml } from "./content-app.js";
 import { registerSkillPrompts } from "./prompts.js";
 import {
   ANALYTICS_DATASETS,
@@ -125,8 +126,10 @@ const READ_ONLY = {
 } as const;
 
 export type ServerOptions = ViewOptions & {
-  /** MCP Apps cards for reads (the project overview). Default: on. */
+  /** MCP Apps cards for reads. Default: on. */
   cards?: boolean;
+  /** Attach cards to reads by default, or present a final view with calm_show. */
+  contentPresentation?: "explicit" | "legacy";
   /** The skills of `skills/` as MCP prompts. Default: on. */
   prompts?: boolean;
   /** Tool names to offer; others are left out. Default: all. */
@@ -165,6 +168,9 @@ export function createServer(
   calm: CloudAlm,
   options: ServerOptions = {},
 ): McpServer {
+  const explicit = options.cards !== false && options.contentPresentation === "explicit";
+  const allowed = options.tools ? new Set(options.tools) : null;
+  const show = explicit && (!allowed || (allowed.has("calm_show") && [...CONTENT_TOOLS].some(name => allowed.has(name))));
   const subject = options.approvalSubject ?? "local";
   const server = new McpServer(
     {
@@ -175,7 +181,7 @@ export function createServer(
       icons: [{ src: "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", mimeType: "image/png", sizes: ["512x512"] }],
     },
     {
-      instructions: `${INSTRUCTIONS} ${
+      instructions: `${INSTRUCTIONS}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
         options.writer && options.writeMode === "on"
           ? (options.approval ?? "prefer") !== "off"
             ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${(options.approval ?? "prefer") === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id and the tool's name" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
@@ -186,7 +192,6 @@ export function createServer(
       }`,
     },
   );
-  const allowed = options.tools ? new Set(options.tools) : null;
   const writeMode = options.writeMode ?? "off";
   const approval: ApprovalMode =
     // Writes wait for approval unless the embedder turns it off by name.
@@ -236,6 +241,7 @@ export function createServer(
     };
   };
 
+  const contentSchemas = new Map<string, z.ZodObject>();
   const tool = <Shape extends z.ZodRawShape>(
     name: (typeof TOOL_NAMES)[number] | (typeof WRITE_TOOL_NAMES)[number],
     title: string,
@@ -275,9 +281,10 @@ export function createServer(
       );
       return;
     }
-    if (name === "calm_overview" && options.cards !== false) {
+    if (CONTENT_TOOLS.has(name)) contentSchemas.set(name, config.inputSchema);
+    if (CONTENT_TOOLS.has(name) && options.cards !== false && !explicit) {
       // Hosts with MCP Apps show the project at a glance; others read the text.
-      registerAppTool(server, name, { ...config, _meta: { ui: { resourceUri: OVERVIEW_URI } } }, ((args: z.infer<z.ZodObject<Shape>>) => answer(() => run(args))) as never);
+      registerAppTool(server, name, { ...config, _meta: { ui: { resourceUri: name === "calm_overview" ? OVERVIEW_URI : CONTENT_URI } } }, ((args: z.infer<z.ZodObject<Shape>>) => answer(() => run(args))) as never);
       return;
     }
     server.registerTool(
@@ -594,7 +601,31 @@ export function createServer(
     );
   }
   if (approval !== "off") registerApproval();
-  if (options.cards !== false && (!allowed || allowed.has("calm_overview")))
+  if (show) {
+    registerAppTool(server, "calm_show", {
+      title: "Show Cloud ALM",
+      description: "Present one final view of a read. Use calm_get with selected ids for a curated result, or calm_list with filters for a live list.",
+      inputSchema: z.object({
+        tool: z.enum(["calm_projects", "calm_overview", "calm_list", "calm_get"]),
+        arguments: z.record(z.string(), z.unknown()),
+      }),
+      annotations: READ_ONLY,
+      _meta: { ui: { resourceUri: CONTENT_URI, visibility: ["model"] } },
+    }, async ({ tool, arguments: args }) => {
+      const parsed = contentSchemas.get(tool)?.strict().safeParse(args);
+      if (!parsed?.success) return { isError: true, content: [{ type: "text", text: "Choose an enabled read tool and use its input schema." }] };
+      return {
+        content: [{ type: "text", text: "View prepared. The app loads the selected records." }],
+        structuredContent: { display: { tool, arguments: parsed.data } },
+      };
+    });
+  }
+  if (show || (options.cards !== false && !explicit && [...contentSchemas.keys()].some(name => name !== "calm_overview")))
+    registerAppResource(server, "Cloud ALM content", CONTENT_URI,
+      { description: "Projects and items from SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
+      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml() }] }),
+    );
+  if (!explicit && options.cards !== false && (!allowed || allowed.has("calm_overview")))
     registerAppResource(
       server,
       "Cloud ALM project overview",
@@ -679,9 +710,10 @@ export function createServer(
  * read-only key gets read tools only), every write waiting for the user's
  * approval. There is nothing else to configure.
  */
-export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[]): ServerOptions {
-  if (!writer || !writeTools.length) return {};
-  return { writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...writeTools] };
+export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[], presentationMode = process.env.CALM_CONTENT_PRESENTATION): ServerOptions {
+  const presentation: ServerOptions = presentationMode === "explicit" ? { contentPresentation: "explicit" } : {};
+  if (!writer || !writeTools.length) return presentation;
+  return { ...presentation, writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...(presentation.contentPresentation ? ["calm_show"] : []), ...writeTools] };
 }
 
 /** Write tools, offered only when writing is on. */

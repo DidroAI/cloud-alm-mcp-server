@@ -46,9 +46,10 @@ const enc = encodeURIComponent;
 
 export type LinkTarget =
   | { kind: "task"; type: string | null; displayId: string | null }
-  | { kind: "feature"; displayId: string | null }
+  | { kind: "feature"; id: string }
+  | { kind: "document"; displayId: string | null }
   | { kind: "testCase"; id: string; manual: boolean }
-  | { kind: "testPlan" | "document" | "process" };
+  | { kind: "testPlan" | "process" };
 
 /** The page of an item in the Cloud ALM UI; undefined without a UI root. */
 export function webUrl(base: string | undefined, t: LinkTarget): string | undefined {
@@ -60,7 +61,9 @@ export function webUrl(base: string | undefined, t: LinkTarget): string | undefi
       return t.displayId ? at(app, `&/taskDetail/${enc(t.displayId)}`) : at(app);
     }
     case "feature":
-      return t.displayId ? at(APP.feature, `&/list/details/${enc(t.displayId)}`) : at(APP.feature);
+      return at(APP.feature, `&/list/details/${enc(t.id)}`);
+    case "document":
+      return t.displayId ? at(`DocumentationObject-manage?displayId=${enc(t.displayId)}`) : at(APP.document);
     case "testCase":
       return t.manual ? at(APP.testCase, `&/manual/${enc(t.id)}/tab/content`) : at(APP.testCase);
     default:
@@ -79,6 +82,8 @@ export function idFromUrl(raw: string): string {
   const hash = decodeURIComponent(text.split("#")[1] ?? "");
   const m =
     /\/taskDetail\/([0-9]+-[0-9]+(?:-[0-9]+)?)/.exec(hash) ??
+    /\/details\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:$|[/?&])/i.exec(hash) ??
+    /^DocumentationObject-manage\?displayId=([0-9]+-[0-9]+)(?:$|&)/.exec(hash) ??
     /\/details\/([0-9]+-[0-9]+(?:-[0-9]+)?)/.exec(hash) ??
     /\/(?:manual|automated)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(hash);
   return m?.[1] ?? text;

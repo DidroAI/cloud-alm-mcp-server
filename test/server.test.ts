@@ -53,6 +53,26 @@ describe("tools", () => {
     expect(JSON.stringify(tools.map(({ outputSchema: _, ...t }) => t)).length).toBeLessThan(12500);
   });
 
+  test("content cards follow the selected presentation and read allow list", async () => {
+    const { client } = await connect();
+    const uri = "ui://cloud-alm/content-v1.html";
+    for (const tool of (await client.listTools()).tools.filter(t => ["calm_projects", "calm_list", "calm_get"].includes(t.name)))
+      expect(tool._meta?.ui).toMatchObject({ resourceUri: uri });
+    const resource = await client.readResource({ uri });
+    expect(resource.contents[0]?.mimeType).toContain("text/html");
+
+    const explicit = await connect(TENANT, { contentPresentation: "explicit", tools: ["calm_get", "calm_show"] });
+    const { tools } = await explicit.client.listTools();
+    expect(tools.find(tool => tool.name === "calm_get")?._meta?.ui).toBeUndefined();
+    const selection = { tool: "calm_get", arguments: { ids: ["3-1"] } };
+    expect((await explicit.call("calm_show", selection)).structured).toEqual({ display: selection });
+    expect((await explicit.call("calm_show", { tool: "calm_get", arguments: {} })).error).toBe(true);
+    expect((await explicit.call("calm_show", { tool: "calm_list", arguments: {} })).error).toBe(true);
+    expect(explicit.fake.seen).toHaveLength(0);
+    const plain = await connect(TENANT, { cards: false, contentPresentation: "explicit" });
+    expect((await plain.client.listTools()).tools.every(tool => !tool._meta?.ui && tool.name !== "calm_show")).toBe(true);
+  });
+
   test("overview: phase, counts by status, gaps", async () => {
     const { call } = await connect();
     const { text } = await call("calm_overview");
@@ -416,6 +436,12 @@ test("a Cloud ALM link works as an id", async () => {
   const { idFromUrl } = await import("../src/views/links.js");
   expect(idFromUrl("https://a.eu20.alm.cloud.sap/launchpad#ptmRequirement-management?sap-ui-app-id-hint=x&/taskDetail/3-17")).toBe("3-17");
   expect(idFromUrl("https://a.eu20.alm.cloud.sap/launchpad#feature-display?x&/list/details/6-1")).toBe("6-1");
+  const { webUrl } = await import("../src/views/links.js");
+  const base = "https://a.eu20.alm.cloud.sap";
+  for (const target of [{ kind: "feature", id: REQ }, { kind: "document", displayId: "7-1" }] as const) {
+    const url = webUrl(base, target)!;
+    expect(idFromUrl(url)).toBe(target.kind === "feature" ? target.id : target.displayId);
+  }
   expect(idFromUrl("https://evil.example.com/#/taskDetail/3-17")).toBe("https://evil.example.com/#/taskDetail/3-17");
   const { call } = await connect();
   const r = await call("calm_get", { ids: ["https://a.eu20.alm.cloud.sap/launchpad#task-management?x&/taskDetail/3-1"] });

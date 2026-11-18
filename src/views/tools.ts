@@ -468,14 +468,14 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "2",
           displayId: f.displayId,
           line: featureLine(f),
-          data: { id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", displayId: f.displayId }), type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
+          data: { id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", id: f.id }), type: "feature", title: f.title, status: featureStatus(f.statusCode), priority: priorityLabel(f.priorityCode), tags: f.tags, changedAt: f.modifiedAt },
         });
   }
   if (want.documents) {
     parts.push("documents");
     for (const d of documents)
       if (since(d.modifiedAt) && hit(d.id, d.title))
-        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, url: webUrl(o.webUrl, { kind: "document" }), type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
+        rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, url: webUrl(o.webUrl, { kind: "document", displayId: d.displayId }), type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
   }
   if (want.testCases) {
     parts.push("testCases", "testResults");
@@ -613,10 +613,12 @@ const refUrl = (ref: Ref, base: string | undefined) =>
   ref.kind === "task"
     ? webUrl(base, { kind: "task", type: ref.task.type, displayId: ref.task.displayId })
     : ref.kind === "feature"
-      ? webUrl(base, { kind: "feature", displayId: ref.feature.displayId })
+      ? webUrl(base, { kind: "feature", id: ref.feature.id })
       : ref.kind === "test case"
         ? webUrl(base, { kind: "testCase", id: ref.testCase.id, manual: ref.testCase.kind === "manual" })
-        : webUrl(base, { kind: ref.kind === "test plan" ? "testPlan" : ref.kind });
+        : ref.kind === "document"
+          ? webUrl(base, { kind: "document", displayId: ref.document.displayId })
+          : webUrl(base, { kind: ref.kind === "test plan" ? "testPlan" : ref.kind });
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Items whose title carries `code` as a word: "[seed] REQ-03 Credit…". */
@@ -1755,7 +1757,7 @@ export async function changes(
         at: (after(t.createdAt) ? t.createdAt : (t.changedAt ?? t.createdAt)) as string,
       });
   for (const f of features)
-    if (after(f.modifiedAt)) rows.push({ id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", displayId: f.displayId }), type: "feature", title: f.title, status: featureStatus(f.statusCode), what: "changed", at: f.modifiedAt as string });
+    if (after(f.modifiedAt)) rows.push({ id: f.displayId, url: webUrl(o.webUrl, { kind: "feature", id: f.id }), type: "feature", title: f.title, status: featureStatus(f.statusCode), what: "changed", at: f.modifiedAt as string });
   for (const d of documents)
     if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
   for (const t of testCases)

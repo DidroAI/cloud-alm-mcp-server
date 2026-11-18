@@ -6,6 +6,11 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Compact project and item cards with SAP links, expandable results and paging.
+- Optional explicit presentation with `calm_show` for MCP Apps hosts.
+
 ## [0.1.2] - 2026-11-16
 
 ### Added

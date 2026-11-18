@@ -113,10 +113,14 @@ export function clearPending() {
 let appJs: string | undefined;
 
 /** The MCP Apps client bundle, with its exports turned into a local `App`. */
-function appBundle(): string {
+export function appBundle(): string {
   if (appJs) return appJs;
   const path = createRequire(import.meta.url).resolve("@modelcontextprotocol/ext-apps/app-with-deps");
-  const source = readFileSync(path, "utf8");
+  // A blob document already includes its origin in its pathname.
+  const source = readFileSync(path, "utf8").replace(
+    "new URL(self.location.origin+self.location.pathname+location.search)",
+    'new URL(self.location.protocol === "blob:" ? self.location.origin + "/" : self.location.href)',
+  );
   const exports = /export\s*\{([^}]*)\}\s*;?\s*$/.exec(source);
   const local = exports?.[1]
     ?.split(",")
