@@ -1,7 +1,7 @@
 {
   "name": "cloud-alm",
   "description": "SAP Cloud ALM for agents: an MCP server whose tools follow your service key's scopes (every write waits for your approval) and skills for fit-gap, workshops, status reports, test readiness, defect triage and test design",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "author": {
     "name": "Didro",
     "url": "https://didro.ai"

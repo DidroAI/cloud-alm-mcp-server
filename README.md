@@ -11,10 +11,7 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
-**Trying this branch?** Start the [synthetic MCP demo](docs/hosted-preview.md)
-to see test-plan cards and try agent friction reporting without a service key.
-For local testing with your own SAP connection, use the [preview client entry](#try-agent-feedback-on-the-preview-branch).
-The npm setup command and latest Desktop extension install the released version.
+Try the [synthetic MCP demo](docs/hosted-preview.md) from a source checkout to explore the cards without a service key.
 
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
@@ -48,7 +45,7 @@ The npm setup command and latest Desktop extension install the released version.
 ### Browsing results in chat
 
 In clients with MCP Apps, project lists, search results and item details open
-as cards. Select a linked title to open SAP Cloud ALM. **View all** expands
+as cards. Use the Cloud ALM links to open the source record or its SAP app. **View all** expands
 a compact list in hosts with fullscreen support. **Load more** fetches the
 next page with the same filters. Clients that use text receive the read result.
 
@@ -58,7 +55,7 @@ the final selection. The assistant reads the data, then calls `calm_show`
 with selected IDs or list filters. The card fetches those records when it
 opens. For a text answer or an export, the assistant can skip that last call.
 
-### Try agent feedback on the preview branch
+### Optional agent feedback
 
 With a receiver configured, the agent can call `calm_report_feedback` when a
 tool behaves unexpectedly or a successful task takes avoidable extra work.
@@ -66,7 +63,7 @@ It reports the affected tool, outcome, a short observation and an optional
 suggestion. The receipt gives you a report ID. Enable the tool once for the
 installation. Your MCP client may apply its own tool permissions.
 
-For a **key-free smoke test**, check out `codex/cloud-alm-review-preview` and run:
+For a **key-free smoke test**, clone this repository and run:
 
 ```sh
 bun install --frozen-lockfile
@@ -84,7 +81,7 @@ paths with absolute paths on your computer.
   "mcpServers": {
     "cloud-alm-preview": {
       "command": "node",
-      "args": ["/absolute/path/to/cloud-alm-review-preview/dist/cli.js"],
+      "args": ["/absolute/path/to/cloud-alm-mcp-server/dist/cli.js"],
       "env": {
         "CALM_SERVICE_KEY": "/absolute/path/to/service-key.json",
         "CALM_FEEDBACK_URL": "http://127.0.0.1:4317/reports"

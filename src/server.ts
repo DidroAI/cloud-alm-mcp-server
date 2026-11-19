@@ -64,7 +64,7 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.1.2";
+export const SERVER_VERSION = "0.2.0";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
