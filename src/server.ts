@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { FEEDBACK_TOOL, feedbackSchema, type FeedbackSink } from "./feedback.js";
 import { CONTENT_TOOLS, CONTENT_URI, contentHtml } from "./content-app.js";
 import { registerSkillPrompts } from "./prompts.js";
@@ -60,6 +61,8 @@ import {
   trace,
   type ViewOptions,
 } from "./views/tools.js";
+const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
+
 export const SERVER_NAME = "cloud-alm";
 export const SERVER_VERSION = "0.1.2";
 
@@ -182,7 +185,7 @@ export function createServer(
       version: SERVER_VERSION,
       title: "SAP Cloud ALM",
       websiteUrl: "https://github.com/DidroAI/cloud-alm-mcp-server",
-      icons: [{ src: "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", mimeType: "image/png", sizes: ["512x512"] }],
+      icons: [{ src: `data:image/png;base64,${icon}`, mimeType: "image/png", sizes: ["512x512"] }],
     },
     {
       instructions: `${INSTRUCTIONS}${feedback ? " After encountering unexpected tool behavior or an inefficient workflow, even if successful, call calm_report_feedback once for that distinct observation and continue the task. Only report friction you experienced yourself. Use generic language and omit record values, identifiers, credentials and chat text." : ""}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${

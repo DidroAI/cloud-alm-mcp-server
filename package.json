@@ -53,6 +53,7 @@
   },
   "files": [
     "dist",
+    "assets/icon.png",
     "!dist/**/*.map",
     "README.md",
     "CHANGELOG.md",
