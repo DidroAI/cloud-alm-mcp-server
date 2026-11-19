@@ -25,8 +25,8 @@ The npm setup command and latest Desktop extension install the released version.
   **Approve**.
 
 <p>
-<img src="docs/images/overview-light.png" alt="Project overview card: phases, key figures, test results, defects by priority, gaps" width="49%">
-<img src="docs/images/update-light.png" alt="Approval card: priority very high → high, due date, new comment, Approve / Reject" width="49%">
+<img src="docs/images/overview-light.png" alt="Project overview card: findings, project status and expandable breakdowns" width="49%">
+<img src="docs/images/update-light.png" alt="Approval card: priority high → very high, new comment, Approve / Reject" width="49%">
 </p>
 
 > MIT licence. An independent open-source project, not
