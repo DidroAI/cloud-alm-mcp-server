@@ -15,6 +15,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { metricsCss, metricsScript } from "./project-metrics.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 
@@ -145,7 +146,7 @@ export const OVERVIEW_URI = "ui://cloud-alm/overview-v1.html";
 
 /** The project overview card. */
 export function overviewHtml(): string {
-  return OVERVIEW_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle());
+  return OVERVIEW_TEMPLATE.replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
 }
 
 export function cardHtml(): string {

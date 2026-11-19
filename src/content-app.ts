@@ -1,5 +1,6 @@
 /** A compact source view, not a second Cloud ALM workspace. */
 import { appBundle } from "./approval.js";
+import { metricsCss, metricsScript } from "./project-metrics.js";
 import { sapLogo } from "./sap-logo.js";
 
 export const CONTENT_URI = "ui://cloud-alm/content-v1.html";
@@ -202,11 +203,16 @@ th {color:var(--muted);font-size:12px;background:var(--color-background-secondar
 td {border-top:1px solid var(--line)}
 .references {display:grid;gap:4px}
 @media(max-width:480px){.panel{padding:10px}td,th,.metrics div{padding:7px}.metrics strong{font-size:17px}}
+${metricsCss}
+body.dashboard{background:var(--color-background-secondary,light-dark(#f5f6f7,#171e25));--metric-edge:var(--line);--metric-track:var(--color-background-secondary,light-dark(#eff1f2,#31404e))}
+.dashboard header,.dashboard .grid-wrap{background:var(--surface);padding:12px;border:1px solid var(--line);border-radius:10px}
+.dashboard .grid-wrap{padding:0}
 </style></head><body><main>
 <header>${sapLogo}<div><div class="brand">SAP Cloud ALM${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
 <div id="content" aria-live="polite"></div>
 <footer><span id="count">Loading…</span><button id="more" hidden>View all</button></footer><p id="status" role="status"></p>
-</main><script type="module">${appBundle()}\n${contentScript}</script></body></html>`;
+</main><script type="module">${appBundle()}\n${metricsScript}
+${contentScript}</script></body></html>`;
 }
 
 const contentScript = String.raw`
@@ -441,6 +447,7 @@ function render(result, args = {}) {
   status("");
   const items = data.items || data.projects;
   const list = Array.isArray(items);
+  document.body.classList.toggle("dashboard", !list && !!data.project);
   const isDetails = Array.isArray(data.items) && typeof data.total !== "number";
   const kinds = [...new Set((items || []).map(itemKind).filter(Boolean))];
   $("title").textContent = Array.isArray(data.projects)
@@ -472,6 +479,7 @@ function render(result, args = {}) {
       : !(items.length > 5 || data.nextOffset != null);
     $("more").textContent = expanded ? "Load more" : "View all";
   } else if (data.project) {
+    root.append(projectMetrics(data));
     const counts = Object.entries(data.tasks || {}).map(([type, value]) => [plurals[type.replaceAll(" ", "_")] || type, String(value.total)]);
     if (data.features) counts.push(["Features", String(data.features.total)]);
     if (data.testCases) counts.push(["Manual test cases", String(data.testCases.manual)], ["Automated test cases", String(data.testCases.automated)]);
