@@ -11,7 +11,12 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
-Try the [synthetic MCP demo](docs/hosted-preview.md) from a source checkout to explore the cards without a service key.
+| Where you want to use Cloud ALM | How to connect |
+| --- | --- |
+| Claude Desktop | [Download the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb), open it, and select your SAP service key file. |
+| Codex, Claude Code or Cursor | With Node.js 22+ and your service key, run `npx -y cloud-alm-mcp-server setup`. [Local install guide](docs/install.md) |
+| Claude or ChatGPT in a browser | A web client needs a reachable HTTPS MCP endpoint. Try the [synthetic demo behind your own HTTPS forwarder](docs/hosted-preview.md). Didro does not currently provide a managed connection for customer tenants. |
+| Your own gateway | Run the [Streamable HTTP server](docs/hosting.md). Your gateway authenticates callers and supplies the SAP bearer token for each request. |
 
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
@@ -57,7 +62,7 @@ opens. For a text answer or an export, the assistant can skip that last call.
 
 ### Optional agent feedback
 
-With a receiver configured, the agent can call `calm_report_feedback` when a
+Feedback is off by default. Didro does not operate a feedback inbox for this release. With your own receiver configured, the agent can call `calm_report_feedback` when a
 tool behaves unexpectedly or a successful task takes avoidable extra work.
 It reports the affected tool, outcome, a short observation and an optional
 suggestion. The receipt gives you a report ID. Enable the tool once for the
@@ -120,7 +125,7 @@ its JSON. Step by step, with an e-mail you can send to your BTP admin:
 
 ## 2. Install
 
-**Any client, one command** (needs [Node.js 22+](https://nodejs.org)):
+**Local clients, one command** (needs [Node.js 22+](https://nodejs.org)):
 
 ```sh
 npx -y cloud-alm-mcp-server setup

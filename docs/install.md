@@ -10,7 +10,7 @@ them to the release line.
 The key, in every channel: a service key of the "SAP Cloud ALM API" instance
 in SAP BTP, downloaded as a JSON file.
 
-## 1. Any client: the setup command (recommended)
+## 1. Local clients: the setup command (recommended)
 
 ```sh
 npx -y cloud-alm-mcp-server setup
