@@ -11,6 +11,8 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
+[Installation guide](https://docs.didro.ai/cloud-alm/#install) · [Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting)
+
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
   requirements without a test."*
