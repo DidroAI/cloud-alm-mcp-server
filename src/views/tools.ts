@@ -779,7 +779,7 @@ export function fenced(text: string, budget: number, id: string | null): { text:
   };
 }
 
-type Linked = { id: string | null; title: string | null; status?: string | null; result?: string | null };
+type Linked = { url?: string | undefined; id: string | null; title: string | null; status?: string | null; result?: string | null };
 export type ItemDetail = {
   id: string | null;
   uuid: string;
@@ -856,17 +856,17 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
   };
   const taskL = (id: string) => {
     const t = n.taskOf(id);
-    return { line: n.task(id), link: t ? linked(t, { status: taskStatus(t) }) : { id: null, title: null } };
+    return { line: n.task(id), link: t ? linked(t, { status: taskStatus(t), url: webUrl(base, {kind:"task", type:t.type, displayId:t.displayId}) }) : { id: null, title: null } };
   };
-  const testCaseL = (t: SnapTestCase) => ({ line: n.testCase(t), link: linked(t, { result: resultText(n.results.get(t.id)) || null }) });
-  const featureL = (f: SnapFeature) => ({ line: n.feature(f), link: linked(f, { status: featureStatus(f.statusCode) }) });
-  const documentL = (d: SnapDocument) => ({ line: n.document(d), link: linked(d) });
-  const processL = (id: string) => ({ line: n.process(id), link: { id, title: n.process(id) } });
+  const testCaseL = (t: SnapTestCase) => ({ line: n.testCase(t), link: linked(t, { url: webUrl(base, {kind:"testCase", id:t.id, manual:t.kind === "manual"}), result: resultText(n.results.get(t.id)) || null }) });
+  const featureL = (f: SnapFeature) => ({ line: n.feature(f), link: linked(f, { url: webUrl(base, {kind:"feature", id:f.id}), status: featureStatus(f.statusCode) }) });
+  const documentL = (d: SnapDocument) => ({ line: n.document(d), link: linked(d, {url: webUrl(base, {kind:"document", displayId:d.displayId})}) });
+  const processL = (id: string) => ({ line: n.process(id), link: { id, title: n.process(id), url: webUrl(base, {kind:"process"}) } });
   const defectsLine = (testCaseId: string) => {
     if (!n.defectsKnown) return;
     const raised = n.defectsOf(testCaseId);
     lines.push(`Defects raised from it: ${raised.length ? raised.map(n.defect).join("; ") : "none"}`);
-    links.defects = raised.map((d) => linked(d, { status: taskStatus(d) }));
+    links.defects = raised.map((d) => linked(d, { status: taskStatus(d), url: webUrl(base, {kind:"task", type:d.type, displayId:d.displayId}) }));
   };
   let truncated = false;
   const own = (text: string | null, id: string | null) => {

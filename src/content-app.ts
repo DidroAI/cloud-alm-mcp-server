@@ -180,6 +180,7 @@ body.expanded main {
     transition: none !important;
   }
 }
+.properties {display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:12px;padding:12px;background:var(--color-background-secondary,light-dark(#f4f7fa,#24313d));border-radius:7px}.properties dt {color:var(--muted);font-size:12px}.properties dd {margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
 .demo {margin-inline-start:6px;padding:2px 7px;border:1px solid var(--line);border-radius:4px;color:var(--ink)}
 main {max-width:1100px;margin:auto}
 .panel,.grid-wrap {border:1px solid var(--line);border-radius:9px;background:var(--surface)}
@@ -334,6 +335,37 @@ function appendDetails(body, item) {
   if (item.description) body.append(node("p", item.description, "description"));
   if (item.steps?.length) body.append(table(["Step", "Action", "Expected result"],
     item.steps.map(step => [step.step, step.do, step.expect]), "Test steps"));
+  const fields = [
+    ["Priority", item.priority], ["Classification", item.fields?.classification],
+    ["Approval", item.fields?.approval], ["Assignee", item.fields?.assignee],
+    ["Phase", item.fields?.phase], ["Scope", item.fields?.scope],
+    ["Due", item.fields?.dueDate], ["Start", item.fields?.startDate],
+    ["End", item.fields?.endDate], ["Tags", item.fields?.tags?.join(", ")],
+    ["Transports", item.fields?.transports?.join(", ")],
+  ].filter(([, value]) => value != null && value !== "");
+  if (fields.length) {
+    const facts = node("dl", null, "properties");
+    for (const [label, value] of fields) {
+      const pair = node("div");
+      pair.append(node("dt", label), node("dd", value));
+      facts.append(pair);
+    }
+    body.append(facts);
+  }
+  if (item.results?.length) {
+    body.append(node("h3", "Execution results"), table(["Plan", "Result", "Steps passed", "Date"],
+      item.results.map(r => [r.plan, badge(r.status), r.passed + " / " + r.actions, r.date]), "Execution results"));
+  }
+  const relations = { children:"Child task", requirement:"Requirement", raisedFrom:"Raised from", testCases:"Test case", features:"Feature", documents:"Document", processes:"Process", defects:"Defect", covers:"Covers", delivers:"Delivers", tasks:"Task" };
+  const related = Object.entries(item.links || {}).flatMap(([kind, links]) =>
+    links.map(link => {
+      const title = node("div");
+      title.append(recordLink(link.title || link.id || "Unnamed record", link.url), node("small", link.id));
+      return [relations[kind] || kind, title, link.status || link.result || "—"];
+    }));
+  if (related.length) body.append(node("h3", "Related records"), table(["Relationship", "Record", "Status / result"], related, "Related records"));
+  if (item.comments?.length) body.append(node("h3", "Comments"), table(["Author", "Date", "Comment"],
+    item.comments.map(c => [c.author, c.date, c.text]), "Comments"));
   const progress = item.fields?.progress;
   if (progress) {
     const facts = node("div", null, "metrics");
@@ -440,24 +472,12 @@ function render(result, args = {}) {
       : !(items.length > 5 || data.nextOffset != null);
     $("more").textContent = expanded ? "Load more" : "View all";
   } else if (data.project) {
-    const facts = node("div", null, "facts");
-    for (const [type, value] of Object.entries(data.tasks || {})) {
-      const f = node("div", null, "fact");
-      f.append(
-        node("strong", value.total),
-        node("span", plurals[type] || type),
-      );
-      facts.append(f);
-    }
-    if (data.testCases) {
-      const f = node("div", null, "fact");
-      f.append(
-        node("strong", data.testCases.manual || 0),
-        node("span", "Manual test cases"),
-      );
-      facts.append(f);
-    }
-    root.append(facts);
+    const counts = Object.entries(data.tasks || {}).map(([type, value]) => [plurals[type.replaceAll(" ", "_")] || type, String(value.total)]);
+    if (data.features) counts.push(["Features", String(data.features.total)]);
+    if (data.testCases) counts.push(["Manual test cases", String(data.testCases.manual)], ["Automated test cases", String(data.testCases.automated)]);
+    if (counts.length) root.append(table(["Project scope", "Count"], counts, "Project scope"));
+    const results = Object.entries(data.testResults || {}).filter(([, count]) => count > 0);
+    if (results.length) root.append(node("h3", "Test results"), table(["Result", "Count"], results.map(([status, count]) => [badge(status === "notInPlan" ? "Outside test plans" : status), String(count)]), "Test results"));
     $("count").textContent =
       [data.project.phase, data.project.status].filter(Boolean).join(" · ") ||
       "Project summary";

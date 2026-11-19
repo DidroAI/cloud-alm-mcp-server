@@ -90,6 +90,7 @@ export const TENANT: Record<string, unknown> = {
       toTestCaseAssignments: [{ uuid: "x2", parent_uuid: DOC, testCaseUuid: TC1 }],
       toSolutionProcessAssignments: [{ uuid: "x3", parent_uuid: DOC, solutionProcessId: PROCESS }] },
   ]),
+  [`calm-documents/v1/Documents/${DOC}`]: { uuid: DOC, displayId: "7-1", title: "Credit design", documentTypeCode: "SD", content: "Check the credit limit before releasing the order." },
   "calm-testmanagement/v1/ManualTestCases": odata([
     testCase(TC1, "8-1-1", "Order blocked by credit limit", true, [REQ]),
     testCase(TC2, "8-1-2", "Release from the worklist", true, [US1], ["Wave 1"]),
