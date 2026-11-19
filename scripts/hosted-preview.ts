@@ -17,7 +17,7 @@ export function createHostedPreview(feedbackSink?: FeedbackSink) {
   const mcp = createHttpHandler({
     baseUrl: BASE_URL,
     reader: { fetch: fixtureFetch },
-    server: { writeMode: "off", contentPresentation: "explicit", ...(feedbackSink ? { feedbackSink } : {}) },
+    server: { synthetic: true, writeMode: "off", contentPresentation: "explicit", ...(feedbackSink ? { feedbackSink } : {}) },
   });
   return async (request: Request) => {
     const path = new URL(request.url).pathname;

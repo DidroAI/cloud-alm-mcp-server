@@ -35,7 +35,7 @@ reads these two settings and uses its bundled fixtures for SAP API calls.
 3. Ask “Show me the steps and expected result for test case 8-1-2 in a
    card.” Look for **Open the worklist** and **The order is listed**.
 4. Ask “Show test plan 8-3-1 as a card.” Expect two of three cases executed,
-   one passed, and a disclosure listing the cases and the defect.
+   one passed, and a table listing the cases, results and linked defect.
 5. Inspect the tool list. It offers reads and `calm_show`. A client asking
    to write a task should find no write tool.
 

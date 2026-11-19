@@ -10,7 +10,7 @@ export const CONTENT_TOOLS = new Set([
   "calm_get",
 ]);
 
-export function contentHtml(): string {
+export function contentHtml(synthetic = false): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root {
@@ -66,73 +66,6 @@ h1 {
   color: var(--muted);
   font-size: 12px;
 }
-.items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.item {
-  display: flex;
-  gap: 12px;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--line);
-  align-items: flex-start;
-}
-.item:first-child {
-  padding-top: 4px;
-}
-.item:last-child {
-  border-bottom: 0;
-}
-.name a {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  justify-content: space-between;
-  color: inherit;
-  text-decoration: none;
-  border-radius: 3px;
-}
-.name a:hover {
-  color: var(--blue);
-}
-.name a:hover .external {
-  opacity: 1;
-}
-.name a:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 5px;
-}
-.external {
-  flex-shrink: 0;
-  width: 15px;
-  height: 15px;
-  margin-top: 3px;
-  opacity: 0.55;
-  transition: opacity 0.15s;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5;
-}
-.body {
-  min-width: 0;
-  flex: 1;
-}
-.name {
-  font-size: 14px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-  margin: 0;
-}
-.meta {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
 .badge {
   display: inline-block;
   border-radius: 4px;
@@ -164,22 +97,6 @@ h1 {
 }
 .detail p {
   margin: 4px 0;
-}
-.plan-cases {
-  margin-top: 10px;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.plan-cases summary {
-  cursor: pointer;
-  color: var(--blue);
-  font-weight: 600;
-}
-.plan-cases ul {
-  padding-inline-start: 20px;
-}
-.plan-cases li {
-  margin: 6px 0;
 }
 .facts {
   display: flex;
@@ -248,36 +165,46 @@ button:disabled {
 [hidden] {
   display: none !important;
 }
-.item {
-  transition: background 0.15s;
-}
 body.expanded main {
   padding: 24px;
-}
-body.expanded .item {
-  padding: 20px 0;
 }
 @media (max-width: 420px) {
   main,
   body.expanded main {
     padding: 16px;
   }
-  .item {
-    gap: 10px;
-  }
-  .name {
-    font-size: 13px;
-  }
+
 }
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
   }
 }
+.demo {margin-inline-start:6px;padding:2px 7px;border:1px solid var(--line);border-radius:4px;color:var(--ink)}
+main {max-width:1100px;margin:auto}
+.panel,.grid-wrap {border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.panel {padding:16px;margin-bottom:10px}
+.record-head {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.record-head h2 {font-size:20px;margin:2px 0}
+main a {color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+small {display:block;color:var(--muted);font-size:12px}
+.metrics {display:grid;grid-template-columns:repeat(3,1fr);margin:16px 0;background:var(--color-background-secondary,light-dark(#f4f7fa,#24313d));border-radius:7px}
+.metrics div {padding:10px 12px;border-inline-end:1px solid var(--line)}
+.metrics div:last-child {border:0}
+.metrics strong,.metrics span {display:block}
+.metrics strong {font-size:20px;font-variant-numeric:tabular-nums}
+.metrics span {font-size:12px;color:var(--muted)}
+.grid-wrap {overflow-x:auto;margin:8px 0 0}
+table {width:100%;border-collapse:collapse;font-size:13px;text-align:start}
+th,td {text-align:start;padding:9px 12px;vertical-align:top;overflow-wrap:anywhere}
+th {color:var(--muted);font-size:12px;background:var(--color-background-secondary,light-dark(#f4f7fa,#24313d))}
+td {border-top:1px solid var(--line)}
+.references {display:grid;gap:4px}
+@media(max-width:480px){.panel{padding:10px}td,th,.metrics div{padding:7px}.metrics strong{font-size:17px}}
 </style></head><body><main>
-<header>${sapLogo}<div><div class="brand">SAP Cloud ALM</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
+<header>${sapLogo}<div><div class="brand">SAP Cloud ALM${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
 <div id="content" aria-live="polite"></div>
-<footer><span id="count">From your connected Cloud ALM</span><button id="more" hidden>View all</button></footer><p id="status" role="status"></p>
+<footer><span id="count">Loading…</span><button id="more" hidden>View all</button></footer><p id="status" role="status"></p>
 </main><script type="module">${appBundle()}\n${contentScript}</script></body></html>`;
 }
 
@@ -362,96 +289,104 @@ function safeLink(value) {
     return null;
   }
 }
-function appendDetails(body, item) {
-  if (item.description)
-    body.append(node("div", item.description, "description"));
-  for (const step of item.steps || []) {
-    body.append(node("h3", "Step " + step.step), node("p", step.do));
-    if (step.expect) body.append(node("p", "Expected: " + step.expect));
+function recordLink(label, value) {
+  const url = safeLink(value);
+  if (!url) return node("span", label);
+  const a = node("a", label + " ↗");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.onclick = event => {
+    event.preventDefault();
+    app.openLink({ url }).catch(() => status("Could not open Cloud ALM.", true));
+  };
+  return a;
+}
+function sourceAction(item) {
+  const url = safeLink(item.url);
+  if (!url) return null;
+  const hash = new URL(url).hash;
+  let label = "Open record";
+  if (!hash) label = "Open launchpad";
+  else if (hash.startsWith("#testPlan-display")) label = "Open Test Plans";
+  else if (hash.startsWith("#ProcessScopingList")) label = "Open process list";
+  else if (hash.startsWith("#test-display") && !hash.includes("&/manual/")) label = "Open test case list";
+  return recordLink(label, url);
+}
+function table(headers, rows, title) {
+  const wrap = node("div", null, "grid-wrap");
+  const grid = node("table"), head = grid.createTHead().insertRow();
+  grid.setAttribute("aria-label", title);
+  for (const heading of headers) {
+    const th = node("th", heading);
+    th.scope = "col";
+    head.append(th);
   }
-  if (itemKind(item) !== "test_plan") return;
+  const tbody = grid.createTBody();
+  for (const cells of rows) {
+    const tr = tbody.insertRow();
+    for (const cell of cells) tr.insertCell().append(cell || "—");
+  }
+  wrap.append(grid);
+  return wrap;
+}
+function appendDetails(body, item) {
+  if (item.description) body.append(node("p", item.description, "description"));
+  if (item.steps?.length) body.append(table(["Step", "Action", "Expected result"],
+    item.steps.map(step => [step.step, step.do, step.expect]), "Test steps"));
   const progress = item.fields?.progress;
   if (progress) {
-    body.append(node("h3", "Execution progress"));
-    if (progress.total === 0) {
-      body.append(node("p", "No test cases assigned."));
-    } else {
-      body.append(node("p", progress.executed + " of " + progress.total +
-        " executed · " + progress.passed + " passed"));
-      if (progress.executed > 0)
-        body.append(node("p", "Pass rate among executed cases: " + progress.passRate + "%"));
+    const facts = node("div", null, "metrics");
+    for (const [value, label] of [[progress.executed + " / " + progress.total, "Executed"], [String(progress.passed), "Passed"], [progress.executed ? progress.passRate + "%" : "—", "Pass rate of executed"]]) {
+      const metric = node("div");
+      metric.append(node("strong", value), node("span", label));
+      facts.append(metric);
     }
+    body.append(facts);
   }
   if (!item.testCases?.length) return;
-  const cases = node("details", null, "plan-cases");
-  cases.append(node("summary", "Test cases (" + item.testCases.length + ")"));
-  const list = node("ul");
-  for (const testCase of item.testCases) {
-    const entry = node("li", [testCase.id, testCase.title].filter(Boolean).join(" · "));
-    if (testCase.result) entry.append(node("p", testCase.result));
-    if (testCase.defects?.length)
-      entry.append(node("p", "Defects: " + testCase.defects.join(", ")));
-    list.append(entry);
-  }
-  cases.append(list);
-  body.append(cases);
+  body.append(node("h3", "Test cases (" + item.testCases.length + ")"));
+  body.append(table(["Test case", "Result", "Defects"], item.testCases.map(tc => {
+    const name = node("div");
+    name.append(recordLink(tc.title || tc.id, tc.url), node("small", tc.id));
+    const result = node("div"), [word, ...detail] = (tc.result || "Unknown").split(", ");
+    result.append(badge(word));
+    if (detail.length) result.append(node("small", detail.join(", ")));
+    const defects = node("div", null, "references");
+    for (const id of tc.defects || []) defects.append(recordLink(id, tc.defectUrls?.[id]));
+    return [name, result, defects.childNodes.length ? defects : "—"];
+  }), "Test case results"));
 }
-function row(item, showType, isDetails) {
-  const li = node("li", null, "item"),
-    body = node("div", null, isDetails ? "body detail" : "body"),
-    title = node(isDetails ? "h2" : "p", null, "name"),
-    label = item.title || item.name || item.id;
-  const url = safeLink(item.url);
-  if (url) {
-    const link = node("a");
-    link.href = url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.title = "Open " + (item.id || label) + " in SAP Cloud ALM";
-    link.setAttribute("aria-label", label + " — open in SAP Cloud ALM");
-    link.append(node("span", label));
-    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    icon.setAttribute("viewBox", "0 0 24 24");
-    icon.setAttribute("class", "external");
-    icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML =
-      '<path d="M14 4h6v6M20 4l-9 9M10 5H5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-5"/>';
-    link.append(icon);
-    link.onclick = (e) => {
-      e.preventDefault();
-      app
-        .openLink({ url })
-        .catch(() =>
-          status("Could not open Cloud ALM. Try the link again.", true),
-        );
-    };
-    title.append(link);
-  } else title.textContent = label;
-  body.append(title);
-  const meta = node("div", null, "meta");
-  const kind = itemKind(item);
-  if (item.id)
-    meta.append(
-      node(
-        "span",
-        (labels[kind] ||
-          (kind
-            ? kind.charAt(0).toUpperCase() + kind.slice(1).replaceAll("_", " ")
-            : "Item")) +
-          " ID: " +
-          item.id,
-      ),
-    );
-  if (kind && showType && !item.id)
-    meta.append(
-      node("span", labels[kind] || String(kind).replaceAll("_", " ")),
-    );
-  if (item.status) meta.append(badge(item.status));
-  if (item.result) meta.append(badge(item.result));
-  body.append(meta);
-  if (isDetails) appendDetails(body, item);
-  li.append(body);
-  return li;
+function itemList(items, details) {
+  if (!details) {
+    const hasSource = items.some(item => safeLink(item.url));
+    const headers = ["Item", "Status"];
+    const priority = items.some(item => item.priority);
+    if (priority) headers.push("Priority");
+    if (hasSource) headers.push("Cloud ALM");
+    return table(headers, items.map(item => {
+      const name = node("div");
+      name.append(node("strong", item.title || item.name || item.id), node("small", item.id));
+      const cells = [name, item.result || item.status ? badge(item.result || item.status) : "—"];
+      if (priority) cells.push(item.priority || "—");
+      if (hasSource) cells.push(sourceAction(item));
+      return cells;
+    }), "Cloud ALM records");
+  }
+  const group = node("div");
+  for (const item of items) {
+    const section = node("section", null, "detail panel");
+    const top = node("div", null, "record-head"), heading = node("div");
+    heading.append(node("small", (labels[itemKind(item)] || item.kind || "Item") + " · " + (item.id || "")), node("h2", item.title || item.name || item.id));
+    top.append(heading);
+    const action = sourceAction(item);
+    if (action) top.append(action);
+    section.append(top);
+    if (item.status) section.append(badge(item.status));
+    appendDetails(section, item);
+    group.append(section);
+  }
+  return group;
 }
 function render(result, args = {}) {
   if (result.isError) {
@@ -490,9 +425,7 @@ function render(result, args = {}) {
   $("project").textContent = data.project?.name || "";
   if (list) {
     const visible = expanded ? items : items.slice(0, 5);
-    const ul = node("ul", null, "items");
-    for (const item of visible) ul.append(row(item, kinds.length !== 1, isDetails));
-    root.append(ul);
+    if (visible.length) root.append(itemList(visible, isDetails));
     if (!items.length)
       root.append(node("p", "No items match this request.", "empty"));
     const total = typeof data.total === "number" ? data.total : items.length;

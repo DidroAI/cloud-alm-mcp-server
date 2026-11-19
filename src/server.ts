@@ -130,6 +130,8 @@ const READ_ONLY = {
 } as const;
 
 export type ServerOptions = ViewOptions & {
+  /** Fixture-backed demo. Identify example records to the model and the user. */
+  synthetic?: boolean;
   /** Optional receiver for agent observations about the MCP itself. */
   feedbackSink?: FeedbackSink;
   /** MCP Apps cards for reads. Default: on. */
@@ -188,7 +190,7 @@ export function createServer(
       icons: [{ src: `data:image/png;base64,${icon}`, mimeType: "image/png", sizes: ["512x512"] }],
     },
     {
-      instructions: `${INSTRUCTIONS}${feedback ? " After encountering unexpected tool behavior or an inefficient workflow, even if successful, call calm_report_feedback once for that distinct observation and continue the task. Only report friction you experienced yourself. Use generic language and omit record values, identifiers, credentials and chat text." : ""}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
+      instructions: `${options.synthetic ? "This connection uses synthetic example records. Identify them as demo data in answers. " : ""}${INSTRUCTIONS}${feedback ? " After encountering unexpected tool behavior or an inefficient workflow, even if successful, call calm_report_feedback once for that distinct observation and continue the task. Only report friction you experienced yourself. Use generic language and omit record values, identifiers, credentials and chat text." : ""}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
         options.writer && options.writeMode === "on"
           ? (options.approval ?? "prefer") !== "off"
             ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${(options.approval ?? "prefer") === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id and the tool's name" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
@@ -645,7 +647,7 @@ export function createServer(
   if (show || (options.cards !== false && !explicit && [...contentSchemas.keys()].some(name => name !== "calm_overview")))
     registerAppResource(server, "Cloud ALM content", CONTENT_URI,
       { description: "Projects and items from SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
-      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml() }] }),
+      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml(options.synthetic) }] }),
     );
   if (!explicit && options.cards !== false && (!allowed || allowed.has("calm_overview")))
     registerAppResource(

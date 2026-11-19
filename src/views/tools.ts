@@ -101,7 +101,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     lines.push(`${projects.length} projects. Pass projectId for one project's overview:`);
     for (const p of projects.slice(0, 50))
       lines.push(`- ${projectLabel(p)} · ${(p.purpose ?? "").toLowerCase()} · status ${p.status ?? "?"}`);
-    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose, status: p.status })) } };
+    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose, status: p.status })) } };
   }
   // The project list is already read: no second read for the project.
   const listed = projects.find((p) => p.id.toLowerCase() === (wanted ?? projects[0]?.id ?? "").toLowerCase());
@@ -527,7 +527,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "6",
           displayId: null,
           line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
-          data: { id: p.id, type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
         });
   }
   libraryKinds.forEach((kind, i) => {
@@ -538,7 +538,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: `7${kind}`,
           displayId: item.displayId,
           line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}`,
-          data: { id: item.displayId ?? item.id, type: kind.replace(/s$/, ""), title: item.title },
+          data: { id: item.displayId ?? item.id, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), type: kind.replace(/s$/, ""), title: item.title },
         });
   });
   rows.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
@@ -730,6 +730,7 @@ async function namer(snap: Snapshot, parts: readonly Part[] = ALL_PARTS) {
       const id = defects.byDefect.get(defectId.toLowerCase());
       return id ? testCase.get(id) : undefined;
     },
+    testCaseOf: (id: string) => testCase.get(id.toLowerCase()),
     taskOf: (id: string) => task.get(id.toLowerCase()),
     task: (id: string) => {
       const t = task.get(id.toLowerCase());
@@ -793,7 +794,7 @@ export type ItemDetail = {
   comments?: { date: string | null; author: string | null; text: string | null }[];
   steps?: { activity: string | null; step: string | null; do: string | null; expect: string | null; evidence: boolean }[];
   results?: { plan: string; status: string; date: string; actions: number; passed: number; failed: number }[];
-  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[] }[];
+  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[]; url?: string; defectUrls?: Record<string, string> }[];
 };
 
 export async function get(
@@ -824,7 +825,7 @@ export async function get(
   // At most 10 ids, each 1–3 requests: all at once stays well inside the API limits.
   const out = await pool(refs, 10, (r) =>
     r.ref
-      ? getOne(calm, snap, n, r.ref, budget).then(
+      ? getOne(calm, snap, n, r.ref, budget, o.webUrl).then(
           (x) => {
             const url = refUrl(r.ref as Ref, o.webUrl);
             return url ? { text: `${x.text}\nOpen in Cloud ALM: ${url}`, data: { ...x.data, url } } : x;
@@ -845,7 +846,7 @@ const linked = (t: { displayId: string | null; title: string | null }, extra: Pa
   ...extra,
 });
 
-async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget: number): Promise<{ text: string; data: ItemDetail }> {
+async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget: number, base?: string): Promise<{ text: string; data: ItemDetail }> {
   const lines: string[] = [];
   const links: Record<string, Linked[]> = {};
   const list = (label: string, key: string, items: { line: string; link: Linked }[]) => {
@@ -1007,7 +1008,15 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       title: p.title,
       fields: { startDate: p.startDate, endDate: p.endDate, progress },
       description,
-      testCases: rows.map((x) => ({ id: x.t.displayId, title: x.t.title, result: x.word, defects: x.raised })),
+      testCases: rows.map(({ t, word, raised }) => {
+        const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
+        const defectUrls: Record<string, string> = {};
+        for (const id of raised) {
+          const target = webUrl(base, { kind: "task", type: "CALMDEF", displayId: id });
+          if (target && id !== "?") defectUrls[id] = target;
+        }
+        return { id: t.displayId, title: t.title, result: word, defects: raised, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
+      }),
     };
   } else {
     const tasks = [...n.processLinks.entries()].filter(([, ps]) => ps.includes(ref.id)).map(([id]) => id);
@@ -1683,7 +1692,7 @@ export async function projectsView(calm: CloudAlm, o: ViewOptions = {}) {
   ];
   return {
     text: lines.join("\n"),
-    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
+    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
   };
 }
 
