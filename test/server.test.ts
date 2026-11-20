@@ -12,7 +12,7 @@ import {
   TOOL_NAMES,
 } from "../src/server.js";
 import { readerFromKeyFile, stdioServer } from "../src/stdio.js";
-import { BASE_URL, DEF, fakeCloudAlm, PROJECT_ID, REQ, TENANT } from "./tenant.js";
+import { BASE_URL, DEF, fakeCloudAlm, PROCESS, PROJECT_ID, REQ, TENANT } from "./tenant.js";
 
 async function connect(
   routes: Record<string, unknown> = TENANT,
@@ -477,4 +477,42 @@ test("the token request is retried when SAP answers 5xx", async () => {
   expect(calls).toBe(3);
   calls = -10;
   await expect(clientCredentials(key, { fetch: fetcher, retryDelayMs: 1 })).rejects.toThrow("three times");
+});
+
+test("project selection searches beyond 200 and pages matching delivery projects", async () => {
+  const projects = Array.from({ length: 202 }, (_, i) => ({
+    id: String(i), name: i < 200 ? "Other" : "Delivery rollout " + i,
+    purpose: "IMPLEMENTATION,SERVICE_DELIVERY", status: "C", operationalStatus: "NATTN",
+  }));
+  const { call } = await connect({ "calm-projects/v1/projects": projects });
+  const args = { query: "ROLLOUT", purpose: "service_delivery", limit: 1 };
+  expect((await call("calm_projects", args)).structured).toMatchObject({
+    total: 2, nextOffset: 1, projects: [{ id: "200", status: "hidden", operationalStatus: "needs attention" }],
+  });
+  expect((await call("calm_projects", { ...args, offset: 1 })).structured).toMatchObject({
+    nextOffset: null, projects: [{ id: "201" }],
+  });
+});
+
+test("find scoped processes and distinguish assigned work from related stories across SAP pages", async () => {
+  const { call } = await connect({
+    ...TENANT,
+    "calm-processmanagement/v1/solutionProcesses": (url: URL) => ({ value:
+      url.searchParams.get("$skip") === "500"
+        ? [{ solutionProcessId: PROCESS, solutionProcessVersionName: "Lead to Cash", isScoped: true }]
+        : Array.from({ length: 500 }, (_, i) => ({ solutionProcessId: "other-" + i, isScoped: false })),
+    }),
+    "calm-tasks/v1/tasks/solutionProcessAssignments": (url: URL) =>
+      url.searchParams.get("offset") === "200"
+        ? [{ solutionProcessId: PROCESS, taskId: REQ }]
+        : Array.from({ length: 200 }, (_, i) => ({ solutionProcessId: "other-" + i, taskId: "other-task" })),
+  });
+  expect((await call("calm_list", { types: ["process"], status: "in scope" })).structured).toMatchObject({
+    total: 1, items: [{ id: PROCESS, title: "Lead to Cash" }],
+  });
+  const trace = await call("calm_trace", { id: PROCESS });
+  expect(trace.structured).toMatchObject({ nodes: expect.arrayContaining([
+    expect.objectContaining({ id: "3-1", directlyAssigned: true }),
+    expect.objectContaining({ under: "3-1", directlyAssigned: false }),
+  ]) });
 });

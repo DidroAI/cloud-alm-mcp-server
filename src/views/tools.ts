@@ -84,7 +84,7 @@ function footer(snap: Snapshot, parts: Part[]): string[] {
   return out;
 }
 
-const projectLabel = (p: Project) => `${p.name ?? "?"} [${p.id}]`;
+const projectLabel = (p: Pick<Project, "id" | "name">) => `${p.name ?? "?"} [${p.id}]`;
 
 /** Where agents should look for what the project tools do not show. */
 const ELSEWHERE =
@@ -99,10 +99,8 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   const lines: string[] = [];
   const wanted = input.projectId ?? o.defaultProject;
   if (!wanted && projects.length !== 1) {
-    lines.push(`${projects.length} projects. Pass projectId for one project's overview:`);
-    for (const p of projects.slice(0, 50))
-      lines.push(`- ${projectLabel(p)} · ${(p.purpose ?? "").toLowerCase()} · status ${p.status ?? "?"}`);
-    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose, status: p.status })) } };
+    const selection = await projectsView(calm, o);
+    return { text: `${projects.length} projects. Pass projectId for one project's overview. Use calm_projects to search.\n${selection.text}`, data: selection.data };
   }
   // The project list is already read: no second read for the project.
   const listed = projects.find((p) => p.id.toLowerCase() === (wanted ?? projects[0]?.id ?? "").toLowerCase());
@@ -186,7 +184,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
       ...(o.webUrl ? { tenant: new URL(o.webUrl).hostname } : {}),
       phases: snap.complete("timeboxes") ? phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })) : undefined,
       milestones: snap.complete("timeboxes") ? milestones.map((t) => ({ name: t.name, date: t.startDate })) : undefined,
-      processes: snap.complete("processes") ? { inScope: scoped.length, total: processes.length } : undefined,
+      processes: snap.complete("processes") ? { inScope: scoped.length, total: processes.length, examples: scoped.slice(0, 6).map(({ id, name }) => ({ id, name })) } : undefined,
       tasks: tasksKnown ? Object.fromEntries([...byType.entries()].map(([type, list]) => [type, { total: list.length, byStatus: tally(list.map((t) => statusLabel(t.status))) }])) : undefined,
       defects: tasksKnown ? { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) } : undefined,
       features: snap.complete("features") ? { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) } : undefined,
@@ -363,7 +361,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     documents: types.has("document") && !status && !tag && !taskOnly && priority === undefined,
     testCases: types.has("test_case") && (!status || !!resultStatus) && !taskOnly && !input.changedSince,
     testPlans: types.has("test_plan") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
-    processes: types.has("process") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
+    processes: types.has("process") && (!status || ["in scope", "not in scope", "out of scope"].includes(status)) && !tag && !taskOnly && priority === undefined && !input.changedSince,
   };
   const libraryKinds = status || tag || taskOnly || priority !== undefined || input.changedSince ? [] : LIBRARY_KINDS.filter((k) => types.has(k.replace(/s$/, "") as FindType));
   const none = <T>(v: T) => Promise.resolve(v);
@@ -539,14 +537,16 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   }
   if (want.processes) {
     parts.push("processes");
-    for (const p of processes)
-      if (match(p.name))
+    for (const p of processes) {
+      const scope = p.isScoped === true ? "in scope" : p.isScoped === false ? "not in scope" : "unknown";
+      if (match(p.name) && (!status || scope === (status === "out of scope" ? "not in scope" : status)))
         rows.push({
           sort: "6",
           displayId: null,
-          line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
-          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+          line: `${p.id} · solution process · ${scope} · "${short(p.name)}"`,
+          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: scope },
         });
+    }
   }
   libraryKinds.forEach((kind, i) => {
     if (library[i]?.nextOffset != null) notes.push(`${kind}: only the first 200 in the library were searched`);
@@ -577,7 +577,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const nextOffset = offset + shown.length < rows.length ? offset + shown.length : null;
   const asked = new Set(input.types ?? []);
   if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("tags exist on tasks, features and test cases only");
-  if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features and test cases only");
+  if (status && ["document", "test_plan"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features, test cases and process scope");
   if (status && asked.has("test_case") && !resultStatus) notes.push(`test cases filter by latest result: passed, failed, in progress, blocked, not run (in a plan, not executed), ${NOT_IN_PLAN}`);
   if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee, dueBefore, classification, process, feature and hasTests filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
@@ -587,7 +587,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (used.length) notes.push(`no item has status "${status}"; statuses in use: ${used.join(", ")}`);
   }
   if (input.process) notes.push("processes are assigned to requirements: user stories under them are not listed (calm_trace the process shows them)");
-  if (!rows.length && want.processes && processes.length) {
+  if (!rows.length && query && want.processes && processes.length) {
     const scoped = processes.filter((p) => p.isScoped);
     notes.push(`no process matches "${query}"; ${scoped.length ? `in scope: ${scoped.map((p) => p.name).join("; ")}` : `${processes.length} processes, none in scope`} (end-to-end names, e.g. Lead to Cash for order to cash)`);
   }
@@ -1120,6 +1120,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       type: typeLabel(t?.type ?? null),
       title: t?.title ?? null,
       status: t ? taskStatus(t) : null,
+      ...(ref.kind === "process" ? { directlyAssigned: start.includes(taskId) } : {}),
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
@@ -1154,7 +1155,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
         );
     } else {
       const tcs = n.testCases.filter((x) => x.taskIds.includes(taskId));
-      out.push(`${sub}test cases: ${tcs.length ? tcs.map(n.testCase).join("; ") : "NONE"}`);
+      out.push(`${sub}test cases: ${tcs.length ? tcs.map(n.testCase).join("; ") : (snap.complete("testCases") ? "NONE" : "unknown (partial test case list)")}`);
       // What holds it up: open defects raised from its test cases.
       const holding = tcs.flatMap((x) => n.defectsOf(x.id)).filter((d, i, all) => all.indexOf(d) === i && isOpen(d.status));
       if (holding.length) out.push(`${sub}blocked by: ${holding.map((d) => `defect ${d.displayId} (${taskStatus(d)}${d.priority !== null ? `, priority ${priorityLabel(d.priority)}` : ""})`).join("; ")}`);
@@ -1167,7 +1168,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     lines.push(...describe(reqId, "- "));
     for (const kid of kids) lines.push(...describe(kid, "    - ", reqId));
   }
-  if (!groups.size) lines.push("No linked tasks.");
+  if (!groups.size) lines.push(snap.complete("tasks", "processLinks") ? "No linked tasks." : "No linked tasks found in available data.");
   if (ref.kind === "test case" && n.defectsKnown) {
     const raised = n.defectsOf(ref.testCase.id);
     if (raised.length) lines.push(`Defects raised from this test case: ${raised.map(n.defect).join("; ")}`);
@@ -1177,7 +1178,8 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     if (tcs.length) lines.push(`Document's own test cases: ${tcs.map(n.testCase).join("; ")}`);
     if (ref.document.processIds.length) lines.push(`Document's processes: ${ref.document.processIds.map(n.process).join("; ")}`);
   }
-  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks"]);
+  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks", "processes"]);
+  if (ids.length < start.length) footnotes.push(`Expanded the first ${ids.length} of ${start.length} linked tasks. Use calm_list to narrow the project work.`);
   lines.push(...footnotes);
   const startId =
     ref.kind === "task" ? ref.task.displayId : ref.kind === "feature" ? ref.feature.displayId : ref.kind === "test case" ? ref.testCase.displayId : ref.kind === "document" ? ref.document.displayId : ref.kind === "process" ? ref.id : input.id;
@@ -1194,7 +1196,7 @@ export type GapCheck = (typeof GAP_CHECKS)[number];
 const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
 
 /** A project's health in words: ONTRK → "on track". */
-const HEALTH: Record<string, string> = { ONTRK: "on track", ATRSK: "at risk", OFFTRK: "off track", CRIT: "critical" };
+const HEALTH: Record<string, string> = { ONTRK: "on track", NATTN: "needs attention", ATRSK: "at risk", OFFTRK: "off track", CRIT: "critical" };
 const projectHealth = (code: string | null | undefined) => (code ? (HEALTH[code] ?? code.toLowerCase()) : null);
 
 /** A test case's latest results as data, in the words of every other tool. */
@@ -1713,16 +1715,28 @@ export async function landscape(calm: CloudAlm) {
 // calm_projects, calm_team
 // ---------------------------------------------------------------------------
 
-export async function projectsView(calm: CloudAlm, o: ViewOptions = {}) {
-  const projects = await listProjects(calm, clock(o));
-  const lines = [
-    `${projects.length} project${projects.length === 1 ? "" : "s"} this key can read${projects.length ? ":" : "."}`,
-    ...projects.map((p) => `- ${projectLabel(p)} · ${(p.purpose ?? "?").toLowerCase()} · ${p.status === "C" ? "closed" : "open"}${o.defaultProject && p.id === o.defaultProject ? " · default" : ""}`),
-    "Every project tool takes projectId as the id or the name. Private or restricted projects need the key's calm-api.projects.private.read / protected.read scopes.",
-  ];
+export async function projectsView(calm: CloudAlm, o: ViewOptions = {}, input: {
+  query?: string; purpose?: string; limit?: number; offset?: number;
+} = {}) {
+  const query = input.query?.trim().toLowerCase() ?? "";
+  const purpose = input.purpose?.trim().toLowerCase().replaceAll(" ", "_");
+  const matches = (await listProjects(calm, clock(o))).filter(p =>
+    (p.name ?? "").toLowerCase().includes(query) &&
+    (!purpose || p.purpose?.toLowerCase().split(",").some(value => value.trim() === purpose))
+  );
+  const offset = input.offset ?? 0;
+  const projects = matches.slice(offset, offset + (input.limit ?? 25)).map(p => ({
+    id: p.id, name: p.name, purpose: p.purpose?.toLowerCase() ?? null,
+    status: p.status === "O" ? "active" : p.status === "C" ? "hidden" : p.status,
+    operationalStatus: projectHealth(p.operationalStatus), default: p.id === o.defaultProject,
+    ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}),
+  }));
+  const nextOffset = offset + projects.length < matches.length ? offset + projects.length : null;
   return {
-    text: lines.join("\n"),
-    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
+    text: [`${projects.length} of ${matches.length} matching projects.`,
+      ...projects.map(p => [projectLabel(p), p.purpose, p.status, p.operationalStatus].filter(Boolean).join(" · ")),
+      ...(nextOffset === null ? [] : [`Continue at offset ${nextOffset}.`])].join("\n"),
+    data: { projects, total: matches.length, offset, nextOffset },
   };
 }
 

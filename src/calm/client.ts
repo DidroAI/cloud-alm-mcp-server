@@ -502,9 +502,7 @@ export class CloudAlm {
 
   async listProjects(): Promise<Project[]> {
     return this.run(async (s) =>
-      rowsOf(await s.get(PATHS.projects))
-        .map(project)
-        .slice(0, MAX_LIMIT),
+      rowsOf(await s.get(PATHS.projects)).map(project),
     );
   }
 

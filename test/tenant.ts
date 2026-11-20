@@ -175,7 +175,7 @@ export function fakeCloudAlm(routes: Record<string, unknown> = TENANT, options: 
     if (body === undefined)
       return Response.json({ message: "Not Found" }, { status: 404 });
     if (body instanceof Response) return body.clone();
-    return Response.json(body);
+    return Response.json(typeof body === "function" ? body(url) : body);
   }) as typeof fetch;
   return { fetch: fetcher, seen, stats };
 }

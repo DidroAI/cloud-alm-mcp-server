@@ -114,7 +114,7 @@ export const OVERVIEW_OUT = loose({
   project: loose({ id: z.string(), name: str, purpose: str, status: str, phase: str }),
   phases: z.array(loose({ name: str, start: str, end: str, current: z.boolean() })),
   milestones: z.array(loose({ name: str, date: str })),
-  processes: loose({ inScope: z.number(), total: z.number() }),
+  processes: loose({ inScope: z.number(), total: z.number(), examples: z.array(loose({ id: z.string(), name: str })) }),
   tasks: z.record(z.string(), loose({ total: z.number(), byStatus: counts })),
   defects: loose({ byStatus: counts, byPriority: counts }),
   features: loose({ total: z.number(), byStatus: counts }),
@@ -125,7 +125,8 @@ export const OVERVIEW_OUT = loose({
 }).partial();
 
 export const PROJECTS_OUT = loose({
-  projects: z.array(loose({ id: z.string(), name: str, purpose: str, status: str, default: z.boolean().optional() })),
+  projects: z.array(loose({ id: z.string(), name: str, purpose: str, status: str, operationalStatus: str, default: z.boolean().optional() })),
+  total: z.number().int(), offset: z.number().int(), nextOffset: z.number().int().nullable(),
 });
 
 export const TEAM_OUT = loose({
@@ -153,6 +154,7 @@ export const TRACE_OUT = loose({
       title: str,
       status: str,
       under: str.describe("Parent requirement"),
+      directlyAssigned: z.boolean().optional().describe("On a process trace, SAP directly assigns this task to the process"),
       processes: z.array(z.string()),
       features: z.array(loose({ id: str, title: str, status: z.string(), transports: z.array(z.string()).nullable() })),
       testCases: z.array(loose({ id: str, title: str, result: z.string(), defects: z.array(str) })),

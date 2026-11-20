@@ -523,18 +523,19 @@ async function call(name, args, append = false) {
   status("Loading…");
   try {
     const result = await app.callServerTool({ name, arguments: args });
+    const collection = name === "calm_projects" ? "projects" : "items";
     if (
       append &&
       !result.isError &&
-      Array.isArray(result.structuredContent?.items) &&
-      Array.isArray(current?.result.structuredContent?.items)
+      Array.isArray(result.structuredContent?.[collection]) &&
+      Array.isArray(current?.result.structuredContent?.[collection])
     ) {
       result.structuredContent = {
         ...result.structuredContent,
         offset: current.result.structuredContent.offset,
-        items: [
-          ...current.result.structuredContent.items,
-          ...result.structuredContent.items,
+        [collection]: [
+          ...current.result.structuredContent[collection],
+          ...result.structuredContent[collection],
         ],
       };
     }
@@ -574,11 +575,10 @@ $("more").onclick = async () => {
     }
   } else if (current?.result.structuredContent?.nextOffset != null)
     call(
-      "calm_list",
+      current.result.structuredContent.projects ? "calm_projects" : "calm_list",
       {
         ...input,
-        projectId:
-          current.result.structuredContent.project?.id || input.projectId,
+        ...(current.result.structuredContent.project ? { projectId: current.result.structuredContent.project.id } : {}),
         offset: current.result.structuredContent.nextOffset,
       },
       true,
