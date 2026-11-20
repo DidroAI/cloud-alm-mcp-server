@@ -22,8 +22,8 @@ strong { color:var(--ink); }
 label { font-weight:600; }
 .hint,details { color:var(--muted); font-size:14px; }
 .hint { margin:4px 0 12px; }
-input[type=file] { display:block; width:100%; padding:9px; border:1px solid var(--line); color:var(--ink); font:inherit; font-size:14px; }
-input::file-selector-button { padding:7px 12px; margin-right:12px; border:1px solid var(--line); background:var(--paper); color:var(--ink); font:inherit; cursor:pointer; }
+#key:not([hidden]) { display:block; width:100%; padding:9px; border:1px solid var(--line); color:var(--ink); font:inherit; font-size:14px; }
+#key::file-selector-button { padding:7px 12px; margin-right:12px; border:1px solid var(--line); background:var(--paper); color:var(--ink); font:inherit; cursor:pointer; }
 dl { border-top:1px solid var(--line); margin:24px 0 8px; padding-top:12px; }
 dl div { display:flex; justify-content:space-between; padding:3px 0; font-size:14px; }
 dt { color:var(--muted); }
@@ -35,3 +35,9 @@ details { margin:16px 0; }
 summary { cursor:pointer; }
 details p { margin:8px 0; }
 code { overflow-wrap:anywhere; }
+
+.upload-field { border:0; padding:0; margin:0; min-width:0; }
+.upload-field legend { font-weight:600; padding:0; }
+#key-upload label { font-weight:400; overflow-wrap:anywhere; }
+#key-upload label > span:first-child { border-style:solid; }
+.button:disabled { opacity:.5; cursor:default; }

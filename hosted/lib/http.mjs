@@ -25,7 +25,7 @@ export async function limited(request, limit) {
 }
 export function page(title, content, headers = {}) {
   return new Response(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link rel="icon" href="/assets/favicon.png"><link rel="stylesheet" href="/connect.css">
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link rel="icon" href="/assets/favicon.png"><link rel="stylesheet" href="/dropzone.css"><link rel="stylesheet" href="/connect.css">
     <header class="masthead"><a class="brand" href="https://didro.ai" aria-label="Didro"><img src="/assets/logo-didro.png" alt="Didro"></a><span>SAP Cloud ALM</span></header>
     <main class="consent"><h1>${title}</h1>${content}</main></html>`,
     {
@@ -34,7 +34,7 @@ export function page(title, content, headers = {}) {
         "cache-control": "no-store",
         "referrer-policy": "same-origin",
         "content-security-policy":
-          "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; form-action 'self' https://chatgpt.com https://claude.ai; frame-ancestors 'none'; base-uri 'none'",
+          "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; font-src 'self'; form-action 'self' https://chatgpt.com https://claude.ai; frame-ancestors 'none'; base-uri 'none'",
         ...headers,
       },
     },

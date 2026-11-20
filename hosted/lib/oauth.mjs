@@ -128,9 +128,11 @@ function authorize(origin, params) {
     "Connect your tenant",
     `<p class="intro">Give <strong>${platform(redirect)}</strong> read access to your SAP Cloud ALM tenant.</p>
     <form class="panel" method="post" action="/oauth/authorize" enctype="multipart/form-data">
-      <label for="key">BTP service key</label>
+      <fieldset class="upload-field"><legend>BTP service key</legend>
       <p class="hint" id="key-hint">Choose the JSON file you downloaded from SAP BTP.</p>
-      <input id="key" type="file" name="key" accept=".json,application/json" aria-describedby="key-hint" required>
+      <div id="key-upload"></div>
+      <input aria-label="BTP service key JSON" id="key" type="file" name="key" accept=".json,application/json" aria-describedby="key-hint" required></fieldset>
+      <script type="module" src="/key-upload.js"></script>
       <input type="hidden" name="csrf" value="${csrf}">
       <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
       <p class="hint">Anyone using this connection can read the records your key allows.</p>

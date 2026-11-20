@@ -1,0 +1,15 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "./files/dropzone.tsx";
+@theme {
+  --color-accent: #a31329;
+  --color-accent-surface: #f8e9e8;
+  --color-border-strong: #bcb4b6;
+  --color-border: #d4cdcd;
+  --color-surface: white;
+  --color-subtle: #f7f5f4;
+  --color-muted: #686369;
+  --color-ink: #101114;
+  --text-small: 14px;
+  --text-caption: 12px;
+}
