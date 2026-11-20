@@ -125,8 +125,18 @@ function authorize(origin, params) {
     until: Date.now() + 600000,
   });
   return page(
-    "Connect SAP Cloud ALM",
-    `<p>Allow <strong>${platform(redirect)}</strong> to read your Cloud ALM tenant for up to one hour. Anyone who can use this connection can read what your key allows.</p><form method="post" action="/oauth/authorize" enctype="multipart/form-data"><label>BTP service key JSON<input type="file" name="key" accept=".json,application/json" required></label><input type="hidden" name="csrf" value="${csrf}"><p>Your key is exchanged directly with SAP and discarded. Only the temporary SAP token is stored, encrypted, for this session.</p><button>Connect my tenant</button></form>`,
+    "Connect your tenant",
+    `<p class="intro">Give <strong>${platform(redirect)}</strong> read access to your SAP Cloud ALM tenant.</p>
+    <form class="panel" method="post" action="/oauth/authorize" enctype="multipart/form-data">
+      <label for="key">BTP service key</label>
+      <p class="hint" id="key-hint">Choose the JSON file you downloaded from SAP BTP.</p>
+      <input id="key" type="file" name="key" accept=".json,application/json" aria-describedby="key-hint" required>
+      <input type="hidden" name="csrf" value="${csrf}">
+      <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
+      <p class="hint">Anyone using this connection can read the records your key allows.</p>
+      <button class="button" type="submit">Connect to ${platform(redirect)}</button>
+    </form>
+    <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The app discards the file and encrypts the temporary SAP token in the session database. ${platform(redirect)} receives a separate connector token.</p></details>`,
     { "set-cookie": cookie + "=" + flow + cookieOptions + "; Max-Age=600" },
   );
 }
