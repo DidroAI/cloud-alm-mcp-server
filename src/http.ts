@@ -86,7 +86,7 @@ export function createHttpHandler(options: HttpOptions = {}) {
     return createServer(readerFor(token, baseUrl), {
       ...serverOptions,
       // Approvals arrive in a later request (card or chat), and only from the same token.
-      approvalSubject: subjectOf(token),
+      approvalSubject: `${subjectOf(token)} ${baseUrl}`,
       ...(webUrl ? { webUrl } : {}),
     });
   };
@@ -122,11 +122,11 @@ export function createHttpHandler(options: HttpOptions = {}) {
       return refuse(401, "A Cloud ALM bearer token is required.", {
         "www-authenticate": 'Bearer realm="cloud-alm"',
       });
-    const baseUrl = request.headers.get(BASE_URL_HEADER) ?? options.baseUrl;
+    let baseUrl = request.headers.get(BASE_URL_HEADER) ?? options.baseUrl;
     if (!baseUrl)
       return refuse(400, `No Cloud ALM API address: send ${BASE_URL_HEADER}.`);
     try {
-      apiRoot(baseUrl, options.reader?.hostPattern);
+      baseUrl = apiRoot(baseUrl, options.reader?.hostPattern);
     } catch (error) {
       return refuse(
         400,

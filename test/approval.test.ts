@@ -7,7 +7,7 @@ import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
 import { createHttpHandler } from "../src/http.js";
 import { createServer, type ServerOptions } from "../src/server.js";
-import { BASE_URL, TENANT } from "./tenant.js";
+import { BASE_URL, REQ, US2, fakeWritableTenant, TENANT } from "./tenant.js";
 
 /** The fake tenant; POSTs are recorded and answered like Cloud ALM. */
 function fakeTenant() {
@@ -27,8 +27,7 @@ function fakeTenant() {
 
 type ClientKind = "plain" | "ui" | "elicit-accept" | "elicit-decline";
 
-async function connect(kind: ClientKind, options: ServerOptions) {
-  const fake = fakeTenant();
+async function connect(kind: ClientKind, options: ServerOptions, fake = fakeTenant()) {
   const grant = { accessToken: "t", baseUrl: BASE_URL };
   const calm = new CloudAlm(grant, { fetch: fake.fetcher });
   const writer = new CloudAlmWriter(grant, { fetch: fake.fetcher });
@@ -92,6 +91,52 @@ describe("approval of writes", () => {
     const again = await call("calm_approve", { ...a, decision: "approve" });
     expect(again.error).toBe(true);
     expect(posts.length).toBe(1);
+  });
+
+  test("confirmation checks the full source value and only resolves the update once", async () => {
+    const tenant = fakeWritableTenant();
+    const path = `calm-tasks/v1/tasks/${REQ}`;
+    const prefix = "same visible description ".repeat(8);
+    const changeDescription = (description: string) => tenant.fetcher(`${BASE_URL}/${path}`, {
+      method: "PATCH", body: JSON.stringify({ description }),
+    });
+    let reads = 0;
+    const fetcher = (async (input, init) => {
+      if (init?.method === "GET" && new URL(String(input)).pathname.endsWith(path)) reads++;
+      return tenant.fetcher(input, init);
+    }) as typeof fetch;
+    const { call } = await connect("plain", { approval: "prefer" }, { fetcher, posts: [] });
+    await changeDescription(prefix + "first ending");
+    const args = { ids: ["3-1"], description: "Approved replacement" };
+    const proposeUpdate = async () => (await call("calm_update", args)).meta?.[META_KEY] as { id: string };
+    const first = await proposeUpdate();
+    await changeDescription(prefix + "colleague's edit");
+    const writesBefore = tenant.writes.length;
+    const rejected = await call("calm_confirm", { id: first.id, tool: "calm_update" });
+    expect(rejected.error).toBe(true);
+    expect(rejected.text).toContain("no longer matches");
+    expect(tenant.writes.length).toBe(writesBefore);
+
+    const second = await proposeUpdate();
+    reads = 0;
+    const accepted = await call("calm_confirm", { id: second.id, tool: "calm_update" });
+    expect(accepted.error).toBe(false);
+    expect(reads).toBe(2); // One read to plan and check, one to verify the actual PATCH.
+    expect(tenant.writes.at(-1)?.body).toEqual({ description: "<p>Approved replacement</p>" });
+  });
+
+  test("a stale later item in a tag batch refuses the whole approval", async () => {
+    const tenant = fakeWritableTenant();
+    const { call } = await connect("plain", { approval: "prefer" }, { fetcher: tenant.fetcher, posts: [] });
+    const result = await call("calm_tag", { tasks: ["3-1", "3-3"], add: ["Review"] });
+    const proposal = result.meta?.[META_KEY] as { id: string };
+    await tenant.fetcher(`${BASE_URL}/calm-tasks/v1/tasks/updateTags`, {
+      method: "POST", body: JSON.stringify({ taskId: US2, tags: ["Changed"] }),
+    });
+    const writesBefore = tenant.writes.length;
+    const refused = await call("calm_confirm", { id: proposal.id, tool: "calm_tag" });
+    expect(refused.error).toBe(true);
+    expect(tenant.writes.length).toBe(writesBefore);
   });
 
   test("reject writes nothing", async () => {
@@ -185,12 +230,13 @@ describe("approval over stateless HTTP", () => {
       server: { writeMode: "on", approval: "required" },
     });
     let n = 0;
-    const rpc = async (token: string, name: string, args: Record<string, unknown>) => {
+    const rpc = async (token: string, name: string, args: Record<string, unknown>, baseUrl = BASE_URL) => {
       const response = await handler(
         new Request("http://localhost/mcp", {
           method: "POST",
           headers: {
             authorization: `Bearer ${token}`,
+            "x-calm-api-url": baseUrl,
             "content-type": "application/json",
             accept: "application/json, text/event-stream",
           },
@@ -206,6 +252,9 @@ describe("approval over stateless HTTP", () => {
     const stranger = await rpc("token-b", "calm_approve", { ...a, decision: "approve" });
     expect(stranger.isError).toBe(true);
     expect(fake.posts).toEqual([]);
+    const otherApi = await rpc("token-a", "calm_approve", { ...a, decision: "approve" }, "https://other.alm.cloud.sap/api");
+    expect(otherApi.isError).toBe(true);
+    expect(fake.posts).toEqual([]);
     const owner = await rpc("token-a", "calm_approve", { ...a, decision: "approve" });
     expect(owner.isError).toBeFalsy();
     expect(fake.posts).toEqual(["calm-tasks/v1/tasks"]);
@@ -213,7 +262,7 @@ describe("approval over stateless HTTP", () => {
 });
 
 describe("pending store", () => {
-  const entry = { tool: "calm_tag", args: {}, preview: "p", subject: "s", allowChat: false };
+  const entry = { tool: "calm_tag", args: {}, fingerprint: "p", subject: "s", allowChat: false };
 
   test("expires, is single use, and belongs to its subject", () => {
     const p = propose(entry, 0);

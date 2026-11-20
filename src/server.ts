@@ -22,6 +22,7 @@ import {
   META_KEY,
   OVERVIEW_URI,
   overviewHtml,
+  planFingerprint,
   propose,
   take,
 } from "./approval.js";
@@ -37,7 +38,7 @@ import {
 import { forgetSnapshots } from "./views/snapshot.js";
 import { api } from "./views/api.js";
 import { ANALYTICS_OUT, API_OUT, CHANGES_OUT, GAPS_OUT, GET_OUT, LANDSCAPE_OUT, LIST_OUT, OVERVIEW_OUT, PROJECTS_OUT, TEAM_OUT, TRACE_OUT } from "./schemas.js";
-import { NOTHING_TO_DO } from "./views/items.js";
+import { NOTHING_TO_DO, type ReviewPlan } from "./views/items.js";
 import {
   comment,
   createDocument,
@@ -206,19 +207,21 @@ export function createServer(
     // Writes wait for approval unless the embedder turns it off by name.
     options.writer && writeMode === "on" ? (options.approval ?? "prefer") : "off";
   /** Write tools by name, so an approval can run the stored call. */
-  const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
+  type WriteCall = (args: Record<string, unknown>, reviewPlan?: ReviewPlan) => Promise<Out>;
+  const writes = new Map<string, WriteCall>();
 
   type Extra = ServerContext;
   const gated = async (
     name: string,
     title: string,
     args: Record<string, unknown>,
-    run: (args: Record<string, unknown>) => Promise<string>,
+    run: WriteCall,
     ctx: Extra,
   ): Promise<CallToolResult> => {
     // "Create a defect" rather than the tool's generic "Create a task".
     if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
-    const preview = await answer(() => run({ ...args, dryRun: true }));
+    let fingerprint: string | undefined;
+    const preview = await answer(() => run({ ...args, dryRun: true }, plan => { fingerprint = planFingerprint(plan); }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
     // The same plan as data, for the card's field-by-field view.
@@ -232,7 +235,8 @@ export function createServer(
     if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }], structuredContent: { nothingToDo: true, text } };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
-    const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });
+    if (!fingerprint) return { isError: true, content: [{ type: "text", text: "Could not prepare this change for approval." }] };
+    const p = propose({ tool: name, args, fingerprint, subject, allowChat: approval === "prefer" });
     return proposalAnswer(name, title, text, p, changeWithTenant);
   };
   const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>): CallToolResult => {
@@ -256,16 +260,16 @@ export function createServer(
     title: string,
     description: string,
     inputSchema: Shape,
-    write: (args: z.infer<z.ZodObject<Shape>>) => Promise<Out>,
+    write: (args: z.infer<z.ZodObject<Shape>>, reviewPlan?: ReviewPlan) => Promise<Out>,
     outputSchema?: z.ZodObject,
   ) => {
     if (allowed && !allowed.has(name)) return;
     const isWrite = (WRITE_TOOL_NAMES as readonly string[]).includes(name);
     // After a write, cached reads of the project are stale: drop them.
     const run = isWrite
-      ? async (args: z.infer<z.ZodObject<Shape>>) => {
+      ? async (args: z.infer<z.ZodObject<Shape>>, reviewPlan?: ReviewPlan) => {
           try {
-            return await write(args);
+            return await write(args, reviewPlan);
           } finally {
             if ((args as { dryRun?: boolean }).dryRun !== true) forgetSnapshots(calm);
           }
@@ -279,8 +283,8 @@ export function createServer(
       annotations: isWrite ? { ...WRITE, destructiveHint: DESTRUCTIVE.has(name), title } : { ...READ_ONLY, title },
     };
     if (isWrite && approval !== "off") {
-      const runAny = run as unknown as (args: Record<string, unknown>) => Promise<string>;
-      writes.set(name, { title, run: runAny });
+      const runAny = run as unknown as WriteCall;
+      writes.set(name, runAny);
       registerAppTool(
         server,
         name,
@@ -449,7 +453,7 @@ export function createServer(
 
   const writer = options.writer;
   if (writer && writeMode !== "off") {
-    const w = { ...options, writeMode } as const;
+    const writeOptions = (reviewPlan?: ReviewPlan) => ({ ...options, writeMode, reviewPlan } as const);
     const dryRun = z.boolean().optional().describe("true: answer with what would be sent, send nothing");
     const step = z.object({
       title: z.string().min(1).max(500),
@@ -469,7 +473,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createTestCase(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createTestCase(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_link",
@@ -482,7 +486,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => link(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => link(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_tag",
@@ -495,7 +499,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => tag(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => tag(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_task",
@@ -515,7 +519,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createTask(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createTask(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     const priority = z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).describe("10 very high, 20 high, 30 medium, 40 low");
     const date = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/, "YYYY-MM-DD, or empty to clear");
@@ -550,7 +554,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => update(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => update(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_delete",
@@ -563,7 +567,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => remove(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => remove(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_comment",
@@ -575,7 +579,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => comment(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => comment(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_feature",
@@ -590,7 +594,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createFeature(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createFeature(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_document",
@@ -606,7 +610,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createDocument(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createDocument(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
   }
   if (approval !== "off") registerApproval();
@@ -675,17 +679,11 @@ export function createServer(
         if (!approve) return { content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);
         if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
-        // The user approved a preview: write only if the change still reads
-        // the same (ids and names are resolved again, and items may have
-        // changed since).
-        const again = await answer(() => write.run({ ...p.args, dryRun: true }));
-        const now = previewText(String((again.content[0] as { text?: string })?.text ?? ""));
-        if (again.isError || now !== p.preview)
-          return {
-            isError: true,
-            content: [{ type: "text", text: `Not written: the change no longer matches what the user approved. It would now be:\n${now}\nPropose it again and ask the user.` }],
-          };
-        return answer(() => write.run({ ...p.args, dryRun: false }));
+        // The write checks the same resolved plan it executes, before its first mutation.
+        return answer(() => write({ ...p.args, dryRun: false }, plan => {
+          if (planFingerprint(plan) !== p.fingerprint)
+            throw new CloudAlmError("bad_request", "The change no longer matches what the user approved. Nothing was written. Propose the change again.");
+        }));
       } catch (error) {
         if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
         throw error;

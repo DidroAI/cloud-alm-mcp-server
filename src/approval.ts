@@ -38,7 +38,7 @@ type Pending = {
   /** Whether it may be taken without the card's nonce (mode prefer). */
   allowChat: boolean;
   args: Record<string, unknown>;
-  preview: string;
+  fingerprint: string;
   subject: string;
   nonce: Buffer;
   expiresAt: number;
@@ -53,6 +53,16 @@ const pending = new Map<string, Pending>();
 /** Who may approve: the stdio user, or the holder of the same bearer token. */
 export const subjectOf = (token: string | undefined) =>
   token ? createHash("sha256").update(token).digest("hex") : "local";
+
+/** SAP may reorder JSON object properties between reads. Keep array order significant. */
+export function planFingerprint(plan: unknown): string {
+  const canonical = JSON.stringify(plan, (_key, value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, (value as Record<string, unknown>)[key]]))
+      : value
+  );
+  return createHash("sha256").update(canonical).digest("hex");
+}
 
 export type Proposal = { id: string; nonce: string; expiresAt: number };
 

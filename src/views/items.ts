@@ -11,9 +11,13 @@ import { idFromUrl } from "./links.js";
 import { short, typeLabel } from "./text.js";
 import type { ViewOptions } from "./tools.js";
 
+export type ReviewPlan = (resolved: unknown) => void;
+
 export type WriteOptions = ViewOptions & {
   /** "dry-run": every write tool answers with what it would send. */
   writeMode?: "on" | "dry-run";
+  /** Bind or verify the resolved operation before its first mutation. */
+  reviewPlan?: ReviewPlan | undefined;
 };
 
 export const textToHtml = (text: string) =>

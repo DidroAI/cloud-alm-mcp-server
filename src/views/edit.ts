@@ -433,6 +433,14 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
     else if (item.kind === "feature") plans.push(await planFeature(calm, item, input));
     else if (item.kind === "testCase") plans.push(await planTestCase(calm, writer, item, input));
   }
+  o.reviewPlan?.({ project: snap.project.id, items: plans.map(p => ({
+    path: p.path, item: changeItem(p.item), notes: p.notes, ifMatch: p.ifMatch,
+    fields: p.parts.map(part => ({
+      before: Object.fromEntries(Object.keys(part.body).map(key => [key, p.before[key] ?? null])),
+      after: part.body,
+    })),
+    activityState: input.addActivity ? p.before.toActivities : undefined,
+  })), comment: input.comment, activity: input.addActivity });
   const lines: string[] = [];
   const isDry = dry(o, input.dryRun);
   const noop = (p: Planned) => !p.extra && !p.parts.some((part) => changed(p.before, part));
@@ -552,7 +560,7 @@ function extraField(line: string): { field: string; after: string } {
 
 // ---- calm_delete -----------------------------------------------------------
 
-type DeletePlan = { item: Item; line: string; run: () => Promise<string> };
+type DeletePlan = { item: Item; state?: Row; line: string; run: () => Promise<string> };
 
 /**
  * Delete tasks (or with `soft`, mark them obsolete, which SAP recommends),
@@ -597,6 +605,8 @@ export async function remove(
     if (fromTests) warnings.push(`${fromTests} of them record a failed test (their test case loses its defect)`);
     warnings.push(`soft: true marks ${hardTasks.length === 1 ? "it" : "them"} obsolete instead, which can be undone (SAP recommends it)`);
   }
+  o.reviewPlan?.({ project: snap.project.id, warnings,
+    items: plans.map(p => ({ item: p.item, state: p.state, operation: p.line })) });
   if (dry(o, input.dryRun)) {
     const text = [`${dryNote(o)} Would:`, ...plans.map((p) => `- ${p.line}`), ...(warnings.length ? [`Warning: ${warnings.join("; ")}.`] : [])].join("\n");
     const soft = input.soft === true;
@@ -648,9 +658,9 @@ async function deletePlan(
     const row = await readRow(calm, path);
     if (input.soft) {
       if (row.obsolete === true)
-        return { item, line: `${name}: already obsolete, nothing to do`, run: async () => `${name}: already obsolete.` };
+        return { item, state: row, line: `${name}: already obsolete, nothing to do`, run: async () => `${name}: already obsolete.` };
       return {
-        item,
+        item, state: row,
         line: `mark ${name} obsolete (soft delete: it stays, with its links and history; obsolete: no → yes)`,
         run: async () => {
           await needing("tasks.write", () => writer.patch(path, { obsolete: true }));
@@ -662,7 +672,7 @@ async function deletePlan(
     if (row.type === "CALMREQU" && row.approvalState === "APPROVED")
       throw new CloudAlmError("bad_request", `${name} is approved; Cloud ALM does not delete approved requirements. Use soft: true to mark it obsolete`);
     return {
-      item,
+      item, state: row,
       line: `delete ${name} (status ${statusLabel(str(row.status))}) with its comments and links; cannot be undone`,
       run: async () => {
         await needing("tasks.write", () => writer.delete(path));
@@ -683,7 +693,7 @@ async function deletePlan(
     const ifMatch = typeof row.modifiedAt === "string" ? { ifMatch: row.modifiedAt } : {};
     if (input.force)
       return {
-        item,
+        item, state: row,
         line: `force-delete ${what} together with all its test runs and results; cannot be undone`,
         run: async () => {
           await needing("testcases.force-delete", () =>
@@ -693,7 +703,7 @@ async function deletePlan(
         },
       };
     return {
-      item,
+      item, state: row,
       line: `delete ${what}; cannot be undone. Cloud ALM refuses when the test case has test runs (then force: true deletes them too)`,
       run: async () => {
         try {
@@ -736,6 +746,7 @@ export async function comment(
   if (!task) throw new CloudAlmError("not_found", `${input.task} not found`);
   const text = input.text.trim();
   if (!text) throw new CloudAlmError("bad_request", "the comment is empty");
+  o.reviewPlan?.({ project: snap.project.id, task: task.id, label: label(task), title: task.title, text });
   if (dry(o, input.dryRun)) {
     const shown = text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
     const change: Change = {
@@ -784,6 +795,7 @@ export async function createFeature(
     ...(already.length ? [`${already.join("; ")}: check this is not the same delivery`] : []),
     ...(similar.length ? [`similar features exist: ${similar.join("; ")}`] : []),
   ];
+  o.reviewPlan?.({ body, tasks: tasks.map(t => t.id), plan, notes });
   if (dry(o, input.dryRun))
     return `${dryNote(o)} Would create ${plan}.\nNote: ${notes.join("; ")}.`;
   const created = (await needing("features.write", () => writer.post(PATHS.features, body))) as { uuid?: string; displayId?: string } | null;
@@ -871,6 +883,7 @@ export async function createDocument(
     ...(tasks.length ? { toTaskAssignments: tasks.map((t) => ({ id: t.id })) } : {}),
   };
   const plan = `document "${title}" (${typeCode ? DOCUMENT_TYPES[typeCode] : "default type"}, ${DOCUMENT_STATUS_NAME[status]}, priority ${priorityText(body.priorityCode)}, ${input.content.trim().length} characters of content: "${short(input.content, 120)}")${tasks.length ? ` linked to ${tasks.map(label).join("; ")}` : ""}`;
+  o.reviewPlan?.({ body, plan });
   if (dry(o, input.dryRun))
     return `${dryNote(o)} Would create ${plan}.\nNote: after create, Cloud ALM's API cannot change a document's title, content, status, priority or type; deleting it needs calm-api.documents.delete.`;
   const created = (await needing("documents.write", () => writer.post(PATHS.documents, body))) as { uuid?: string; displayId?: string } | null;
