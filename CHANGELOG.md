@@ -6,6 +6,13 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
+- Connect ChatGPT or Claude in the browser to your own Cloud ALM tenant with a BTP service key. Hosted sessions provide read access for up to one hour.
+- Discover projects, explore process scope and compare daily project test results.
+- Check test-plan exit criteria against case priorities, execution results and linked defects. Plan details distinguish current assignments from cases present in daily reports.
+- Tool descriptions now explain when to use each tool. Structured responses identify missing evidence, including unavailable edit attribution.
+
 ## [0.1.3] - 2026-11-20
 
 ### Added

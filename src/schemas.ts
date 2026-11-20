@@ -64,7 +64,7 @@ export const GET_OUT = z.object({
         .array(z.looseObject({ plan: z.string(), status: z.string(), date: z.string(), actions: z.number(), passed: z.number(), failed: z.number() }))
         .optional()
         .describe("Latest result per test plan; Cloud ALM gives step counts, not which step failed"),
-      testCases: z.array(z.looseObject({ id: str, title: str, result: str, defects: z.array(z.string()) })).optional(),
+      testCases: z.array(z.looseObject({ id: str, title: str, result: str, priority: str.optional(), resultSource: z.enum(["analytics", "assignment", "unknown"]).optional(), defects: z.array(z.string()).nullable() })).optional(),
     }),
   ),
   errors: z.array(z.object({ id: z.string(), error: z.string() })),
@@ -114,18 +114,20 @@ export const OVERVIEW_OUT = loose({
   project: loose({ id: z.string(), name: str, purpose: str, status: str, phase: str }),
   phases: z.array(loose({ name: str, start: str, end: str, current: z.boolean() })),
   milestones: z.array(loose({ name: str, date: str })),
-  processes: loose({ inScope: z.number(), total: z.number() }),
+  processes: loose({ inScope: z.number(), total: z.number(), examples: z.array(loose({ id: z.string(), name: str })) }),
   tasks: z.record(z.string(), loose({ total: z.number(), byStatus: counts })),
   defects: loose({ byStatus: counts, byPriority: counts }),
   features: loose({ total: z.number(), byStatus: counts }),
   testCases: loose({ manual: z.number(), prepared: z.number(), automated: z.number() }),
+  testResultPopulation: loose({ reportedCasePlanPairs: z.number(), assignmentOnly: z.number(), total: z.number() }),
   testResults: counts.describe("Latest result per test case and plan; notInPlan: test cases in no plan"),
   gaps: loose({}),
   notes: z.array(z.string()),
 }).partial();
 
 export const PROJECTS_OUT = loose({
-  projects: z.array(loose({ id: z.string(), name: str, purpose: str, status: str, default: z.boolean().optional() })),
+  projects: z.array(loose({ id: z.string(), name: str, purpose: str, status: str, operationalStatus: str, default: z.boolean().optional() })),
+  total: z.number().int(), offset: z.number().int(), nextOffset: z.number().int().nullable(),
 });
 
 export const TEAM_OUT = loose({
@@ -133,15 +135,20 @@ export const TEAM_OUT = loose({
   members: z.array(loose({ userId: z.string().describe("What an assignee is set to"), roles: z.array(z.string()) })),
 });
 
+const dailyPlanResults = loose({ date: z.string(), total: z.number().int(), counts });
+
 export const CHANGES_OUT = loose({
   project,
   since: z.string(),
+  attribution: z.string(),
   total: z.number().int(),
   byType: z.record(z.string(), loose({ created: z.number(), changed: z.number() })),
   offset: z.number().int(),
   nextOffset: z.number().int().nullable(),
   items: z.array(loose({ id: str, type: z.string(), title: str, status: str, what: z.enum(["created", "changed"]), at: z.string() })),
-  testResults: z.unknown().describe("Counts of results on the first and last day, from daily analytics; null when not readable"),
+  testResults: loose({ from: dailyPlanResults, to: dailyPlanResults }).nullable().describe("First and last reported daily snapshots. Only cases with an analytics row in a plan are counted."),
+  testHistory: loose({ status: z.enum(["compared", "single_day", "empty", "partial", "forbidden", "unavailable"]), population: z.string(), startDate: z.string(), endDate: z.string() }),
+  notes: z.array(z.string()),
 });
 
 export const TRACE_OUT = loose({
@@ -153,6 +160,7 @@ export const TRACE_OUT = loose({
       title: str,
       status: str,
       under: str.describe("Parent requirement"),
+      directlyAssigned: z.boolean().optional().describe("On a process trace, SAP directly assigns this task to the process"),
       processes: z.array(z.string()),
       features: z.array(loose({ id: str, title: str, status: z.string(), transports: z.array(z.string()).nullable() })),
       testCases: z.array(loose({ id: str, title: str, result: z.string(), defects: z.array(str) })),
@@ -166,7 +174,12 @@ export const TRACE_OUT = loose({
 
 export const ANALYTICS_OUT = loose({
   dataset: str,
-  message: z.string().optional().describe("Without dataset: the list of datasets"),
+  outcome: z.enum(["empty", "unavailable", "invalid_grouping"]).optional(),
+  httpStatus: z.number().optional(),
+  unknownColumns: z.array(z.string()).optional(),
+  datasets: z.array(loose({ name: z.string(), description: z.string(), groupBy: z.array(z.string()), supportsProject: z.boolean() })).optional(),
+  truncated: z.boolean().optional(),
+  notes: z.array(z.string()).optional(),
   groupBy: z.array(z.string()).optional(),
   asOf: str.optional(),
   totalGroups: z.number().optional(),

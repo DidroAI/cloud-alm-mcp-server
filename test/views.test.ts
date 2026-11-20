@@ -50,6 +50,39 @@ const day = (date: string, testcaseId: string, status: string, passed: number, a
 });
 
 describe("calm_list", () => {
+  test("copied plan titles match across punctuation while identifiers and alternatives stay distinct", async () => {
+    const titles = [
+      "UAT cycle 1 - Order to Cash (REQ-01)",
+      "UAT cycle 2 — Procure to Pay (REQ-02)",
+      "REQ backlog from sprint 01, customer’s S/4HANA",
+    ];
+    const { call } = await connect({
+      ...TENANT,
+      "calm-testmanagement-testplans/v1/TestPlans": {
+        value: titles.map((title, index) => ({ uuid: `plan-${index}`, title, projectId: PROJECT_ID })),
+      },
+    });
+    const matches = async (query: string) => {
+      const page = await call("calm_list", { query, types: ["test_plan"] });
+      expect(page.error).toBe(false);
+      return page.data?.items.map((item: { title: string }) => item.title);
+    };
+    for (const query of [
+      "UAT cycle 1 – Order to Cash",
+      "“UAT cycle 1—Order to Cash”",
+      "UAT cycle 1: Order to Cash",
+      "UAT cycle 1, Order to Cash.",
+      "Order Cash REQ‑01",
+      "no such plan | REQ‑01",
+      "REQ‑01 OR no such plan",
+    ]) expect(await matches(query)).toEqual([titles[0]]);
+    expect(await matches("UAT cycle 2 - Procure")).toEqual([titles[1]]);
+    expect(await matches("customer's S/4HANA")).toEqual([titles[2]]);
+    expect(await matches("cycle cash procurement")).toEqual([]);
+    expect(await matches("REQ‑09")).toEqual([]);
+    expect(await matches("“”")).toEqual([]);
+  });
+
   test("rows as data, with paging and task filters", async () => {
     const { call } = await connect();
     const page = await call("calm_list", { query: "credit", limit: 4 });
@@ -410,5 +443,33 @@ describe("unknown project metrics", () => {
     expect(overview.data?.gaps.untested).toBe(3);
     expect(overview.data?.gaps.orphanTestCases).toBe(0);
     expect(overview.data?.notes).toEqual([]);
+  });
+});
+
+describe("test-plan sign-off evidence", () => {
+  const plans = "calm-testmanagement-testplans/v1/TestPlans";
+  const detail = Object.keys(TENANT).find(k => k.startsWith(plans + "/"))!;
+  const plan = TENANT[detail] as { title: string; toTestCaseAssignments: { testCaseId: string; testCaseDisplayId: string }[] };
+  test("assignment-only cases and unavailable defect links are explicit", async () => {
+    const { call } = await connect({ ...TENANT, [ANALYTICS + "/Defects"]: new Response(null, { status: 403 }) });
+    const { data } = await call("calm_get", { ids: ["8-3-1"] });
+    expect(data?.items[0].fields.population).toEqual({ assigned: 3, reported: 2, assignmentOnly: 1 });
+    expect(data?.items[0].testCases[2]).toMatchObject({ result: "not run", priority: "medium", resultSource: "assignment", defects: null });
+  });
+  test("a failure beyond the display limit counts in progress", async () => {
+    const failed = plan.toTestCaseAssignments.find(x => x.testCaseDisplayId === "8-1-1")!;
+    const assignments = Array.from({ length: 200 }, (_, i) => ({ testCaseDisplayId: "8-1-" + (i + 1), testCaseId: "extra-" + i }));
+    assignments.push({ ...failed, testCaseDisplayId: "8-1-201" });
+    const { call } = await connect({ ...TENANT, [detail]: { ...plan, toTestCaseAssignments: assignments } });
+    const { data, text } = await call("calm_get", { ids: ["8-3-1"] });
+    expect(data?.items[0].fields.progress).toMatchObject({ total: 201, executed: 1, passed: 0 });
+    expect(data?.items[0].testCases).toHaveLength(200);
+    expect(text).toContain("Showing the first 200 of 201");
+  });
+  test("a partial expansion cannot establish the plan total", async () => {
+    const { call } = await connect({ ...TENANT, [detail]: { ...plan, "toTestCaseAssignments@odata.nextLink": "next" } });
+    const { data } = await call("calm_get", { ids: ["8-3-1"] });
+    expect(data?.items[0].fields.population.assigned).toBeNull();
+    expect(data?.items[0].fields.progress).toBeUndefined();
   });
 });

@@ -84,7 +84,7 @@ function footer(snap: Snapshot, parts: Part[]): string[] {
   return out;
 }
 
-const projectLabel = (p: Project) => `${p.name ?? "?"} [${p.id}]`;
+const projectLabel = (p: Pick<Project, "id" | "name">) => `${p.name ?? "?"} [${p.id}]`;
 
 /** Where agents should look for what the project tools do not show. */
 const ELSEWHERE =
@@ -99,10 +99,8 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   const lines: string[] = [];
   const wanted = input.projectId ?? o.defaultProject;
   if (!wanted && projects.length !== 1) {
-    lines.push(`${projects.length} projects. Pass projectId for one project's overview:`);
-    for (const p of projects.slice(0, 50))
-      lines.push(`- ${projectLabel(p)} · ${(p.purpose ?? "").toLowerCase()} · status ${p.status ?? "?"}`);
-    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose, status: p.status })) } };
+    const selection = await projectsView(calm, o);
+    return { text: `${projects.length} projects. Pass projectId for one project's overview. Use calm_projects to search.\n${selection.text}`, data: selection.data };
   }
   // The project list is already read: no second read for the project.
   const listed = projects.find((p) => p.id.toLowerCase() === (wanted ?? projects[0]?.id ?? "").toLowerCase());
@@ -153,11 +151,13 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${snap.complete("testPlans") ? testPlans.length : "unknown"}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
   const latest = [...results.values()].flat();
+  const assignmentOnly = latest.filter(r => r.source === "assignment").length;
   const notInPlan = testCases.filter((t) => !results.get(t.id)?.length).length;
   if (resultsKnown && (latest.length || (casesKnown && notInPlan)))
     lines.push(
       `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${casesKnown && notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
     );
+  if (resultsKnown && assignmentOnly) lines.push(`Includes ${assignmentOnly} current plan assignments with no matching analytics result, counted as not run. Daily analytics omits these assignments.`);
   if (snap.complete("documents")) lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
@@ -186,7 +186,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
       ...(o.webUrl ? { tenant: new URL(o.webUrl).hostname } : {}),
       phases: snap.complete("timeboxes") ? phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })) : undefined,
       milestones: snap.complete("timeboxes") ? milestones.map((t) => ({ name: t.name, date: t.startDate })) : undefined,
-      processes: snap.complete("processes") ? { inScope: scoped.length, total: processes.length } : undefined,
+      processes: snap.complete("processes") ? { inScope: scoped.length, total: processes.length, examples: scoped.slice(0, 6).map(({ id, name }) => ({ id, name })) } : undefined,
       tasks: tasksKnown ? Object.fromEntries([...byType.entries()].map(([type, list]) => [type, { total: list.length, byStatus: tally(list.map((t) => statusLabel(t.status))) }])) : undefined,
       defects: tasksKnown ? { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) } : undefined,
       features: snap.complete("features") ? { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) } : undefined,
@@ -194,6 +194,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
         manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length,
         testPlans: snap.complete("testPlans") ? testPlans.map((t) => ({ id: t.displayId, title: t.title })) : undefined,
       } : undefined,
+      testResultPopulation: resultsKnown ? { reportedCasePlanPairs: latest.length - assignmentOnly, assignmentOnly, total: latest.length } : undefined,
       testResults: resultsKnown ? {
         ...tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))),
         ...(casesKnown ? { notInPlan } : {}),
@@ -281,17 +282,25 @@ const requirementFields = (t: TaskSummary) => ({
   ...(t.approvalState ? { approval: approvalLabel(t.approvalState) } : {}),
 });
 
+/** Normalize typography while keeping technical names like REQ-01 and S/4HANA together. */
+function searchText(value: string) {
+  return value.normalize("NFC").toLowerCase()
+    .replace(/[\p{Pd}−]/gu, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”"()[\]{},;:!?]|\.(?=\s|$)/g, " ")
+    .replace(/\s+/g, " ");
+}
+
 /** `a b | c` → [[a,b],[c]]: all words of one alternative must match. */
 function matcher(query: string | undefined) {
-  const alternatives = (query ?? "")
-    .toLowerCase()
+  if (!query?.trim()) return () => true;
+  const alternatives = searchText(query)
     .split(/\s*\|\s*|\s+or\s+/)
-    .map((a) => a.split(/\s+/).filter(Boolean))
-    .filter((a) => a.length);
+    .map(a => a.split(/\s+/).filter(word => word && word !== "-"))
+    .filter(words => words.length);
   return (...texts: (string | null | undefined)[]) => {
-    if (!alternatives.length) return true;
-    const hay = texts.filter(Boolean).join(" ").toLowerCase();
-    return alternatives.some((words) => words.every((w) => hay.includes(w)));
+    const hay = searchText(texts.filter(Boolean).join(" ")).replace(/ ?- ?/g, "-");
+    return alternatives.some(words => words.every(word => hay.includes(word)));
   };
 }
 
@@ -363,7 +372,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     documents: types.has("document") && !status && !tag && !taskOnly && priority === undefined,
     testCases: types.has("test_case") && (!status || !!resultStatus) && !taskOnly && !input.changedSince,
     testPlans: types.has("test_plan") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
-    processes: types.has("process") && !status && !tag && !taskOnly && priority === undefined && !input.changedSince,
+    processes: types.has("process") && (!status || ["in scope", "not in scope", "out of scope"].includes(status)) && !tag && !taskOnly && priority === undefined && !input.changedSince,
   };
   const libraryKinds = status || tag || taskOnly || priority !== undefined || input.changedSince ? [] : LIBRARY_KINDS.filter((k) => types.has(k.replace(/s$/, "") as FindType));
   const none = <T>(v: T) => Promise.resolve(v);
@@ -539,14 +548,16 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   }
   if (want.processes) {
     parts.push("processes");
-    for (const p of processes)
-      if (match(p.name))
+    for (const p of processes) {
+      const scope = p.isScoped === true ? "in scope" : p.isScoped === false ? "not in scope" : "unknown";
+      if (match(p.name) && (!status || scope === (status === "out of scope" ? "not in scope" : status)))
         rows.push({
           sort: "6",
           displayId: null,
-          line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
-          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+          line: `${p.id} · solution process · ${scope} · "${short(p.name)}"`,
+          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: scope },
         });
+    }
   }
   libraryKinds.forEach((kind, i) => {
     if (library[i]?.nextOffset != null) notes.push(`${kind}: only the first 200 in the library were searched`);
@@ -577,7 +588,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const nextOffset = offset + shown.length < rows.length ? offset + shown.length : null;
   const asked = new Set(input.types ?? []);
   if (tag && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("tags exist on tasks, features and test cases only");
-  if (status && ["document", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features and test cases only");
+  if (status && ["document", "test_plan"].some((t) => asked.has(t as FindType))) notes.push("status filters tasks, features, test cases and process scope");
   if (status && asked.has("test_case") && !resultStatus) notes.push(`test cases filter by latest result: passed, failed, in progress, blocked, not run (in a plan, not executed), ${NOT_IN_PLAN}`);
   if (taskOnly && [...asked].some((t) => !(t in TASK_FIND))) notes.push("assignee, dueBefore, classification, process, feature and hasTests filter tasks only");
   if (input.changedSince && ["test_case", "test_plan", "process"].some((t) => asked.has(t as FindType))) notes.push("changedSince filters tasks, features and documents only (calm_changes covers test cases)");
@@ -587,7 +598,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     if (used.length) notes.push(`no item has status "${status}"; statuses in use: ${used.join(", ")}`);
   }
   if (input.process) notes.push("processes are assigned to requirements: user stories under them are not listed (calm_trace the process shows them)");
-  if (!rows.length && want.processes && processes.length) {
+  if (!rows.length && query && want.processes && processes.length) {
     const scoped = processes.filter((p) => p.isScoped);
     notes.push(`no process matches "${query}"; ${scoped.length ? `in scope: ${scoped.map((p) => p.name).join("; ")}` : `${processes.length} processes, none in scope`} (end-to-end names, e.g. Lead to Cash for order to cash)`);
   }
@@ -813,7 +824,7 @@ export type ItemDetail = {
   comments?: { date: string | null; author: string | null; text: string | null }[];
   steps?: { activity: string | null; step: string | null; do: string | null; expect: string | null; evidence: boolean }[];
   results?: { plan: string; status: string; date: string; actions: number; passed: number; failed: number }[];
-  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[]; url?: string; defectUrls?: Record<string, string> }[];
+  testCases?: { id: string | null; title: string | null; result: string | null; resultSource?: string; priority?: string | null; defects: string[] | null; url?: string; defectUrls?: Record<string, string> }[];
 };
 
 export async function get(
@@ -1002,6 +1013,9 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const p = await calm.getTestPlan(ref.id);
     lines.push(`${p.displayId} test plan · "${p.title}" [${p.id}]${p.startDate ? ` · ${p.startDate}–${p.endDate ?? ""}` : ""}`);
     const description = own(p.description, p.displayId);
+    const plans = n.resultsKnown ? await snap.testPlans() : [];
+    const ambiguousTitle = !p.title || plans.filter(plan => plan.title === p.title).length > 1;
+    const resultsKnown = n.resultsKnown && !ambiguousTitle;
     const inPlan = (id: string | null) => {
       const all = id ? (n.results.get(id) ?? n.results.get(id.toLowerCase()) ?? []) : [];
       return all.find((r) => r.plan === p.title) ?? null;
@@ -1009,34 +1023,43 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const rows = [...p.testCases].sort(byDisplayId).map((t) => {
       const r = inPlan(t.testCaseId);
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
-      const word = !n.resultsKnown ? "unknown" : r ? resultWords(r) : "not run";
-      return { t, r, raised, word, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}` };
+      const word = !resultsKnown || !t.testCaseId ? "unknown" : r ? resultWords(r) : "not run";
+      const priority = priorityLabel(t.testCaseId ? n.testCaseOf(t.testCaseId)?.priority ?? null : null);
+      return { t, r, raised, word, priority, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}${priority ? ` · priority ${priority}` : ""}` };
     });
+    const completeResults = resultsKnown && p.assignmentsComplete && rows.every(row => row.t.testCaseId);
+    const shown = rows.slice(0, 200);
+    const reported = rows.filter(row => row.r?.source === "analytics").length;
+    const population = { assigned: p.assignmentsComplete ? rows.length : null, reported: completeResults ? reported : null, assignmentOnly: completeResults ? rows.length - reported : null };
     const statusOf = (x: (typeof rows)[number]) => (x.r && x.r.status.toLowerCase() !== "initial" ? x.r.status.toLowerCase() : "not run");
     const executed = rows.filter((x) => ["passed", "failed", "blocked"].includes(statusOf(x))).length;
     const passed = rows.filter((x) => statusOf(x) === "passed").length;
     const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0);
     const progress = { total: rows.length, executed, passed, executedPct: pct(executed, rows.length), passedPct: pct(passed, rows.length), passRate: pct(passed, executed) };
     lines.push(
-      `Test cases (${rows.length})${rows.length && n.resultsKnown ? `: ${counts(rows.map(statusOf))}` : ""}`,
-      ...(rows.length && n.resultsKnown ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
-      ...rows.map((x) => x.line),
+      `Test cases (${rows.length})${rows.length && completeResults ? `: ${counts(rows.map(statusOf))}` : ""}`,
+      ...(rows.length && completeResults ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
+      ...(completeResults ? [`Current plan assignments: ${reported} with a reported analytics result, ${rows.length - reported} without a result (counted as not run).`] : ["Execution totals are unknown because the records cannot be fully matched to this plan."]),
+      ...(!p.assignmentsComplete ? ["SAP returned an incomplete assignment list; the plan total is unknown."] : []),
+      ...(!n.defectsKnown ? ["Defect links are incomplete or unavailable."] : []),
+      ...(shown.length < rows.length ? [`Showing the first ${shown.length} of ${rows.length} returned assignments.`] : []),
+      ...shown.map((x) => x.line),
     );
     data = {
       id: p.displayId,
       uuid: p.id,
       kind: "test plan",
       title: p.title,
-      fields: { startDate: p.startDate, endDate: p.endDate, ...(n.resultsKnown ? { progress } : {}) },
+      fields: { startDate: p.startDate, endDate: p.endDate, population, shown: shown.length, defectLinksComplete: n.defectsKnown, ...(completeResults ? { progress } : {}) },
       description,
-      testCases: rows.map(({ t, word, raised }) => {
+      testCases: shown.map(({ t, word, raised, r, priority }) => {
         const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
         const defectUrls: Record<string, string> = {};
         for (const id of raised) {
           const target = webUrl(base, { kind: "task", type: "CALMDEF", displayId: id });
           if (target && id !== "?") defectUrls[id] = target;
         }
-        return { id: t.displayId, title: t.title, result: word, defects: raised, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
+        return { id: t.displayId, title: t.title, priority, result: word, resultSource: word === "unknown" ? "unknown" : r?.source ?? "assignment", defects: (n.defectsKnown && t.testCaseId) || raised.length ? raised : null, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
       }),
     };
   } else {
@@ -1120,6 +1143,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       type: typeLabel(t?.type ?? null),
       title: t?.title ?? null,
       status: t ? taskStatus(t) : null,
+      ...(ref.kind === "process" ? { directlyAssigned: start.includes(taskId) } : {}),
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
@@ -1154,7 +1178,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
         );
     } else {
       const tcs = n.testCases.filter((x) => x.taskIds.includes(taskId));
-      out.push(`${sub}test cases: ${tcs.length ? tcs.map(n.testCase).join("; ") : "NONE"}`);
+      out.push(`${sub}test cases: ${tcs.length ? tcs.map(n.testCase).join("; ") : (snap.complete("testCases") ? "NONE" : "unknown (partial test case list)")}`);
       // What holds it up: open defects raised from its test cases.
       const holding = tcs.flatMap((x) => n.defectsOf(x.id)).filter((d, i, all) => all.indexOf(d) === i && isOpen(d.status));
       if (holding.length) out.push(`${sub}blocked by: ${holding.map((d) => `defect ${d.displayId} (${taskStatus(d)}${d.priority !== null ? `, priority ${priorityLabel(d.priority)}` : ""})`).join("; ")}`);
@@ -1167,7 +1191,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     lines.push(...describe(reqId, "- "));
     for (const kid of kids) lines.push(...describe(kid, "    - ", reqId));
   }
-  if (!groups.size) lines.push("No linked tasks.");
+  if (!groups.size) lines.push(snap.complete("tasks", "processLinks") ? "No linked tasks." : "No linked tasks found in available data.");
   if (ref.kind === "test case" && n.defectsKnown) {
     const raised = n.defectsOf(ref.testCase.id);
     if (raised.length) lines.push(`Defects raised from this test case: ${raised.map(n.defect).join("; ")}`);
@@ -1177,7 +1201,8 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     if (tcs.length) lines.push(`Document's own test cases: ${tcs.map(n.testCase).join("; ")}`);
     if (ref.document.processIds.length) lines.push(`Document's processes: ${ref.document.processIds.map(n.process).join("; ")}`);
   }
-  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks"]);
+  const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "processLinks", "processes"]);
+  if (ids.length < start.length) footnotes.push(`Expanded the first ${ids.length} of ${start.length} linked tasks. Use calm_list to narrow the project work.`);
   lines.push(...footnotes);
   const startId =
     ref.kind === "task" ? ref.task.displayId : ref.kind === "feature" ? ref.feature.displayId : ref.kind === "test case" ? ref.testCase.displayId : ref.kind === "document" ? ref.document.displayId : ref.kind === "process" ? ref.id : input.id;
@@ -1194,7 +1219,7 @@ export type GapCheck = (typeof GAP_CHECKS)[number];
 const DEFAULT_CHECKS = GAP_CHECKS.filter((c) => c !== "coverage");
 
 /** A project's health in words: ONTRK → "on track". */
-const HEALTH: Record<string, string> = { ONTRK: "on track", ATRSK: "at risk", OFFTRK: "off track", CRIT: "critical" };
+const HEALTH: Record<string, string> = { ONTRK: "on track", NATTN: "needs attention", ATRSK: "at risk", OFFTRK: "off track", CRIT: "critical" };
 const projectHealth = (code: string | null | undefined) => (code ? (HEALTH[code] ?? code.toLowerCase()) : null);
 
 /** A test case's latest results as data, in the words of every other tool. */
@@ -1496,11 +1521,13 @@ export async function analytics(
   input: { dataset?: AnalyticsDataset; groupBy?: string[]; filters?: Record<string, string>; period?: string; limit?: number; projectId?: string },
   o: ViewOptions = {},
 ) {
-  if (!input.dataset)
-    return [
+  if (!input.dataset) {
+    const text = [
       "Datasets (pass one as dataset; groupBy counts by columns on the latest day, or per day when groupBy includes date; `status` means the dataset's status column; rows are tenant-wide):",
       ...Object.entries(DATASETS).map(([k, v]) => `- ${k}: ${v.about}${v.columns ? ` · group by: ${v.columns.join(", ")}` : ""}`),
     ].join("\n");
+    return { text, data: { dataset: null, datasets: Object.entries(DATASETS).map(([name, info]) => ({ name, description: info.about, groupBy: info.columns ?? [], supportsProject: !!PROJECT_COLUMN[name as AnalyticsDataset] })) } };
+  }
   const dataset = input.dataset;
   const info = DATASETS[dataset];
   // `status` (any case) stands for the dataset's status column; it is matched
@@ -1509,16 +1536,27 @@ export async function analytics(
   const remote: Record<string, string> = {};
   // One project, named or by id, in the dataset's own project column.
   const column = PROJECT_COLUMN[dataset];
-  const named = input.projectId ?? (input.filters?.project && !GUID.test(input.filters.project) ? input.filters.project : undefined);
+  const filters = Object.entries(input.filters ?? {});
+  const isProjectFilter = (key: string) => /^(project|projectid|projectguid)$/i.test(key);
+  const projectFilters = filters.filter(([key]) => isProjectFilter(key));
+  const selector = input.projectId ?? projectFilters[0]?.[1];
   let scopedTo: { id: string; name: string | null } | null = null;
-  if (named && column) {
-    const { project } = await resolveProject(calm, named, undefined, clock(o));
+  if (selector !== undefined) {
+    if (!column)
+      throw new CloudAlmError("bad_request", `${dataset} analytics is tenant-wide. SAP exposes no supported project filter for this dataset.`);
+    if (!selector.trim())
+      throw new CloudAlmError("bad_request", "Specify a project name or id for project-scoped analytics.");
+    const { project } = await resolveProject(calm, selector, undefined, clock(o));
+    for (const [, value] of projectFilters) {
+      const requested = value.trim().toLowerCase();
+      if (![selector, project.id, project.name].some(ref => ref?.trim().toLowerCase() === requested))
+        throw new CloudAlmError("bad_request", "Conflicting project filters. Specify one project using projectId.");
+    }
     scopedTo = { id: project.id, name: project.name };
     remote[column] = project.id;
-    local[column] = project.id;
   }
-  for (const [key, value] of Object.entries(input.filters ?? {})) {
-    if (scopedTo && key === "project") continue;
+  for (const [key, value] of filters) {
+    if (isProjectFilter(key)) continue;
     if (key.toLowerCase() === "status" && info.status) local[info.status] = value;
     else {
       remote[key] = value;
@@ -1536,7 +1574,10 @@ export async function analytics(
     });
   } catch (error) {
     if (error instanceof CloudAlmError && error.code === "unavailable" && (error.status ?? 0) >= 500)
-      return `${dataset}: not available on this tenant (SAP Cloud ALM answered ${error.status}). Other datasets may work; calm_analytics without dataset lists them.`;
+      return {
+        text: `${dataset}: not available on this tenant (SAP Cloud ALM answered ${error.status}). Other datasets may work; calm_analytics without dataset lists them.`,
+        data: { dataset, outcome: "unavailable", httpStatus: error.status },
+      };
     throw error;
   }
   const columnOf = (name: string) =>
@@ -1546,11 +1587,21 @@ export async function analytics(
     result.columns.find((c) => c.toLowerCase() === name.toLowerCase()) ??
     (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined);
   const notes: string[] = [];
+  if (dataset === "Tests") notes.push("Daily snapshots count reported executions. To reconcile a specific plan, read it with calm_get for its current assignments and cases missing from analytics.");
+  if (result.truncated) notes.push("Only the first 200 analytics rows were inspected. Counts and absence checks may be incomplete.");
   if (scopedTo) notes.push(`Project: ${scopedTo.name ?? scopedTo.id} only`);
   let rows = result.rows;
+  if (scopedTo && column && rows.length) {
+    const projectColumn = columnOf(column);
+    if (!projectColumn)
+      throw new CloudAlmError("unavailable", `${dataset} returned rows without the ${column} column. Project-specific counts cannot be verified.`);
+    // Establish the population before computing totals or suggesting filter values.
+    const projectId = scopedTo.id.toLowerCase();
+    rows = rows.filter(row => String(row[projectColumn] ?? "").toLowerCase() === projectId);
+  }
   // Cloud ALM ignores filters on columns it does not have: say so.
   if (rows.length) {
-    const ignored = Object.keys(remote).filter((k) => !result.columns.includes(k));
+    const ignored = Object.keys(remote).filter((k) => !columnOf(k));
     if (ignored.length)
       notes.push(`Filter ${ignored.join(", ")} ignored: not a column of ${dataset} (columns: ${result.columns.join(", ")}). Rows are unfiltered by it.`);
   }
@@ -1571,10 +1622,11 @@ export async function analytics(
   // A filter that matches nothing: name the values there are.
   if (!rows.length && unfiltered.length) {
     const values = Object.keys(local).map((c) => `${c}: ${[...new Set(unfiltered.map((r) => String(r[c] ?? "—")))].slice(0, 15).join(", ")}`);
-    return [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
+    const text = [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
+    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], filters: local, truncated: result.truncated, notes } };
   }
-  if (!result.rows.length)
-    return [
+  if (!unfiltered.length) {
+    const text = [
       `${dataset}: no rows${input.period ? "" : " (default period; try period C30D)"}${Object.keys(remote).length ? ` with ${Object.entries(remote).map(([c, v]) => `${c}=${v}`).join(", ")}` : ""}.`,
       MONITORED.has(dataset)
         ? "No rows does not mean none happened: this dataset only has rows when a monitored system sends them (calm_landscape lists the systems). Say that it is empty, not that there were none."
@@ -1583,6 +1635,8 @@ export async function analytics(
     ]
       .filter(Boolean)
       .join("\n");
+    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], truncated: result.truncated, notes: [text] } };
+  }
   const dates = [...new Set(rows.map((r) => r.date).filter((d): d is string => typeof d === "string" && !!d))].sort();
   const latest = dates.at(-1);
   const numeric = result.columns.filter((c) => rows.every((r) => r[c] === null || typeof r[c] === "number"));
@@ -1591,7 +1645,8 @@ export async function analytics(
     const unknown = groupBy.filter((g) => !result.columns.includes(g));
     if (unknown.length) {
       const groupable = (info.columns ?? []).filter((c) => result.columns.includes(c));
-      return `Not a column of ${dataset} on this tenant: ${unknown.join(", ")}.${groupable.length ? ` Group by: ${groupable.join(", ")}, date.` : ""} All columns: ${result.columns.join(", ")}`;
+      const text = `Not a column of ${dataset} on this tenant: ${unknown.join(", ")}.${groupable.length ? ` Group by: ${groupable.join(", ")}, date.` : ""} All columns: ${result.columns.join(", ")}`;
+      return { text, data: { dataset, outcome: "invalid_grouping", unknownColumns: unknown, columns: result.columns } };
     }
     // Rows are daily snapshots: count the latest day only, never sum days.
     const day = dates.length > 1 && !groupBy.includes("date") ? rows.filter((r) => r.date === latest) : rows;
@@ -1625,6 +1680,7 @@ export async function analytics(
         asOf: groupBy.includes("date") ? null : (latest ?? null),
         ...(scopedTo ? { project: scopedTo } : {}),
         ...(blank ? { leftOut: blank } : {}),
+        notes, truncated: result.truncated || shownGroups.length < groups.size,
         totalGroups: groups.size,
         groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, k.split(" · ")[i] ?? null])), values: v })),
       },
@@ -1648,7 +1704,7 @@ export async function analytics(
     .join("\n");
   return {
     text,
-    data: { dataset, total: rows.length, columns: cols, rows: rows.slice(0, input.limit ?? 10).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))) },
+    data: { dataset, project: scopedTo, truncated: result.truncated || shown < rows.length, notes, total: rows.length, columns: cols, rows: rows.slice(0, input.limit ?? 10).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))) },
   };
 }
 
@@ -1713,16 +1769,28 @@ export async function landscape(calm: CloudAlm) {
 // calm_projects, calm_team
 // ---------------------------------------------------------------------------
 
-export async function projectsView(calm: CloudAlm, o: ViewOptions = {}) {
-  const projects = await listProjects(calm, clock(o));
-  const lines = [
-    `${projects.length} project${projects.length === 1 ? "" : "s"} this key can read${projects.length ? ":" : "."}`,
-    ...projects.map((p) => `- ${projectLabel(p)} · ${(p.purpose ?? "?").toLowerCase()} · ${p.status === "C" ? "closed" : "open"}${o.defaultProject && p.id === o.defaultProject ? " · default" : ""}`),
-    "Every project tool takes projectId as the id or the name. Private or restricted projects need the key's calm-api.projects.private.read / protected.read scopes.",
-  ];
+export async function projectsView(calm: CloudAlm, o: ViewOptions = {}, input: {
+  query?: string; purpose?: string; limit?: number; offset?: number;
+} = {}) {
+  const query = input.query?.trim().toLowerCase() ?? "";
+  const purpose = input.purpose?.trim().toLowerCase().replaceAll(" ", "_");
+  const matches = (await listProjects(calm, clock(o))).filter(p =>
+    (p.name ?? "").toLowerCase().includes(query) &&
+    (!purpose || p.purpose?.toLowerCase().split(",").some(value => value.trim() === purpose))
+  );
+  const offset = input.offset ?? 0;
+  const projects = matches.slice(offset, offset + (input.limit ?? 25)).map(p => ({
+    id: p.id, name: p.name, purpose: p.purpose?.toLowerCase() ?? null,
+    status: p.status === "O" ? "active" : p.status === "C" ? "hidden" : p.status,
+    operationalStatus: projectHealth(p.operationalStatus), default: p.id === o.defaultProject,
+    ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}),
+  }));
+  const nextOffset = offset + projects.length < matches.length ? offset + projects.length : null;
   return {
-    text: lines.join("\n"),
-    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
+    text: [`${projects.length} of ${matches.length} matching projects.`,
+      ...projects.map(p => [projectLabel(p), p.purpose, p.status, p.operationalStatus].filter(Boolean).join(" · ")),
+      ...(nextOffset === null ? [] : [`Continue at offset ${nextOffset}.`])].join("\n"),
+    data: { projects, total: matches.length, offset, nextOffset },
   };
 }
 
@@ -1770,6 +1838,12 @@ export async function changes(
 ) {
   const since = input.since.trim();
   if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(since)) throw new CloudAlmError("bad_request", "since must be YYYY-MM-DD (or an ISO time)");
+  const sinceDay = since.slice(0, 10);
+  const sinceMs = Date.parse(since.includes("T") && !since.endsWith("Z") ? since + "Z" : since);
+  if (!Number.isFinite(sinceMs) || new Date(sinceMs).toISOString().slice(0, 10) !== sinceDay)
+    throw new CloudAlmError("bad_request", "since must be a valid UTC date or time");
+  const now = clock(o);
+  if (sinceMs > now) throw new CloudAlmError("bad_request", "since is later than the current time");
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
   const offset = Math.max(input.offset ?? 0, 0);
   const snap = await snapshotFor(calm, input.projectId, o);
@@ -1780,7 +1854,7 @@ export async function changes(
     snap.testCases(),
     snap.testResults(),
   ]);
-  const after = (at: string | null | undefined) => !!at && at >= since;
+  const after = (at: string | null | undefined) => !!at && Date.parse(at) >= sinceMs;
   type Change = { id: string | null; url?: string | undefined; type: string; title: string | null; status: string | null; what: "created" | "changed"; at: string };
   const rows: Change[] = [];
   for (const t of tasks)
@@ -1803,39 +1877,48 @@ export async function changes(
     if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: snap.complete("testResults", "testPlans") ? resultText(results.get(t.id)) || NOT_IN_PLAN : "unknown", what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
-  let resultsCut = false;
-  let resultMove: { from: { date: string; counts: Record<string, number> }; to: { date: string; counts: Record<string, number> } } | null = null;
+  const population = "Daily SAP Tests analytics counts distinct reported test case and plan pairs. Current plan details also include assigned cases with no analytics result.";
+  const today = new Date(now).toISOString().slice(0, 10);
+  const requestedDays = 1 + (Date.parse(today) - Date.parse(sinceDay)) / 86_400_000;
+  const days = Math.min(requestedDays, 90);
+  const historyStart = new Date(Date.parse(today) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+  const notes = footer(snap, ["tasks", "features", "documents", "testCases"]);
+  if (requestedDays > days) notes.push(`Test history covers the last 90 UTC dates, starting ${historyStart}.`);
+  type SnapshotCount = { date: string; total: number; counts: Record<string, number> };
+  let resultMove: { from: SnapshotCount; to: SnapshotCount } | null = null;
+  let historyStatus: "compared" | "single_day" | "empty" | "partial" | "forbidden" | "unavailable" = "empty";
   try {
-    const days = Math.min(Math.max(Math.ceil(((o.now?.() ?? Date.now()) - Date.parse(since.slice(0, 10))) / 86_400_000) + 1, 1), 90);
-    // This project's rows only, filtered by SAP, every page (up to 2000 rows).
-    const testRows: Record<string, unknown>[] = [];
-    let cut = true;
+    const byDay = new Map<string, Map<string, string>>();
     for (let skip = 0; skip < 2000; skip += 200) {
       const page = await calm.queryAnalytics({ dataset: "Tests", period: `C${days}D`, limit: 200, offset: skip, filters: { projectGUID: snap.project.id } });
-      testRows.push(...page.rows);
-      if (!page.truncated) {
-        cut = false;
-        break;
+      for (const r of page.rows) {
+        if (String(r.projectGUID ?? "").toLowerCase() !== snap.project.id.toLowerCase()) continue;
+        const date = String(r.date ?? "").slice(0, 10);
+        if (!DATE.test(date) || date < historyStart || date > today || !r.testcaseId || !r.testPlan || r.testPlan === "(None)") continue;
+        const day = byDay.get(date) ?? new Map<string, string>();
+        const key = JSON.stringify([String(r.testcaseId).toLowerCase(), r.testPlan]);
+        const status = String(r.status || "unknown").toLowerCase();
+        const word = status === "initial" ? "not run" : status;
+        // With conflicting statuses for the same daily pair, there is no run timestamp to pick a winner.
+        day.set(key, day.has(key) && day.get(key) !== word ? "unknown" : word);
+        byDay.set(date, day);
       }
-    }
-    if (cut) resultsCut = true;
-    const byDay = new Map<string, Record<string, number>>();
-    for (const r of testRows) {
-      const date = typeof r.date === "string" ? r.date : null;
-      if (!date || String(r.projectGUID ?? "").toLowerCase() !== snap.project.id.toLowerCase()) continue;
-      // A test case's row outside any plan is not a result: count plan rows only, as calm_overview does.
-      if (!r.testPlan || r.testPlan === "(None)") continue;
-      const status = String(r.status ?? "?").toLowerCase().replace("initial", "not run");
-      const c = byDay.get(date) ?? {};
-      c[status] = (c[status] ?? 0) + 1;
-      byDay.set(date, c);
+      if (!page.truncated) break;
+      if (skip + 200 === 2000) historyStatus = "partial";
     }
     const dates = [...byDay.keys()].sort();
-    const first = dates[0];
-    const last = dates.at(-1);
-    if (first && last) resultMove = { from: { date: first, counts: byDay.get(first) ?? {} }, to: { date: last, counts: byDay.get(last) ?? {} } };
-  } catch {
-    // Analytics may be out of the key's scopes: the item changes still stand.
+    if (dates.length && historyStatus !== "partial") {
+      const summarize = (date: string): SnapshotCount => {
+        const pairs = byDay.get(date)!;
+        const counts: Record<string, number> = Object.create(null);
+        for (const word of pairs.values()) counts[word] = (counts[word] ?? 0) + 1;
+        return { date, total: pairs.size, counts };
+      };
+      resultMove = { from: summarize(dates[0]!), to: summarize(dates.at(-1)!) };
+      historyStatus = dates.length === 1 ? "single_day" : "compared";
+    }
+  } catch (e) {
+    historyStatus = e instanceof CloudAlmError && e.code === "forbidden" ? "forbidden" : "unavailable";
   }
   const page = rows.slice(offset, offset + limit);
   const nextOffset = offset + page.length < rows.length ? offset + page.length : null;
@@ -1850,15 +1933,19 @@ export async function changes(
     `Changes in ${snap.project.name ?? "the project"} since ${since}: ${rows.filter((r) => r.what === "created").length} created, ${rows.filter((r) => r.what === "changed").length} changed${nextOffset !== null ? ` (showing ${offset + 1}–${offset + page.length}; next page: offset ${nextOffset})` : ""}`,
     `By type: ${[...byType].map(([t, c]) => `${t} ${[c.created && `${c.created} created`, c.changed && `${c.changed} changed`].filter(Boolean).join(", ")}`).join("; ") || "none"}`,
     ...page.map((r) => `- ${r.at.slice(0, 16).replace("T", " ")} · ${r.what} · ${r.id ?? "?"} ${r.type}${r.status ? ` · ${r.status}` : ""} · "${short(r.title, 70)}"`),
-    resultMove
-      ? `Test results in this project's test plans, ${resultMove.from.date}: ${fmt(resultMove.from.counts)} → ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (daily analytics snapshots)`
-      : "Test results over time: not available (analytics needs calm-api.analytics.read).",
-    ...(resultsCut ? ["(test results: more than 2000 analytics rows; counted from the first 2000)"] : []),
+    population,
+    ...(resultMove ? [
+      `Reported ${resultMove.from.date}: ${fmt(resultMove.from.counts)} (${resultMove.from.total} pairs).`,
+      historyStatus === "single_day" ? "Only one daily snapshot has reported results in this period." :
+        `Reported ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (${resultMove.to.total} pairs).`,
+    ] : [historyStatus === "empty" ? "No plan results were reported in this period." :
+      historyStatus === "partial" ? "Test history exceeded the 2000-row limit. Narrow the period to compare complete snapshots." :
+      historyStatus === "forbidden" ? "The service key lacks access to test history." : "SAP test history could not be read."]),
     "Cloud ALM's API keeps no change log: who changed an item, what field changed, new comments and deleted items are not visible here (calm_get an item shows its comments).",
   ];
-  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases"]));
+  lines.push(...notes);
   return {
     text: lines.join("\n"),
-    data: { project: { id: snap.project.id, name: snap.project.name }, since, total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove },
+    data: { project: { id: snap.project.id, name: snap.project.name }, since, attribution: "Item timestamps identify creation or the latest update. These records do not identify the editor or provide field-level edit history.", total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove, testHistory: { status: historyStatus, population, startDate: historyStart, endDate: today }, notes },
   };
 }

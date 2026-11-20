@@ -1,0 +1,25 @@
+{
+  "name": "cloud-alm-hosted-preview",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "cloud-alm-mcp-server": "0.2.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.76.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwind-merge": "^3.7.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.5"
+  },
+  "scripts": {
+    "build": "esbuild ui/key-upload.tsx --bundle --minify --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=public/key-upload.js && tailwindcss -i ui/dropzone.css -o public/dropzone.css --minify"
+  }
+}

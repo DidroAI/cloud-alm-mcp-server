@@ -1,0 +1,43 @@
+/* Brand masthead, paper palette, Sora headings and primary action from Didro Docs. */
+@font-face {
+  font-family: Sora;
+  src: url("/assets/sora-400.ttf") format("truetype");
+  font-display: swap;
+}
+:root { --paper:#fdfcfb; --ink:#101114; --muted:#555258; --line:#d4cdcd; --red:#a31329; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.55 system-ui,sans-serif; }
+.masthead { display:flex; align-items:center; gap:16px; min-height:70px; padding:16px clamp(20px,4vw,64px); border-bottom:1px solid var(--line); }
+.brand, .brand img { display:block; width:92px; }
+.masthead span { border-left:1px solid var(--line); padding-left:16px; font:14px Sora,system-ui,sans-serif; }
+main { max-width:620px; margin:clamp(36px,8vh,82px) auto; padding:0 20px; }
+.consent { max-width:520px; }
+h1,h2 { font-family:Sora,system-ui,sans-serif; font-weight:400; line-height:1.15; letter-spacing:-.05em; }
+h1 { font-size:clamp(30px,5vw,42px); margin:0 0 12px; }
+h2 { font-size:22px; }
+p { margin:0 0 1em; }
+.intro { margin-bottom:26px; color:var(--muted); }
+strong { color:var(--ink); }
+.panel { padding:clamp(18px,4vw,28px); background:white; border:1px solid var(--line); }
+label { font-weight:600; }
+.hint,details { color:var(--muted); font-size:14px; }
+.hint { margin:4px 0 12px; }
+#key:not([hidden]) { display:block; width:100%; padding:9px; border:1px solid var(--line); color:var(--ink); font:inherit; font-size:14px; }
+#key::file-selector-button { padding:7px 12px; margin-right:12px; border:1px solid var(--line); background:var(--paper); color:var(--ink); font:inherit; cursor:pointer; }
+dl { border-top:1px solid var(--line); margin:24px 0 8px; padding-top:12px; }
+dl div { display:flex; justify-content:space-between; padding:3px 0; font-size:14px; }
+dt { color:var(--muted); }
+dd { margin:0; font-weight:500; }
+.button { width:100%; display:block; border:0; color:white; background:var(--red); padding:11px 22px; margin-top:20px; font:inherit; font-weight:500; cursor:pointer; }
+.button:hover { background:#650717; }
+:focus-visible { outline:2px solid var(--red); outline-offset:3px; }
+details { margin:16px 0; }
+summary { cursor:pointer; }
+details p { margin:8px 0; }
+code { overflow-wrap:anywhere; }
+
+.upload-field { border:0; padding:0; margin:0; min-width:0; }
+.upload-field legend { font-weight:600; padding:0; }
+#key-upload label { font-weight:400; overflow-wrap:anywhere; }
+#key-upload label > span:first-child { border-style:solid; }
+.button:disabled { opacity:.5; cursor:default; }

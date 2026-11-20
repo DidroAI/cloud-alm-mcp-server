@@ -237,6 +237,7 @@ export type TestPlan = {
 };
 
 export type TestPlanDetail = TestPlan & {
+  assignmentsComplete: boolean;
   description: string | null;
   testCases: {
     testCaseId: string | null;

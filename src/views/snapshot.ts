@@ -78,6 +78,7 @@ export type Part =
 
 /** A test case's latest result in one test plan (analytics `Tests`). */
 export type TestResult = {
+  source: "analytics" | "assignment";
   plan: string;
   status: string;
   date: string;
@@ -331,22 +332,27 @@ export class Snapshot {
     );
   }
 
+  private projectPages(part: "processes" | "processLinks", path: string, size: number) {
+    return this.calm.operation(async s => {
+      const result: Row[] = [];
+      while (result.length < MAX_ROWS) {
+        const offset = result.length;
+        const paging = part === "processes" ? { $top: size, $skip: offset } : { limit: size, offset };
+        const rows = rowsOf(await s.get(path, { projectId: this.pid, ...paging }));
+        result.push(...rows.slice(0, MAX_ROWS - offset));
+        if (rows.length < size) return result;
+      }
+      this.truncatedParts.add(part);
+      return result;
+    });
+  }
+
   processes(): Promise<SolutionProcess[]> {
     return this.once(
       "processes",
       () =>
-        this.calm.operation(async (s) =>
-          {
-            const rows = rowsOf(
-              await s.get(PATHS.solutionProcesses, {
-                projectId: this.pid,
-                $top: ODATA_PAGE,
-              }),
-            );
-            if (rows.length >= ODATA_PAGE) this.truncatedParts.add("processes");
-            return rows.map(solutionProcess);
-          },
-        ),
+        this.projectPages("processes", PATHS.solutionProcesses, ODATA_PAGE)
+          .then(rows => rows.map(solutionProcess)),
       [],
     );
   }
@@ -356,15 +362,11 @@ export class Snapshot {
     return this.once(
       "processLinks",
       () =>
-        this.calm.operation(async (s) => {
+        this.projectPages("processLinks", `${PATHS.tasks}/solutionProcessAssignments`, PAGE).then(rows => {
           const map = new Map<string, string[]>();
-          for (const r of rowsOf(
-            await s.get(`${PATHS.tasks}/solutionProcessAssignments`, {
-              projectId: this.pid,
-            }),
-          )) {
-            const task = str(r.taskId);
-            const process = str(r.solutionProcessId);
+          for (const row of rows) {
+            const task = str(row.taskId);
+            const process = str(row.solutionProcessId);
             if (!task || !process) continue;
             const list = map.get(task) ?? [];
             if (!list.includes(process)) list.push(process);
@@ -434,6 +436,7 @@ export class Snapshot {
             if (at >= 0) list.splice(at, 1);
             list.push({
                 plan,
+                source: "analytics",
                 status: String(r.status ?? "?"),
                 date,
                 passed: Number(r.passedActions ?? 0),
@@ -456,7 +459,7 @@ export class Snapshot {
             const key = byLower.get(tc) ?? tc;
             const list = map.get(key) ?? [];
             if (list.some((r) => r.plan === plan.title)) continue;
-            list.push({ plan: plan.title ?? "?", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 });
+            list.push({ source: "assignment", plan: plan.title ?? "?", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 });
             map.set(key, list);
           }
         return map;
@@ -585,7 +588,7 @@ export async function resolveProject(
     if (near.length === 1) return { project: near[0] as Project, others: [] };
     throw new CloudAlmError(
       near.length ? "bad_request" : "not_found",
-      `${near.length ? `several projects match "${wanted}"` : `no project named "${wanted}"`}; projects this key can read: ${all
+      `${near.length ? `several projects match "${wanted}"` : `no project named "${wanted}"`}; use calm_projects to search. Candidates: ${(near.length ? near : all)
         .slice(0, 20)
         .map((p) => `${p.name ?? "?"} = ${p.id}`)
         .join("; ")}`,

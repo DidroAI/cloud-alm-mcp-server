@@ -502,9 +502,7 @@ export class CloudAlm {
 
   async listProjects(): Promise<Project[]> {
     return this.run(async (s) =>
-      rowsOf(await s.get(PATHS.projects))
-        .map(project)
-        .slice(0, MAX_LIMIT),
+      rowsOf(await s.get(PATHS.projects)).map(project),
     );
   }
 
@@ -902,10 +900,10 @@ export class CloudAlm {
         : [];
       return {
         ...testPlan(row),
+        assignmentsComplete: Array.isArray(row.toTestCaseAssignments) && !row["toTestCaseAssignments@odata.nextLink"],
         description: plainText(row.description, 2000),
         testCases: assignments
           .sort(bySequence)
-          .slice(0, MAX_LIMIT)
           .map((a) => ({
             testCaseId: str(a.testCaseId),
             displayId: str(a.testCaseDisplayId),

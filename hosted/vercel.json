@@ -1,0 +1,14 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/mcp", "destination": "/api/connect" },
+    { "source": "/.well-known/:metadata*", "destination": "/api/connect" },
+    { "source": "/oauth/:action", "destination": "/api/connect" }
+  ],
+  "functions": {
+    "api/connect.mjs": {
+      "includeFiles": "node_modules/{cloud-alm-mcp-server,@modelcontextprotocol/ext-apps}/**/*"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+.vercel
+.env*
+
+/public/key-upload.js
+/public/dropzone.css
