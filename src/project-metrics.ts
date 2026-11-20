@@ -19,7 +19,7 @@ function projectMetrics(data) {
     card.className = "project-metric";
     const name = document.createElement("span"), number = document.createElement("strong");
     name.textContent = label;
-    number.textContent = value == null ? "—" : total == null ? String(value) : value + " / " + total;
+    number.textContent = value == null ? "Unknown" : total == null ? String(value) : value + " / " + total;
     card.append(name, number);
     if (total > 0 && value != null) {
       const bar = document.createElement("progress");

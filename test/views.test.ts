@@ -351,3 +351,59 @@ describe("near duplicates and process names", () => {
     expect(similarTitles("Unrelated cutover rehearsal", items)).toEqual([]);
   });
 });
+
+describe("unknown project metrics", () => {
+  const manual = "calm-testmanagement/v1/ManualTestCases";
+  const automatic = "calm-testmanagement/v1/AutomatedTestCases";
+  const analytics = ANALYTICS + "/Tests";
+
+  test.each([403, 503])("analytics HTTP %i keeps execution unknown in the dashboard, list and coverage matrix", async (status) => {
+    const { call } = await connect({ ...TENANT, [analytics]: new Response(null, { status }) });
+    const overview = await call("calm_overview");
+    expect(overview.error).toBe(false);
+    expect(overview.data?.testResults).toBeUndefined();
+    expect(overview.data?.notes.join(" ")).toContain("testResults");
+    expect(overview.text).not.toContain("not in a test plan");
+    const list = await call("calm_list", { types: ["test_case"] });
+    expect(list.data?.items.every((item: { result: string }) => item.result === "unknown")).toBe(true);
+    const filtered = await call("calm_list", { types: ["test_case"], status: "not in a test plan" });
+    expect(filtered.error).toBe(true);
+    const gaps = await call("calm_gaps", { checks: ["failed_tests", "coverage"] });
+    expect(gaps.data?.sections.map((s: {check: string}) => s.check)).toEqual(["coverage"]);
+    expect(gaps.data?.sections[0].summary.unknown).toBeGreaterThan(0);
+    expect(gaps.data?.notes.join(" ")).toContain("failed_tests");
+  });
+
+  test("missing test-case permission cannot classify tasks as untested", async () => {
+    const { call } = await connect({ ...TENANT, [manual]: new Response(null, { status: 403 }) });
+    const overview = await call("calm_overview");
+    expect(overview.data?.gaps.untested).toBeNull();
+    expect(overview.data?.testCases).toBeUndefined();
+    expect(overview.data?.testResults.notInPlan).toBeUndefined();
+    expect(overview.data?.gaps.openRequirementsAndStories).toBe(3);
+    const list = await call("calm_list", { types: ["requirement"], hasTests: false });
+    expect(list.error).toBe(true);
+    expect(list.text).toContain("testCases");
+    const gaps = await call("calm_gaps", { checks: ["untested", "coverage", "no_process"] });
+    expect(gaps.data?.sections.map((s: {check: string}) => s.check)).toEqual(["no_process"]);
+    expect(gaps.data?.notes.join(" ")).toContain("untested");
+  });
+
+  test("a partial list suppresses only the metrics that need it", async () => {
+    const { call } = await connect({ ...TENANT, [manual]: { value: Array(500).fill((TENANT[manual] as {value: unknown[]}).value[0]) } });
+    const overview = await call("calm_overview");
+    expect(overview.data?.gaps.untested).toBeNull();
+    expect(overview.data?.testCases).toBeUndefined();
+    expect(overview.data?.features.total).toBe(1);
+    expect(overview.data?.notes.join(" ")).toContain("Partial SAP lists");
+  });
+
+  test("accessible empty lists still report zero and genuinely uncovered tasks", async () => {
+    const { call } = await connect({ ...TENANT, [manual]: { value: [] }, [automatic]: { value: [] } });
+    const overview = await call("calm_overview");
+    expect(overview.data?.testCases.manual).toBe(0);
+    expect(overview.data?.gaps.untested).toBe(3);
+    expect(overview.data?.gaps.orphanTestCases).toBe(0);
+    expect(overview.data?.notes).toEqual([]);
+  });
+});
