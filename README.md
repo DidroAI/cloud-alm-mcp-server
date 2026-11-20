@@ -11,12 +11,9 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
-| Where you want to use Cloud ALM | How to connect |
-| --- | --- |
-| Claude Desktop | [Download the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb), open it, and select your SAP service key file. |
-| Codex, Claude Code or Cursor | With Node.js 22+ and your service key, run `npx -y cloud-alm-mcp-server setup`. [Local install guide](docs/install.md) |
-| Claude or ChatGPT in a browser | A web client needs a reachable HTTPS MCP endpoint. Try the [synthetic demo behind your own HTTPS forwarder](docs/hosted-preview.md). Didro does not currently provide a managed connection for customer tenants. |
-| Your own gateway | Run the [Streamable HTTP server](docs/hosting.md). Your gateway authenticates callers and supplies the SAP bearer token for each request. |
+[Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting) or [connect your own SAP tenant](https://docs.didro.ai/cloud-alm/#install).
+
+For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` with Node.js 22 or later. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.
 
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
@@ -62,49 +59,7 @@ opens. For a text answer or an export, the assistant can skip that last call.
 
 ### Optional agent feedback
 
-Feedback is off by default. Didro does not operate a feedback inbox for this release. With your own receiver configured, the agent can call `calm_report_feedback` when a
-tool behaves unexpectedly or a successful task takes avoidable extra work.
-It reports the affected tool, outcome, a short observation and an optional
-suggestion. The receipt gives you a report ID. Enable the tool once for the
-installation. Your MCP client may apply its own tool permissions.
-
-For a **key-free smoke test**, clone this repository and run:
-
-```sh
-bun install --frozen-lockfile
-bun test test/feedback.test.ts
-```
-
-The test sends a synthetic report over MCP to a loopback inbox and checks its
-exact contents. To try it in your local MCP client with your own SAP key, run
-`bun run build` and leave `bun scripts/feedback-inbox.ts` running in a terminal.
-Add a separate server entry to your client's MCP config. Replace both example
-paths with absolute paths on your computer.
-
-```json
-{
-  "mcpServers": {
-    "cloud-alm-preview": {
-      "command": "node",
-      "args": ["/absolute/path/to/cloud-alm-mcp-server/dist/cli.js"],
-      "env": {
-        "CALM_SERVICE_KEY": "/absolute/path/to/service-key.json",
-        "CALM_FEEDBACK_URL": "http://127.0.0.1:4317/reports"
-      }
-    }
-  }
-}
-```
-
-Restart the client and try a read-only question such as “Group the failed
-tests by requirement.” When the agent reports friction, the inbox terminal
-shows exactly what it received. Ordinary successful calls produce no report.
-The same receiver setting works in the server's HTTP mode. A remote collector
-must accept JSON by HTTPS and return 2xx after accepting the report.
-`CALM_FEEDBACK_TOKEN` supplies an optional dedicated receiver credential.
-For a shared HTTP installation, put caller authentication in front of the
-MCP endpoint as described in [hosting](docs/hosting.md). Remove the receiver
-setting and restart to disable reporting.
+The hosted demo lets agents report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. Local reporting is off by default. Operators can enable it for their installation with a receiver URL and token. Reports should describe tool behavior in generic terms. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
 
 ## Setup in 2 minutes (video)
 
