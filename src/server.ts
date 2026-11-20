@@ -371,7 +371,7 @@ export function createServer(
   tool(
     "calm_changes",
     "What changed",
-    "Catch someone up since a previous meeting or handover. Find recently created or updated project items and changes in test results.",
+    "Catch someone up since a previous meeting or handover. Find recently created or updated items and changes in test results. Item timestamps can establish when, but do not identify the editor.",
     {
       since: z.string().min(10).max(30).describe("YYYY-MM-DD"),
       projectId,
@@ -384,7 +384,7 @@ export function createServer(
   tool(
     "calm_get",
     "Get items",
-    "Inspect a known item when the user needs its details, such as a requirement’s acceptance text, a document’s contents or a test plan’s execution results.",
+    "Read a known requirement, document or test plan. Plan details include exit criteria, case priorities and execution results. Start here for plan sign-off or discrepancies with daily counts. For project-wide defect criteria, follow with calm_list filtered by defect, priority and status.",
     {
       ids: z.array(ref).min(1).max(10),
       detail: z.enum(["summary", "full"]).optional().describe("summary: fields and links, text cut to 600 characters; full (default): text up to 8000 characters per item"),
@@ -418,7 +418,7 @@ export function createServer(
   tool(
     "calm_analytics",
     "Analytics",
-    "Use daily snapshots to answer questions about counts and trends, such as how failed tests changed over a week. Use calm_overview for a project’s current state.",
+    "Use daily snapshots to answer questions about counts and trends, such as how failed tests changed over a week. Use calm_get on a specific plan to explain differences between reported executions and assigned cases. Use calm_overview for a project’s current state.",
     {
       dataset: z.enum(ANALYTICS_DATASETS).optional(),
       groupBy: z.array(z.string().max(60)).max(4).optional().describe("Group the latest snapshot by these columns. Include date for daily trends. status uses the dataset’s status column."),

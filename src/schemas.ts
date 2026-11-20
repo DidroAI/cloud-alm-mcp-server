@@ -64,7 +64,7 @@ export const GET_OUT = z.object({
         .array(z.looseObject({ plan: z.string(), status: z.string(), date: z.string(), actions: z.number(), passed: z.number(), failed: z.number() }))
         .optional()
         .describe("Latest result per test plan; Cloud ALM gives step counts, not which step failed"),
-      testCases: z.array(z.looseObject({ id: str, title: str, result: str, resultSource: z.enum(["analytics", "assignment", "unknown"]).optional(), defects: z.array(z.string()).nullable() })).optional(),
+      testCases: z.array(z.looseObject({ id: str, title: str, result: str, priority: str.optional(), resultSource: z.enum(["analytics", "assignment", "unknown"]).optional(), defects: z.array(z.string()).nullable() })).optional(),
     }),
   ),
   errors: z.array(z.object({ id: z.string(), error: z.string() })),
@@ -140,6 +140,7 @@ const dailyPlanResults = loose({ date: z.string(), total: z.number().int(), coun
 export const CHANGES_OUT = loose({
   project,
   since: z.string(),
+  attribution: z.string(),
   total: z.number().int(),
   byType: z.record(z.string(), loose({ created: z.number(), changed: z.number() })),
   offset: z.number().int(),

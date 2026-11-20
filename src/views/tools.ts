@@ -824,7 +824,7 @@ export type ItemDetail = {
   comments?: { date: string | null; author: string | null; text: string | null }[];
   steps?: { activity: string | null; step: string | null; do: string | null; expect: string | null; evidence: boolean }[];
   results?: { plan: string; status: string; date: string; actions: number; passed: number; failed: number }[];
-  testCases?: { id: string | null; title: string | null; result: string | null; resultSource?: string; defects: string[] | null; url?: string; defectUrls?: Record<string, string> }[];
+  testCases?: { id: string | null; title: string | null; result: string | null; resultSource?: string; priority?: string | null; defects: string[] | null; url?: string; defectUrls?: Record<string, string> }[];
 };
 
 export async function get(
@@ -1024,7 +1024,8 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       const r = inPlan(t.testCaseId);
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
       const word = !resultsKnown || !t.testCaseId ? "unknown" : r ? resultWords(r) : "not run";
-      return { t, r, raised, word, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}` };
+      const priority = priorityLabel(t.testCaseId ? n.testCaseOf(t.testCaseId)?.priority ?? null : null);
+      return { t, r, raised, word, priority, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}${priority ? ` · priority ${priority}` : ""}` };
     });
     const completeResults = resultsKnown && p.assignmentsComplete && rows.every(row => row.t.testCaseId);
     const shown = rows.slice(0, 200);
@@ -1051,14 +1052,14 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       title: p.title,
       fields: { startDate: p.startDate, endDate: p.endDate, population, shown: shown.length, defectLinksComplete: n.defectsKnown, ...(completeResults ? { progress } : {}) },
       description,
-      testCases: shown.map(({ t, word, raised, r }) => {
+      testCases: shown.map(({ t, word, raised, r, priority }) => {
         const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
         const defectUrls: Record<string, string> = {};
         for (const id of raised) {
           const target = webUrl(base, { kind: "task", type: "CALMDEF", displayId: id });
           if (target && id !== "?") defectUrls[id] = target;
         }
-        return { id: t.displayId, title: t.title, result: word, resultSource: word === "unknown" ? "unknown" : r?.source ?? "assignment", defects: (n.defectsKnown && t.testCaseId) || raised.length ? raised : null, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
+        return { id: t.displayId, title: t.title, priority, result: word, resultSource: word === "unknown" ? "unknown" : r?.source ?? "assignment", defects: (n.defectsKnown && t.testCaseId) || raised.length ? raised : null, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
       }),
     };
   } else {
@@ -1586,6 +1587,7 @@ export async function analytics(
     result.columns.find((c) => c.toLowerCase() === name.toLowerCase()) ??
     (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined);
   const notes: string[] = [];
+  if (dataset === "Tests") notes.push("Daily snapshots count reported executions. To reconcile a specific plan, read it with calm_get for its current assignments and cases missing from analytics.");
   if (result.truncated) notes.push("Only the first 200 analytics rows were inspected. Counts and absence checks may be incomplete.");
   if (scopedTo) notes.push(`Project: ${scopedTo.name ?? scopedTo.id} only`);
   let rows = result.rows;
@@ -1944,6 +1946,6 @@ export async function changes(
   lines.push(...notes);
   return {
     text: lines.join("\n"),
-    data: { project: { id: snap.project.id, name: snap.project.name }, since, total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove, testHistory: { status: historyStatus, population, startDate: historyStart, endDate: today }, notes },
+    data: { project: { id: snap.project.id, name: snap.project.name }, since, attribution: "Item timestamps identify creation or the latest update. These records do not identify the editor or provide field-level edit history.", total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove, testHistory: { status: historyStatus, population, startDate: historyStart, endDate: today }, notes },
   };
 }

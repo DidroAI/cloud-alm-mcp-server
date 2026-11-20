@@ -454,7 +454,7 @@ describe("test-plan sign-off evidence", () => {
     const { call } = await connect({ ...TENANT, [ANALYTICS + "/Defects"]: new Response(null, { status: 403 }) });
     const { data } = await call("calm_get", { ids: ["8-3-1"] });
     expect(data?.items[0].fields.population).toEqual({ assigned: 3, reported: 2, assignmentOnly: 1 });
-    expect(data?.items[0].testCases[2]).toMatchObject({ result: "not run", resultSource: "assignment", defects: null });
+    expect(data?.items[0].testCases[2]).toMatchObject({ result: "not run", priority: "medium", resultSource: "assignment", defects: null });
   });
   test("a failure beyond the display limit counts in progress", async () => {
     const failed = plan.toTestCaseAssignments.find(x => x.testCaseDisplayId === "8-1-1")!;
