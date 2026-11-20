@@ -18,7 +18,8 @@ npx -y cloud-alm-mcp-server setup
 
 Finds the key in `~/Downloads`, checks it against SAP, saves it readable only
 by you, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
-whichever are installed. Needs [Node.js 22 or later](https://nodejs.org).
+whichever are installed. If the downloaded file is gone, setup reuses the saved
+key. Needs [Node.js 22 or later](https://nodejs.org).
 
 ```sh
 npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API

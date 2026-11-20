@@ -84,7 +84,7 @@ Not installed globally? Put npx in front, as in:
   npx -y ${packageSpec(version())} setup
 
 setup without a file takes the newest service key JSON downloaded to
-~/Downloads in the last week (or in the current directory). init reads the
+~/Downloads in the last week, then reuses a previously saved key. init reads the
 file given, or stdin ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
 by you, at:
   ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
@@ -231,6 +231,7 @@ async function checkAndSave(
   }
 
   if (!unchanged) writeSecretFile(target, text);
+  else if ((io.platform ?? process.platform) !== "win32") chmodSync(target, 0o600);
   const how = unchanged ? "already saved" : exists ? "saved, replacing the one before," : "saved";
   // Windows has no file modes; the key lies in the user's own profile there.
   const mode = (io.platform ?? process.platform) === "win32" ? "" : " (mode 600)";
@@ -265,6 +266,7 @@ async function setup(io: Io, args: string[]): Promise<number> {
 
   let input: { text: string; origin: string; file?: string };
   const arg = flags.positional[0];
+  const saved = savedKeyPath(io.env);
   if (arg) input = await readKeyInput(io, arg);
   else {
     // Downloads only: a key planted in a cloned repository is never picked up.
@@ -272,6 +274,8 @@ async function setup(io: Io, args: string[]): Promise<number> {
     if (found) {
       io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
       input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
+    } else if (existsSync(saved)) {
+      input = await readKeyInput(io, saved);
     } else {
       const byFile = `${cli(io)} setup <file>`;
       for (const dir of unreadable)
@@ -302,7 +306,6 @@ async function setup(io: Io, args: string[]): Promise<number> {
   io.out(`Tenant: ${tenant}`);
   if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(new URL(key.uaa.url).hostname))
     io.err(`! The key's token address ${new URL(key.uaa.url).hostname} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
-  const saved = savedKeyPath(io.env);
   if (!arg && !flags.force && existsSync(saved)) {
     let before: string | undefined;
     try {
