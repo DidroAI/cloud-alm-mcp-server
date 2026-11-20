@@ -41,8 +41,11 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
   lets the assistant *propose* changes: create, update, comment, link, tag,
   delete. Every change waits for your approval in a card (or your "yes" in
   the chat).
-- **Links back to Cloud ALM.** Items come with a link that opens them in the
-  Cloud ALM UI, and you can paste a Cloud ALM link wherever an id is asked.
+- **Links back to Cloud ALM.** With a tenant UI address, record cards can open
+  requirements, defects, tasks, features, documents and manual test cases directly.
+  Test plans, automated test cases and processes open their SAP list. Project
+  links open the launchpad. Dashboard counts and approval fields are plain text.
+  The synthetic demo has no tenant links.
 
 ### Browsing results in chat
 
