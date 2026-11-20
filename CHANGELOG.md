@@ -6,7 +6,7 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-19
+## [0.1.3] - 2026-11-20
 
 ### Added
 
