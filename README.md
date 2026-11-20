@@ -11,6 +11,8 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
+For a browser-only connection to your own tenant, try the [hosted ChatGPT and Claude branch preview](https://cloud-alm-connect-preview.vercel.app/). Choose your BTP service key during sign-in to start a read-only session of up to one hour.
+
 [Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting) or [connect your own SAP tenant](https://docs.didro.ai/cloud-alm/#install).
 
 For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` with Node.js 22 or later. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.

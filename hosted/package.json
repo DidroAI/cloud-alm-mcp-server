@@ -1,0 +1,10 @@
+{
+  "name": "cloud-alm-hosted-preview",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "cloud-alm-mcp-server": "0.1.3"
+  }
+}

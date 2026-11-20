@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Connect SAP Cloud ALM</title
+  ><link rel="stylesheet" href="/connect.css" />
+  <main>
+    <h1>Connect SAP Cloud ALM</h1>
+    <p>
+      Add this server in your browser to read projects from your own tenant.
+    </p>
+    <p><code id="address"></code></p>
+    <script>
+      document.getElementById("address").textContent = location.origin + "/mcp";
+    </script>
+    <h2>ChatGPT</h2>
+    <p>
+      Open Plugins → Add custom MCP server. Enter the address above, choose
+      OAuth, and select Dynamic Client Registration. Create the plugin and
+      connect it.
+    </p>
+    <h2>Claude</h2>
+    <p>
+      Open Customize → Connectors → Add custom connector. Enter the same
+      address, choose Sign in now and Register automatically.
+    </p>
+    <p>
+      When the connection page opens, choose your BTP service key JSON file.
+      Then ask “Which Cloud ALM projects can I access?”
+    </p>
+    <p>
+      This preview supports read-only sessions of up to one hour. Reconnect to
+      start another session.
+    </p>
+  </main>
+</html>
