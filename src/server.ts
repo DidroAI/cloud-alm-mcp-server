@@ -316,7 +316,7 @@ export function createServer(
   tool(
     "calm_overview",
     "Overview",
-    "Start here for a project briefing: current phase, in-scope processes, delivery health, test progress and coverage gaps.",
+    "Start here when someone asks how a project is going. Use its phase, scope, testing progress and coverage gaps to prepare a project briefing.",
     { projectId },
     (a) => overview(calm, defined(a), options),
     OVERVIEW_OUT,
@@ -324,7 +324,7 @@ export function createServer(
   tool(
     "calm_projects",
     "Projects",
-    "Find a Cloud ALM project by name or purpose. Pass its id to calm_overview for phase, scope and delivery risks. Continue with nextOffset.",
+    "Find the right project when the user names a rollout or asks which projects they can access. Use the selected project for follow-up questions.",
     {
       query: z.string().max(200).optional(),
       purpose: z.enum(["implementation", "service_delivery"]).optional(),
@@ -337,7 +337,7 @@ export function createServer(
   tool(
     "calm_team",
     "Project team",
-    "Find project team members and roles before assigning work.",
+    "Look up who belongs to a project and which roles they hold when the user needs a contact or an assignee.",
     { projectId },
     (a) => team(calm, defined(a), options),
     TEAM_OUT,
@@ -345,7 +345,7 @@ export function createServer(
   tool(
     "calm_list",
     "List items",
-    "Find project work by title, owner, status or process. For scoped processes use types [process] and status 'in scope'. Pass matching ids to calm_get. Continue with nextOffset.",
+    "Find records matching a question about project work, such as open defects, unassigned requirements or processes in scope. Use the matching IDs to investigate further.",
     {
       types: z.array(z.enum(FIND_TYPES)).optional().describe("Default: all project items (not library)"),
       query: z.string().max(200).optional().describe("Words in the title or tags"),
@@ -371,7 +371,7 @@ export function createServer(
   tool(
     "calm_changes",
     "What changed",
-    "What changed in a project since a day: items created or changed (requirements, user stories, defects, features, documents, test cases), newest first, and how test results moved. No change log exists in Cloud ALM: who changed what, and deletions, are not shown.",
+    "Catch someone up since a previous meeting or handover. Find recently created or updated project items and changes in test results.",
     {
       since: z.string().min(10).max(30).describe("YYYY-MM-DD"),
       projectId,
@@ -384,7 +384,7 @@ export function createServer(
   tool(
     "calm_get",
     "Get items",
-    "Details of 1–10 items by id (from calm_list): description, fields (assignee, dates, scope, phase), comments, test case steps and latest results, defects and the test case they came from, a test plan's results, document content, feature transports, and every link with its id and title.",
+    "Inspect a known item when the user needs its details, such as a requirement’s acceptance text, a document’s contents or a test plan’s execution results.",
     {
       ids: z.array(ref).min(1).max(10),
       detail: z.enum(["summary", "full"]).optional().describe("summary: fields and links, text cut to 600 characters; full (default): text up to 8000 characters per item"),
@@ -396,7 +396,7 @@ export function createServer(
   tool(
     "calm_trace",
     "Trace links",
-    "Trace a process or item to its linked requirements, stories, features, tests and documents to explain delivery impact.",
+    "Follow the relationships around a known item or process to explain what delivers a requirement, which tests cover it and which defects affect it.",
     { id: ref, projectId },
     (a) => trace(calm, defined(a), options),
     TRACE_OUT,
@@ -404,7 +404,7 @@ export function createServer(
   tool(
     "calm_gaps",
     "Find gaps",
-    "What is missing or failing: requirements and user stories without a test case, process or feature; failed test runs; features with no task or untested tasks (check features); test cases linked to nothing or not prepared. Check coverage (asked by name): every requirement × test cases × latest result, for audits.",
+    "Assess readiness for UAT or go-live. Find missing test coverage, failed tests and incomplete links that deserve follow-up.",
     {
       checks: z.array(z.enum(GAP_CHECKS)).optional().describe("Default: all but coverage"),
       includeClosed: z.boolean().optional().describe("Also closed requirements and user stories (default: open only)"),
@@ -418,19 +418,16 @@ export function createServer(
   tool(
     "calm_analytics",
     "Analytics",
-    "Cloud ALM analytics, refreshed daily, tenant-wide: tasks, defects, test runs, jobs, exceptions, integration messages… Without dataset: the list and the columns to group by. groupBy counts on the latest day, or per day when groupBy includes date; `status` means the dataset's status column.",
+    "Use daily snapshots to answer questions about counts and trends, such as how failed tests changed over a week. Use calm_overview for a project’s current state.",
     {
       dataset: z.enum(ANALYTICS_DATASETS).optional(),
-      groupBy: z.array(z.string().max(60)).max(4).optional(),
+      groupBy: z.array(z.string().max(60)).max(4).optional().describe("Group the latest snapshot by these columns. Include date for daily trends. status uses the dataset’s status column."),
       filters: z.record(z.string(), z.string().max(200)).optional().describe('Column equalities on the dataset\'s columns, e.g. {"priority":"High"}'),
       period: z.string().regex(/^[A-Za-z0-9]{1,10}$/).optional().describe("C1D today, C7D last 7 days, C30D last 30 days (default: today)"),
       limit: z.number().int().min(1).max(200).optional(),
       projectId: z.string().min(1).max(200).optional().describe("One project, id or name (default: whole tenant)"),
     },
-    async (a) => {
-      const out = await analytics(calm, defined(a), options);
-      return typeof out === "string" ? { text: out, data: { dataset: a.dataset ?? null, message: out } } : out;
-    },
+    (a) => analytics(calm, defined(a), options),
     ANALYTICS_OUT,
   );
   const apiPath = z.string().min(3).max(300).describe("Path under the API root, e.g. calm-features/v1/Features or calm-tasks/v1/tasks/{id}/comments");
@@ -438,7 +435,7 @@ export function createServer(
   tool(
     "calm_api",
     "Read the Cloud ALM API",
-    "Read any Cloud ALM API (GET only) when no other tool answers: compose your own calls, e.g. OData $filter/$expand on features, documents, test cases. Without a path: the APIs and their query options. Up to 5 requests at once; answers are trimmed JSON.",
+    "Look up a specific SAP Cloud ALM record or relationship when the project tools cannot answer the question.",
     {
       path: apiPath.optional(),
       query: apiQuery,
@@ -450,7 +447,7 @@ export function createServer(
   tool(
     "calm_landscape",
     "Landscape and service status",
-    "Systems and cloud services of the tenant, and SAP service status events (outages, maintenance), open ones first.",
+    "Check which systems and cloud services belong to the tenant and whether SAP reports an outage or planned maintenance.",
     {},
     () => landscape(calm),
     LANDSCAPE_OUT,
@@ -469,7 +466,7 @@ export function createServer(
     tool(
       "calm_create_test_case",
       "Create a manual test case",
-      "Create a manual test case with activities and steps, linked to the tasks it covers. Refuses a duplicate title. Test cases cannot be tagged through the API; deleting one needs the key's testcases.delete scope.",
+      "Record a repeatable manual test when the user wants to verify a business scenario. Include its steps, expected results and the tasks it covers.",
       {
         title: z.string().min(1).max(250),
         covers: z.array(ref).max(20).optional().describe("Requirements or user stories it tests"),
@@ -483,7 +480,7 @@ export function createServer(
     tool(
       "calm_link",
       "Link or unlink items",
-      "Link items to tasks, or with unlink: true remove the links. from = a manual test case (tests the tasks), a feature (delivers them), a document (documents them), a requirement (its user stories or project tasks go under it), or a user story or project task (with tasks = its one requirement). Skips links that exist (or, unlinking, that do not).",
+      "Connect or disconnect existing project records when the user identifies a relationship, such as a test covering a requirement or a feature delivering a story.",
       {
         from: ref.describe("Test case, feature, document, requirement, user story or project task id"),
         tasks: z.array(ref).min(1).max(20),
@@ -496,7 +493,7 @@ export function createServer(
     tool(
       "calm_tag",
       "Tag tasks",
-      "Add or remove tags on requirements, user stories, defects or tasks; other tags stay. (Test cases and features cannot be tagged through the API.)",
+      "Group existing tasks for a workstream, release wave or review by adding or removing the labels the user requests.",
       {
         tasks: z.array(ref).min(1).max(20),
         add: z.array(z.string().min(1).max(256)).max(20).optional(),
@@ -509,7 +506,7 @@ export function createServer(
     tool(
       "calm_create_task",
       "Create a task",
-      "Create a requirement, user story (optionally under a requirement), defect or project task. Refuses a duplicate title of the same type.",
+      "Capture new project work when the user asks to record a requirement, user story, defect or project task.",
       {
         type: z.enum(CREATABLE_TASK_TYPES as [string, ...string[]]),
         title: z.string().min(1).max(180),
@@ -531,7 +528,7 @@ export function createServer(
     tool(
       "calm_update",
       "Change items",
-      "Change 1–20 tasks, features or manual test cases (same changes for each). Tasks: title, description, status, priority, assignee, startDate, dueDate, timebox, obsolete, comment. Features: title, description, status, priority. Manual test cases: title, prepared, priority, addActivity (appends an activity with steps). Only changed fields are sent; answers before → after per field. Documents cannot be changed after create.",
+      "Revise existing tasks, features or manual tests when the user requests a change to their details or progress.",
       {
         ids: z.array(ref).min(1).max(20),
         title: z.string().min(1).max(250).optional().describe("One item at a time"),
@@ -564,7 +561,7 @@ export function createServer(
     tool(
       "calm_delete",
       "Delete items",
-      "Delete 1–20 tasks, manual test cases or documents; cannot be undone. soft: true marks tasks obsolete instead (SAP recommends it). force: true deletes a test case with its test runs and results. Features cannot be deleted through the API; approved requirements cannot be deleted. Test cases and documents need the key's testcases.delete / documents.delete scope.",
+      "Use only when the user explicitly wants to retire a task or permanently delete a supported record. Clarify whether to keep its history when that choice applies.",
       {
         ids: z.array(ref).min(1).max(20),
         soft: z.boolean().optional().describe("Tasks: mark obsolete instead of deleting"),
@@ -577,7 +574,7 @@ export function createServer(
     tool(
       "calm_comment",
       "Comment on a task",
-      "Add a comment to a requirement, user story, defect or other task.",
+      "Add a discussion note or progress update to an existing requirement, story, defect or task when the user wants it recorded there.",
       {
         task: ref,
         text: z.string().min(1).max(8000).describe("Plain text; blank lines separate paragraphs"),
@@ -589,7 +586,7 @@ export function createServer(
     tool(
       "calm_create_feature",
       "Create a feature",
-      "Create a feature, optionally linked to the requirements or user stories it delivers. Features cannot be deleted through the API: check with the user first; refuses a duplicate title.",
+      "Record a new deliverable when the user asks for a feature, and link the requirements or stories it implements. Confirm intent because SAP cannot delete it through this API.",
       {
         title: z.string().min(1).max(600),
         description: z.string().min(1).max(8000).optional().describe("Plain text; blank lines separate paragraphs"),
@@ -604,7 +601,7 @@ export function createServer(
     tool(
       "calm_create_document",
       "Create a document",
-      "Create a document with content, linked to tasks. Its title, content, status, priority and type cannot be changed through the API afterwards; refuses a duplicate title.",
+      "Publish project documentation when the content is ready and the user wants it stored in Cloud ALM. Confirm the final content because the API cannot revise it after creation.",
       {
         title: z.string().min(1).max(250),
         content: z.string().min(1).max(50000).describe("Plain text; blank lines separate paragraphs"),
@@ -622,13 +619,13 @@ export function createServer(
   if (feedback) {
     server.registerTool(FEEDBACK_TOOL, {
       title: "Report MCP friction",
-      description: "Send your own observation about tool behavior to the configured feedback inbox. Describe unexpected behavior or extra work, even after success. Use generic language and omit tenant data, credentials and chat text.",
+      description: "Report friction you encountered using the MCP, such as a misleading result or avoidable extra calls. Omit tenant data, credentials and conversation text.",
       inputSchema: feedbackSchema([...TOOL_NAMES, ...WRITE_TOOL_NAMES, ...APPROVAL_TOOL_NAMES, "calm_show"]),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     }, async args => {
       try {
         const id = await feedback(args, SERVER_VERSION);
-        return { content: [{ type: "text", text: `Feedback received (${id}). Continue the task.` }] };
+        return { structuredContent: { receiptId: id }, content: [{ type: "text", text: `Feedback received (${id}). Continue the task.` }] };
       } catch {
         return { isError: true, content: [{ type: "text", text: "Feedback delivery unconfirmed. Continue the task without retrying." }] };
       }
@@ -637,7 +634,7 @@ export function createServer(
   if (show) {
     registerAppTool(server, "calm_show", {
       title: "Show Cloud ALM",
-      description: "Present one final view of a read. Use calm_get with selected ids for a curated result, or calm_list with filters for a live list.",
+      description: "Display project results when the user asks to see a dashboard, a list or item details in the app.",
       inputSchema: z.object({
         tool: z.enum(["calm_projects", "calm_overview", "calm_list", "calm_get"]),
         arguments: z.record(z.string(), z.unknown()),
@@ -681,14 +678,16 @@ export function createServer(
     const decide = async (id: string, nonce: string | undefined, approve: boolean, tool?: string): Promise<CallToolResult> => {
       try {
         const p = take(id, subject, nonce, Date.now(), tool);
-        if (!approve) return { content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
+        if (!approve) return { structuredContent: { proposalId: id, tool: p.tool, decision: "rejected" }, content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);
         if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
         // The write checks the same resolved plan it executes, before its first mutation.
-        return answer(() => write({ ...p.args, dryRun: false }, plan => {
+        const result = await answer(() => write({ ...p.args, dryRun: false }, plan => {
           if (planFingerprint(plan) !== p.fingerprint)
             throw new CloudAlmError("bad_request", "The change no longer matches what the user approved. Nothing was written. Propose the change again.");
         }));
+        if (result.isError) return result;
+        return { ...result, structuredContent: { ...(typeof result.structuredContent === "object" ? result.structuredContent : {}), proposalId: id, tool: p.tool, decision: "approved", summary: result.content.find(block => block.type === "text")?.text } };
       } catch (error) {
         if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
         throw error;
@@ -699,7 +698,7 @@ export function createServer(
       "calm_approve",
       {
         title: "Approve (approval card only)",
-        description: "Called by the approval card when the user clicks Approve or Reject. The assistant never calls it.",
+        description: "For the approval card only. Submit the user’s click to approve or reject a pending change.",
         inputSchema: {
           id: z.string().regex(/^[0-9a-f]{12}$/),
           // Absent when the host dropped the result's _meta: then only a
@@ -718,7 +717,7 @@ export function createServer(
         {
           title: "Confirm a change the user approved in the chat",
           description:
-            "Runs a change a write tool proposed, after the user said yes in the chat. Only call it when the user approved that exact change.",
+            "Execute a pending proposal only after the user explicitly approves that exact change in chat.",
           inputSchema: {
             id: z.string().regex(/^[0-9a-f]{12}$/),
             // Named so the host's permission prompt shows what will run.

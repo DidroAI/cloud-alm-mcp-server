@@ -1498,11 +1498,13 @@ export async function analytics(
   input: { dataset?: AnalyticsDataset; groupBy?: string[]; filters?: Record<string, string>; period?: string; limit?: number; projectId?: string },
   o: ViewOptions = {},
 ) {
-  if (!input.dataset)
-    return [
+  if (!input.dataset) {
+    const text = [
       "Datasets (pass one as dataset; groupBy counts by columns on the latest day, or per day when groupBy includes date; `status` means the dataset's status column; rows are tenant-wide):",
       ...Object.entries(DATASETS).map(([k, v]) => `- ${k}: ${v.about}${v.columns ? ` · group by: ${v.columns.join(", ")}` : ""}`),
     ].join("\n");
+    return { text, data: { dataset: null, datasets: Object.entries(DATASETS).map(([name, info]) => ({ name, description: info.about, groupBy: info.columns ?? [], supportsProject: !!PROJECT_COLUMN[name as AnalyticsDataset] })) } };
+  }
   const dataset = input.dataset;
   const info = DATASETS[dataset];
   // `status` (any case) stands for the dataset's status column; it is matched
@@ -1538,7 +1540,10 @@ export async function analytics(
     });
   } catch (error) {
     if (error instanceof CloudAlmError && error.code === "unavailable" && (error.status ?? 0) >= 500)
-      return `${dataset}: not available on this tenant (SAP Cloud ALM answered ${error.status}). Other datasets may work; calm_analytics without dataset lists them.`;
+      return {
+        text: `${dataset}: not available on this tenant (SAP Cloud ALM answered ${error.status}). Other datasets may work; calm_analytics without dataset lists them.`,
+        data: { dataset, outcome: "unavailable", httpStatus: error.status },
+      };
     throw error;
   }
   const columnOf = (name: string) =>
@@ -1573,10 +1578,11 @@ export async function analytics(
   // A filter that matches nothing: name the values there are.
   if (!rows.length && unfiltered.length) {
     const values = Object.keys(local).map((c) => `${c}: ${[...new Set(unfiltered.map((r) => String(r[c] ?? "—")))].slice(0, 15).join(", ")}`);
-    return [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
+    const text = [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
+    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], filters: local, truncated: result.truncated, notes } };
   }
-  if (!result.rows.length)
-    return [
+  if (!result.rows.length) {
+    const text = [
       `${dataset}: no rows${input.period ? "" : " (default period; try period C30D)"}${Object.keys(remote).length ? ` with ${Object.entries(remote).map(([c, v]) => `${c}=${v}`).join(", ")}` : ""}.`,
       MONITORED.has(dataset)
         ? "No rows does not mean none happened: this dataset only has rows when a monitored system sends them (calm_landscape lists the systems). Say that it is empty, not that there were none."
@@ -1585,6 +1591,8 @@ export async function analytics(
     ]
       .filter(Boolean)
       .join("\n");
+    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], notes: [text] } };
+  }
   const dates = [...new Set(rows.map((r) => r.date).filter((d): d is string => typeof d === "string" && !!d))].sort();
   const latest = dates.at(-1);
   const numeric = result.columns.filter((c) => rows.every((r) => r[c] === null || typeof r[c] === "number"));
@@ -1593,7 +1601,8 @@ export async function analytics(
     const unknown = groupBy.filter((g) => !result.columns.includes(g));
     if (unknown.length) {
       const groupable = (info.columns ?? []).filter((c) => result.columns.includes(c));
-      return `Not a column of ${dataset} on this tenant: ${unknown.join(", ")}.${groupable.length ? ` Group by: ${groupable.join(", ")}, date.` : ""} All columns: ${result.columns.join(", ")}`;
+      const text = `Not a column of ${dataset} on this tenant: ${unknown.join(", ")}.${groupable.length ? ` Group by: ${groupable.join(", ")}, date.` : ""} All columns: ${result.columns.join(", ")}`;
+      return { text, data: { dataset, outcome: "invalid_grouping", unknownColumns: unknown, columns: result.columns } };
     }
     // Rows are daily snapshots: count the latest day only, never sum days.
     const day = dates.length > 1 && !groupBy.includes("date") ? rows.filter((r) => r.date === latest) : rows;
@@ -1627,6 +1636,7 @@ export async function analytics(
         asOf: groupBy.includes("date") ? null : (latest ?? null),
         ...(scopedTo ? { project: scopedTo } : {}),
         ...(blank ? { leftOut: blank } : {}),
+        notes, truncated: result.truncated || shownGroups.length < groups.size,
         totalGroups: groups.size,
         groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, k.split(" · ")[i] ?? null])), values: v })),
       },
@@ -1650,7 +1660,7 @@ export async function analytics(
     .join("\n");
   return {
     text,
-    data: { dataset, total: rows.length, columns: cols, rows: rows.slice(0, input.limit ?? 10).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))) },
+    data: { dataset, project: scopedTo, truncated: result.truncated || shown < rows.length, notes, total: rows.length, columns: cols, rows: rows.slice(0, input.limit ?? 10).map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? null]))) },
   };
 }
 

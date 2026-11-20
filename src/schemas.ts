@@ -168,7 +168,12 @@ export const TRACE_OUT = loose({
 
 export const ANALYTICS_OUT = loose({
   dataset: str,
-  message: z.string().optional().describe("Without dataset: the list of datasets"),
+  outcome: z.enum(["empty", "unavailable", "invalid_grouping"]).optional(),
+  httpStatus: z.number().optional(),
+  unknownColumns: z.array(z.string()).optional(),
+  datasets: z.array(loose({ name: z.string(), description: z.string(), groupBy: z.array(z.string()), supportsProject: z.boolean() })).optional(),
+  truncated: z.boolean().optional(),
+  notes: z.array(z.string()).optional(),
   groupBy: z.array(z.string()).optional(),
   asOf: str.optional(),
   totalGroups: z.number().optional(),
