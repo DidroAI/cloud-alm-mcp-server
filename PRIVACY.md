@@ -2,7 +2,7 @@
 
 ## Hosted browser connection
 
-When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector offers read-only tools.
+When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector reads SAP data. Agent feedback is enabled by default on Didro’s hosted service. When the assistant encounters tool friction it can send a short observation to Didro’s private inbox. Reports contain the fields described below. The connector does not automatically attach SAP results or conversation transcripts.
 
 ## Local installation
 
@@ -16,7 +16,7 @@ When an operator sets `CALM_FEEDBACK_URL`, agents can report friction they
 encounter through `calm_report_feedback`. Each report includes a generated
 ID, MCP server version, tool name, outcome, a short agent-written observation
 and an optional suggestion. The operator chooses who receives these reports
-and how the receiver stores them. Didro receives a report only if the operator
+and how the receiver stores them. For a local installation, Didro receives a report only if the operator
 configures a Didro receiver.
 
 The tool instructs agents to describe generic behavior and checks for common
