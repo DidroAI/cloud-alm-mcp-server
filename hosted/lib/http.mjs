@@ -30,7 +30,7 @@ export function page(title, content, headers = {}) {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
-        "referrer-policy": "no-referrer",
+        "referrer-policy": "same-origin",
         "content-security-policy":
           "default-src 'none'; style-src 'self'; form-action 'self' https://chatgpt.com https://claude.ai; frame-ancestors 'none'; base-uri 'none'",
         ...headers,
