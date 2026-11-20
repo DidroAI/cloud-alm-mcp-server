@@ -382,17 +382,20 @@ function appendDetails(body, item) {
     }
     body.append(facts);
   }
+  const population = item.fields?.population;
+  if (population?.assignmentOnly > 0) body.append(node("p", population.assignmentOnly + " assigned cases have no analytics result and count as not run."));
   if (!item.testCases?.length) return;
-  body.append(node("h3", "Test cases (" + item.testCases.length + ")"));
+  body.append(node("h3", population?.assigned > item.testCases.length ? "Test cases (" + item.testCases.length + " of " + population.assigned + ")" : "Test cases (" + item.testCases.length + ")"));
   body.append(table(["Test case", "Result", "Defects"], item.testCases.map(tc => {
     const name = node("div");
     name.append(recordLink(tc.title || tc.id, tc.url), node("small", tc.id));
     const result = node("div"), [word, ...detail] = (tc.result || "Unknown").split(", ");
     result.append(badge(word));
+    if (tc.resultSource === "assignment") result.append(node("small", "No analytics result"));
     if (detail.length) result.append(node("small", detail.join(", ")));
     const defects = node("div", null, "references");
     for (const id of tc.defects || []) defects.append(recordLink(id, tc.defectUrls?.[id]));
-    return [name, result, defects.childNodes.length ? defects : "—"];
+    return [name, result, defects.childNodes.length ? defects : tc.defects === null ? "Unknown" : "—"];
   }), "Test case results"));
 }
 function itemList(items, details) {

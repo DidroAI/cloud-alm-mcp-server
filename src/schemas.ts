@@ -64,7 +64,7 @@ export const GET_OUT = z.object({
         .array(z.looseObject({ plan: z.string(), status: z.string(), date: z.string(), actions: z.number(), passed: z.number(), failed: z.number() }))
         .optional()
         .describe("Latest result per test plan; Cloud ALM gives step counts, not which step failed"),
-      testCases: z.array(z.looseObject({ id: str, title: str, result: str, defects: z.array(z.string()) })).optional(),
+      testCases: z.array(z.looseObject({ id: str, title: str, result: str, resultSource: z.enum(["analytics", "assignment", "unknown"]).optional(), defects: z.array(z.string()).nullable() })).optional(),
     }),
   ),
   errors: z.array(z.object({ id: z.string(), error: z.string() })),
@@ -119,6 +119,7 @@ export const OVERVIEW_OUT = loose({
   defects: loose({ byStatus: counts, byPriority: counts }),
   features: loose({ total: z.number(), byStatus: counts }),
   testCases: loose({ manual: z.number(), prepared: z.number(), automated: z.number() }),
+  testResultPopulation: loose({ reportedCasePlanPairs: z.number(), assignmentOnly: z.number(), total: z.number() }),
   testResults: counts.describe("Latest result per test case and plan; notInPlan: test cases in no plan"),
   gaps: loose({}),
   notes: z.array(z.string()),
@@ -134,6 +135,8 @@ export const TEAM_OUT = loose({
   members: z.array(loose({ userId: z.string().describe("What an assignee is set to"), roles: z.array(z.string()) })),
 });
 
+const dailyPlanResults = loose({ date: z.string(), total: z.number().int(), counts });
+
 export const CHANGES_OUT = loose({
   project,
   since: z.string(),
@@ -142,7 +145,9 @@ export const CHANGES_OUT = loose({
   offset: z.number().int(),
   nextOffset: z.number().int().nullable(),
   items: z.array(loose({ id: str, type: z.string(), title: str, status: str, what: z.enum(["created", "changed"]), at: z.string() })),
-  testResults: z.unknown().describe("Counts of results on the first and last day, from daily analytics; null when not readable"),
+  testResults: loose({ from: dailyPlanResults, to: dailyPlanResults }).nullable().describe("First and last reported daily snapshots. Only cases with an analytics row in a plan are counted."),
+  testHistory: loose({ status: z.enum(["compared", "single_day", "empty", "partial", "forbidden", "unavailable"]), population: z.string(), startDate: z.string(), endDate: z.string() }),
+  notes: z.array(z.string()),
 });
 
 export const TRACE_OUT = loose({

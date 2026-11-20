@@ -151,11 +151,13 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${snap.complete("testPlans") ? testPlans.length : "unknown"}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
   const latest = [...results.values()].flat();
+  const assignmentOnly = latest.filter(r => r.source === "assignment").length;
   const notInPlan = testCases.filter((t) => !results.get(t.id)?.length).length;
   if (resultsKnown && (latest.length || (casesKnown && notInPlan)))
     lines.push(
       `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${casesKnown && notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
     );
+  if (resultsKnown && assignmentOnly) lines.push(`Includes ${assignmentOnly} current plan assignments with no matching analytics result, counted as not run. Daily analytics omits these assignments.`);
   if (snap.complete("documents")) lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
@@ -192,6 +194,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
         manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length,
         testPlans: snap.complete("testPlans") ? testPlans.map((t) => ({ id: t.displayId, title: t.title })) : undefined,
       } : undefined,
+      testResultPopulation: resultsKnown ? { reportedCasePlanPairs: latest.length - assignmentOnly, assignmentOnly, total: latest.length } : undefined,
       testResults: resultsKnown ? {
         ...tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))),
         ...(casesKnown ? { notInPlan } : {}),
@@ -279,17 +282,25 @@ const requirementFields = (t: TaskSummary) => ({
   ...(t.approvalState ? { approval: approvalLabel(t.approvalState) } : {}),
 });
 
+/** Normalize typography while keeping technical names like REQ-01 and S/4HANA together. */
+function searchText(value: string) {
+  return value.normalize("NFC").toLowerCase()
+    .replace(/[\p{Pd}−]/gu, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”"()[\]{},;:!?]|\.(?=\s|$)/g, " ")
+    .replace(/\s+/g, " ");
+}
+
 /** `a b | c` → [[a,b],[c]]: all words of one alternative must match. */
 function matcher(query: string | undefined) {
-  const alternatives = (query ?? "")
-    .toLowerCase()
+  if (!query?.trim()) return () => true;
+  const alternatives = searchText(query)
     .split(/\s*\|\s*|\s+or\s+/)
-    .map((a) => a.split(/\s+/).filter(Boolean))
-    .filter((a) => a.length);
+    .map(a => a.split(/\s+/).filter(word => word && word !== "-"))
+    .filter(words => words.length);
   return (...texts: (string | null | undefined)[]) => {
-    if (!alternatives.length) return true;
-    const hay = texts.filter(Boolean).join(" ").toLowerCase();
-    return alternatives.some((words) => words.every((w) => hay.includes(w)));
+    const hay = searchText(texts.filter(Boolean).join(" ")).replace(/ ?- ?/g, "-");
+    return alternatives.some(words => words.every(word => hay.includes(word)));
   };
 }
 
@@ -813,7 +824,7 @@ export type ItemDetail = {
   comments?: { date: string | null; author: string | null; text: string | null }[];
   steps?: { activity: string | null; step: string | null; do: string | null; expect: string | null; evidence: boolean }[];
   results?: { plan: string; status: string; date: string; actions: number; passed: number; failed: number }[];
-  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[]; url?: string; defectUrls?: Record<string, string> }[];
+  testCases?: { id: string | null; title: string | null; result: string | null; resultSource?: string; defects: string[] | null; url?: string; defectUrls?: Record<string, string> }[];
 };
 
 export async function get(
@@ -1002,6 +1013,9 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const p = await calm.getTestPlan(ref.id);
     lines.push(`${p.displayId} test plan · "${p.title}" [${p.id}]${p.startDate ? ` · ${p.startDate}–${p.endDate ?? ""}` : ""}`);
     const description = own(p.description, p.displayId);
+    const plans = n.resultsKnown ? await snap.testPlans() : [];
+    const ambiguousTitle = !p.title || plans.filter(plan => plan.title === p.title).length > 1;
+    const resultsKnown = n.resultsKnown && !ambiguousTitle;
     const inPlan = (id: string | null) => {
       const all = id ? (n.results.get(id) ?? n.results.get(id.toLowerCase()) ?? []) : [];
       return all.find((r) => r.plan === p.title) ?? null;
@@ -1009,34 +1023,42 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const rows = [...p.testCases].sort(byDisplayId).map((t) => {
       const r = inPlan(t.testCaseId);
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
-      const word = !n.resultsKnown ? "unknown" : r ? resultWords(r) : "not run";
+      const word = !resultsKnown || !t.testCaseId ? "unknown" : r ? resultWords(r) : "not run";
       return { t, r, raised, word, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}` };
     });
+    const completeResults = resultsKnown && p.assignmentsComplete && rows.every(row => row.t.testCaseId);
+    const shown = rows.slice(0, 200);
+    const reported = rows.filter(row => row.r?.source === "analytics").length;
+    const population = { assigned: p.assignmentsComplete ? rows.length : null, reported: completeResults ? reported : null, assignmentOnly: completeResults ? rows.length - reported : null };
     const statusOf = (x: (typeof rows)[number]) => (x.r && x.r.status.toLowerCase() !== "initial" ? x.r.status.toLowerCase() : "not run");
     const executed = rows.filter((x) => ["passed", "failed", "blocked"].includes(statusOf(x))).length;
     const passed = rows.filter((x) => statusOf(x) === "passed").length;
     const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0);
     const progress = { total: rows.length, executed, passed, executedPct: pct(executed, rows.length), passedPct: pct(passed, rows.length), passRate: pct(passed, executed) };
     lines.push(
-      `Test cases (${rows.length})${rows.length && n.resultsKnown ? `: ${counts(rows.map(statusOf))}` : ""}`,
-      ...(rows.length && n.resultsKnown ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
-      ...rows.map((x) => x.line),
+      `Test cases (${rows.length})${rows.length && completeResults ? `: ${counts(rows.map(statusOf))}` : ""}`,
+      ...(rows.length && completeResults ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
+      ...(completeResults ? [`Current plan assignments: ${reported} with a reported analytics result, ${rows.length - reported} without a result (counted as not run).`] : ["Execution totals are unknown because the records cannot be fully matched to this plan."]),
+      ...(!p.assignmentsComplete ? ["SAP returned an incomplete assignment list; the plan total is unknown."] : []),
+      ...(!n.defectsKnown ? ["Defect links are incomplete or unavailable."] : []),
+      ...(shown.length < rows.length ? [`Showing the first ${shown.length} of ${rows.length} returned assignments.`] : []),
+      ...shown.map((x) => x.line),
     );
     data = {
       id: p.displayId,
       uuid: p.id,
       kind: "test plan",
       title: p.title,
-      fields: { startDate: p.startDate, endDate: p.endDate, ...(n.resultsKnown ? { progress } : {}) },
+      fields: { startDate: p.startDate, endDate: p.endDate, population, shown: shown.length, defectLinksComplete: n.defectsKnown, ...(completeResults ? { progress } : {}) },
       description,
-      testCases: rows.map(({ t, word, raised }) => {
+      testCases: shown.map(({ t, word, raised, r }) => {
         const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
         const defectUrls: Record<string, string> = {};
         for (const id of raised) {
           const target = webUrl(base, { kind: "task", type: "CALMDEF", displayId: id });
           if (target && id !== "?") defectUrls[id] = target;
         }
-        return { id: t.displayId, title: t.title, result: word, defects: raised, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
+        return { id: t.displayId, title: t.title, result: word, resultSource: word === "unknown" ? "unknown" : r?.source ?? "assignment", defects: (n.defectsKnown && t.testCaseId) || raised.length ? raised : null, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
       }),
     };
   } else {
@@ -1513,16 +1535,27 @@ export async function analytics(
   const remote: Record<string, string> = {};
   // One project, named or by id, in the dataset's own project column.
   const column = PROJECT_COLUMN[dataset];
-  const named = input.projectId ?? (input.filters?.project && !GUID.test(input.filters.project) ? input.filters.project : undefined);
+  const filters = Object.entries(input.filters ?? {});
+  const isProjectFilter = (key: string) => /^(project|projectid|projectguid)$/i.test(key);
+  const projectFilters = filters.filter(([key]) => isProjectFilter(key));
+  const selector = input.projectId ?? projectFilters[0]?.[1];
   let scopedTo: { id: string; name: string | null } | null = null;
-  if (named && column) {
-    const { project } = await resolveProject(calm, named, undefined, clock(o));
+  if (selector !== undefined) {
+    if (!column)
+      throw new CloudAlmError("bad_request", `${dataset} analytics is tenant-wide. SAP exposes no supported project filter for this dataset.`);
+    if (!selector.trim())
+      throw new CloudAlmError("bad_request", "Specify a project name or id for project-scoped analytics.");
+    const { project } = await resolveProject(calm, selector, undefined, clock(o));
+    for (const [, value] of projectFilters) {
+      const requested = value.trim().toLowerCase();
+      if (![selector, project.id, project.name].some(ref => ref?.trim().toLowerCase() === requested))
+        throw new CloudAlmError("bad_request", "Conflicting project filters. Specify one project using projectId.");
+    }
     scopedTo = { id: project.id, name: project.name };
     remote[column] = project.id;
-    local[column] = project.id;
   }
-  for (const [key, value] of Object.entries(input.filters ?? {})) {
-    if (scopedTo && key === "project") continue;
+  for (const [key, value] of filters) {
+    if (isProjectFilter(key)) continue;
     if (key.toLowerCase() === "status" && info.status) local[info.status] = value;
     else {
       remote[key] = value;
@@ -1553,11 +1586,20 @@ export async function analytics(
     result.columns.find((c) => c.toLowerCase() === name.toLowerCase()) ??
     (name.toLowerCase() === "status" && info.status && result.columns.includes(info.status) ? info.status : undefined);
   const notes: string[] = [];
+  if (result.truncated) notes.push("Only the first 200 analytics rows were inspected. Counts and absence checks may be incomplete.");
   if (scopedTo) notes.push(`Project: ${scopedTo.name ?? scopedTo.id} only`);
   let rows = result.rows;
+  if (scopedTo && column && rows.length) {
+    const projectColumn = columnOf(column);
+    if (!projectColumn)
+      throw new CloudAlmError("unavailable", `${dataset} returned rows without the ${column} column. Project-specific counts cannot be verified.`);
+    // Establish the population before computing totals or suggesting filter values.
+    const projectId = scopedTo.id.toLowerCase();
+    rows = rows.filter(row => String(row[projectColumn] ?? "").toLowerCase() === projectId);
+  }
   // Cloud ALM ignores filters on columns it does not have: say so.
   if (rows.length) {
-    const ignored = Object.keys(remote).filter((k) => !result.columns.includes(k));
+    const ignored = Object.keys(remote).filter((k) => !columnOf(k));
     if (ignored.length)
       notes.push(`Filter ${ignored.join(", ")} ignored: not a column of ${dataset} (columns: ${result.columns.join(", ")}). Rows are unfiltered by it.`);
   }
@@ -1581,7 +1623,7 @@ export async function analytics(
     const text = [`${dataset}: no rows with ${Object.entries(local).map(([c, v]) => `${c}=${v}`).join(", ")}; ${unfiltered.length} rows without it. Values: ${values.join("; ")}.`, ...notes].join("\n");
     return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], filters: local, truncated: result.truncated, notes } };
   }
-  if (!result.rows.length) {
+  if (!unfiltered.length) {
     const text = [
       `${dataset}: no rows${input.period ? "" : " (default period; try period C30D)"}${Object.keys(remote).length ? ` with ${Object.entries(remote).map(([c, v]) => `${c}=${v}`).join(", ")}` : ""}.`,
       MONITORED.has(dataset)
@@ -1591,7 +1633,7 @@ export async function analytics(
     ]
       .filter(Boolean)
       .join("\n");
-    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], notes: [text] } };
+    return { text, data: { dataset, outcome: "empty", project: scopedTo, rows: [], truncated: result.truncated, notes: [text] } };
   }
   const dates = [...new Set(rows.map((r) => r.date).filter((d): d is string => typeof d === "string" && !!d))].sort();
   const latest = dates.at(-1);
@@ -1794,6 +1836,12 @@ export async function changes(
 ) {
   const since = input.since.trim();
   if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(since)) throw new CloudAlmError("bad_request", "since must be YYYY-MM-DD (or an ISO time)");
+  const sinceDay = since.slice(0, 10);
+  const sinceMs = Date.parse(since.includes("T") && !since.endsWith("Z") ? since + "Z" : since);
+  if (!Number.isFinite(sinceMs) || new Date(sinceMs).toISOString().slice(0, 10) !== sinceDay)
+    throw new CloudAlmError("bad_request", "since must be a valid UTC date or time");
+  const now = clock(o);
+  if (sinceMs > now) throw new CloudAlmError("bad_request", "since is later than the current time");
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
   const offset = Math.max(input.offset ?? 0, 0);
   const snap = await snapshotFor(calm, input.projectId, o);
@@ -1804,7 +1852,7 @@ export async function changes(
     snap.testCases(),
     snap.testResults(),
   ]);
-  const after = (at: string | null | undefined) => !!at && at >= since;
+  const after = (at: string | null | undefined) => !!at && Date.parse(at) >= sinceMs;
   type Change = { id: string | null; url?: string | undefined; type: string; title: string | null; status: string | null; what: "created" | "changed"; at: string };
   const rows: Change[] = [];
   for (const t of tasks)
@@ -1827,39 +1875,48 @@ export async function changes(
     if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: snap.complete("testResults", "testPlans") ? resultText(results.get(t.id)) || NOT_IN_PLAN : "unknown", what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
-  let resultsCut = false;
-  let resultMove: { from: { date: string; counts: Record<string, number> }; to: { date: string; counts: Record<string, number> } } | null = null;
+  const population = "Daily SAP Tests analytics counts distinct reported test case and plan pairs. Current plan details also include assigned cases with no analytics result.";
+  const today = new Date(now).toISOString().slice(0, 10);
+  const requestedDays = 1 + (Date.parse(today) - Date.parse(sinceDay)) / 86_400_000;
+  const days = Math.min(requestedDays, 90);
+  const historyStart = new Date(Date.parse(today) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+  const notes = footer(snap, ["tasks", "features", "documents", "testCases"]);
+  if (requestedDays > days) notes.push(`Test history covers the last 90 UTC dates, starting ${historyStart}.`);
+  type SnapshotCount = { date: string; total: number; counts: Record<string, number> };
+  let resultMove: { from: SnapshotCount; to: SnapshotCount } | null = null;
+  let historyStatus: "compared" | "single_day" | "empty" | "partial" | "forbidden" | "unavailable" = "empty";
   try {
-    const days = Math.min(Math.max(Math.ceil(((o.now?.() ?? Date.now()) - Date.parse(since.slice(0, 10))) / 86_400_000) + 1, 1), 90);
-    // This project's rows only, filtered by SAP, every page (up to 2000 rows).
-    const testRows: Record<string, unknown>[] = [];
-    let cut = true;
+    const byDay = new Map<string, Map<string, string>>();
     for (let skip = 0; skip < 2000; skip += 200) {
       const page = await calm.queryAnalytics({ dataset: "Tests", period: `C${days}D`, limit: 200, offset: skip, filters: { projectGUID: snap.project.id } });
-      testRows.push(...page.rows);
-      if (!page.truncated) {
-        cut = false;
-        break;
+      for (const r of page.rows) {
+        if (String(r.projectGUID ?? "").toLowerCase() !== snap.project.id.toLowerCase()) continue;
+        const date = String(r.date ?? "").slice(0, 10);
+        if (!DATE.test(date) || date < historyStart || date > today || !r.testcaseId || !r.testPlan || r.testPlan === "(None)") continue;
+        const day = byDay.get(date) ?? new Map<string, string>();
+        const key = JSON.stringify([String(r.testcaseId).toLowerCase(), r.testPlan]);
+        const status = String(r.status || "unknown").toLowerCase();
+        const word = status === "initial" ? "not run" : status;
+        // With conflicting statuses for the same daily pair, there is no run timestamp to pick a winner.
+        day.set(key, day.has(key) && day.get(key) !== word ? "unknown" : word);
+        byDay.set(date, day);
       }
-    }
-    if (cut) resultsCut = true;
-    const byDay = new Map<string, Record<string, number>>();
-    for (const r of testRows) {
-      const date = typeof r.date === "string" ? r.date : null;
-      if (!date || String(r.projectGUID ?? "").toLowerCase() !== snap.project.id.toLowerCase()) continue;
-      // A test case's row outside any plan is not a result: count plan rows only, as calm_overview does.
-      if (!r.testPlan || r.testPlan === "(None)") continue;
-      const status = String(r.status ?? "?").toLowerCase().replace("initial", "not run");
-      const c = byDay.get(date) ?? {};
-      c[status] = (c[status] ?? 0) + 1;
-      byDay.set(date, c);
+      if (!page.truncated) break;
+      if (skip + 200 === 2000) historyStatus = "partial";
     }
     const dates = [...byDay.keys()].sort();
-    const first = dates[0];
-    const last = dates.at(-1);
-    if (first && last) resultMove = { from: { date: first, counts: byDay.get(first) ?? {} }, to: { date: last, counts: byDay.get(last) ?? {} } };
-  } catch {
-    // Analytics may be out of the key's scopes: the item changes still stand.
+    if (dates.length && historyStatus !== "partial") {
+      const summarize = (date: string): SnapshotCount => {
+        const pairs = byDay.get(date)!;
+        const counts: Record<string, number> = Object.create(null);
+        for (const word of pairs.values()) counts[word] = (counts[word] ?? 0) + 1;
+        return { date, total: pairs.size, counts };
+      };
+      resultMove = { from: summarize(dates[0]!), to: summarize(dates.at(-1)!) };
+      historyStatus = dates.length === 1 ? "single_day" : "compared";
+    }
+  } catch (e) {
+    historyStatus = e instanceof CloudAlmError && e.code === "forbidden" ? "forbidden" : "unavailable";
   }
   const page = rows.slice(offset, offset + limit);
   const nextOffset = offset + page.length < rows.length ? offset + page.length : null;
@@ -1874,15 +1931,19 @@ export async function changes(
     `Changes in ${snap.project.name ?? "the project"} since ${since}: ${rows.filter((r) => r.what === "created").length} created, ${rows.filter((r) => r.what === "changed").length} changed${nextOffset !== null ? ` (showing ${offset + 1}–${offset + page.length}; next page: offset ${nextOffset})` : ""}`,
     `By type: ${[...byType].map(([t, c]) => `${t} ${[c.created && `${c.created} created`, c.changed && `${c.changed} changed`].filter(Boolean).join(", ")}`).join("; ") || "none"}`,
     ...page.map((r) => `- ${r.at.slice(0, 16).replace("T", " ")} · ${r.what} · ${r.id ?? "?"} ${r.type}${r.status ? ` · ${r.status}` : ""} · "${short(r.title, 70)}"`),
-    resultMove
-      ? `Test results in this project's test plans, ${resultMove.from.date}: ${fmt(resultMove.from.counts)} → ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (daily analytics snapshots)`
-      : "Test results over time: not available (analytics needs calm-api.analytics.read).",
-    ...(resultsCut ? ["(test results: more than 2000 analytics rows; counted from the first 2000)"] : []),
+    population,
+    ...(resultMove ? [
+      `Reported ${resultMove.from.date}: ${fmt(resultMove.from.counts)} (${resultMove.from.total} pairs).`,
+      historyStatus === "single_day" ? "Only one daily snapshot has reported results in this period." :
+        `Reported ${resultMove.to.date}: ${fmt(resultMove.to.counts)} (${resultMove.to.total} pairs).`,
+    ] : [historyStatus === "empty" ? "No plan results were reported in this period." :
+      historyStatus === "partial" ? "Test history exceeded the 2000-row limit. Narrow the period to compare complete snapshots." :
+      historyStatus === "forbidden" ? "The service key lacks access to test history." : "SAP test history could not be read."]),
     "Cloud ALM's API keeps no change log: who changed an item, what field changed, new comments and deleted items are not visible here (calm_get an item shows its comments).",
   ];
-  lines.push(...footer(snap, ["tasks", "features", "documents", "testCases"]));
+  lines.push(...notes);
   return {
     text: lines.join("\n"),
-    data: { project: { id: snap.project.id, name: snap.project.name }, since, total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove },
+    data: { project: { id: snap.project.id, name: snap.project.name }, since, total: rows.length, byType: Object.fromEntries(byType), offset, nextOffset, items: page, testResults: resultMove, testHistory: { status: historyStatus, population, startDate: historyStart, endDate: today }, notes },
   };
 }

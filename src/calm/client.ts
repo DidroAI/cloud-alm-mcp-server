@@ -900,10 +900,10 @@ export class CloudAlm {
         : [];
       return {
         ...testPlan(row),
+        assignmentsComplete: Array.isArray(row.toTestCaseAssignments) && !row["toTestCaseAssignments@odata.nextLink"],
         description: plainText(row.description, 2000),
         testCases: assignments
           .sort(bySequence)
-          .slice(0, MAX_LIMIT)
           .map((a) => ({
             testCaseId: str(a.testCaseId),
             displayId: str(a.testCaseDisplayId),

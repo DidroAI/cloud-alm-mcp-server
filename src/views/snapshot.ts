@@ -78,6 +78,7 @@ export type Part =
 
 /** A test case's latest result in one test plan (analytics `Tests`). */
 export type TestResult = {
+  source: "analytics" | "assignment";
   plan: string;
   status: string;
   date: string;
@@ -435,6 +436,7 @@ export class Snapshot {
             if (at >= 0) list.splice(at, 1);
             list.push({
                 plan,
+                source: "analytics",
                 status: String(r.status ?? "?"),
                 date,
                 passed: Number(r.passedActions ?? 0),
@@ -457,7 +459,7 @@ export class Snapshot {
             const key = byLower.get(tc) ?? tc;
             const list = map.get(key) ?? [];
             if (list.some((r) => r.plan === plan.title)) continue;
-            list.push({ plan: plan.title ?? "?", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 });
+            list.push({ source: "assignment", plan: plan.title ?? "?", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 });
             map.set(key, list);
           }
         return map;
