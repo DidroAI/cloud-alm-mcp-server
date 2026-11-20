@@ -231,12 +231,6 @@ export function readRow(calm: CloudAlm, path: string, query?: Record<string, str
   return calm.operation(async (s) => rowOf(await s.get(path, query)));
 }
 
-/** An entity's ETag: OData's `@etag`, else none. */
-export const etagOf = (row: Row) => {
-  const tag = row["@etag"] ?? row["@odata.etag"];
-  return typeof tag === "string" ? tag : undefined;
-};
-
 /** Whether a read says the item is gone. */
 export async function gone(read: () => Promise<unknown>): Promise<boolean | string> {
   try {

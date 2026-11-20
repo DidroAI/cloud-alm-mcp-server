@@ -13,7 +13,11 @@ import {
 } from "./transport.js";
 
 const GUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
-const path = (p: string) => new RegExp(`^${p.replaceAll("{id}", GUID)}$`);
+const path = (p: string) => new RegExp(`^${p.replaceAll(".", "\\.").replaceAll("{id}", GUID)}$`);
+
+const MANUAL_TEST_CASE = path("calm-testmanagement/v1/ManualTestCases/{id}");
+const FORCE_DELETE_TEST_CASE = path("calm-testmanagement/v1/ManualTestCases/{id}/api.v1.ExternalTestCaseServiceAPI.forceDeletionIncludingTestRunsAndResults");
+const MODIFIED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export type WriteMethod = "POST" | "PATCH" | "DELETE";
 
@@ -29,7 +33,7 @@ const ALLOWED: Record<WriteMethod, RegExp[]> = {
     path("calm-features/v1/Features"),
     path("calm-documents/v1/Documents"),
     path("calm-testmanagement/v1/ManualTestCases"),
-    path("calm-testmanagement/v1/ManualTestCases/{id}/api.v1.ExternalTestCaseServiceAPI.forceDeletionIncludingTestRunsAndResults"),
+    FORCE_DELETE_TEST_CASE,
     path("calm-testmanagement/v1/TaskAssignments"),
     path("calm-testmanagement/v1/Activities"),
     path("calm-testmanagement/v1/Actions"),
@@ -37,14 +41,14 @@ const ALLOWED: Record<WriteMethod, RegExp[]> = {
   PATCH: [
     path("calm-tasks/v1/tasks/{id}"),
     path("calm-features/v1/Features/{id}"),
-    path("calm-testmanagement/v1/ManualTestCases/{id}"),
+    MANUAL_TEST_CASE,
   ],
   DELETE: [
     path("calm-tasks/v1/tasks/{id}"),
     path("calm-tasks/v1/tasks/relations/{id}"),
     path("calm-tasks/v1/tasks/featureAssignments/{id}"),
     path("calm-tasks/v1/tasks/documentAssignments/{id}"),
-    path("calm-testmanagement/v1/ManualTestCases/{id}"),
+    MANUAL_TEST_CASE,
     path("calm-testmanagement/v1/TaskAssignments/{id}"),
     path("calm-documents/v1/Documents/{id}"),
   ],
@@ -77,7 +81,10 @@ export class CloudAlmWriter {
   private async send(method: WriteMethod, path: string, body: unknown, ifMatch?: string): Promise<unknown> {
     if (!ALLOWED[method].some((p) => p.test(path)))
       throw new CloudAlmError("bad_request", `not a path this writer may send ${method} to`);
-    if (ifMatch !== undefined && !/^(W\/)?"[^"\r\n]{1,100}"$|^\*$/.test(ifMatch))
+    const needsModifiedAt = MANUAL_TEST_CASE.test(path) || FORCE_DELETE_TEST_CASE.test(path);
+    if (needsModifiedAt && !MODIFIED_AT.test(ifMatch ?? ""))
+      throw new CloudAlmError("bad_request", "Cloud ALM did not provide a usable modifiedAt timestamp for the test case");
+    if (!needsModifiedAt && ifMatch !== undefined && !/^(W\/)?"[^"\r\n]{1,100}"$|^\*$/.test(ifMatch))
       throw new CloudAlmError("bad_request", "not a usable ETag");
     const grant = typeof this.grant === "function" ? await this.grant() : this.grant;
     const root = apiRoot(grant.baseUrl, this.options.hostPattern);
@@ -101,10 +108,12 @@ export class CloudAlmWriter {
       // A timeout after sending may still have written: say so.
       if ((error as Error)?.name === "TimeoutError")
         throw new CloudAlmError("unavailable", "no answer in time; the change may or may not have been made: read the item before trying again");
-      throw new CloudAlmError("unavailable", "network error; nothing was sent");
+      throw new CloudAlmError("unavailable", "network error; the change may already have been made: read the item before trying again");
     }
     if (response.status >= 200 && response.status < 300) {
-      const text = await response.text();
+      const text = await response.text().catch(() => {
+        throw new CloudAlmError("unavailable", "Cloud ALM accepted the change, but its response could not be read: check the item before trying again");
+      });
       if (!text) return null;
       try {
         return JSON.parse(text) as unknown;

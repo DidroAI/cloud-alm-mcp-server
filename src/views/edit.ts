@@ -16,7 +16,6 @@ import {
   dryNote,
   NOTHING_TO_DO,
   similarTitles,
-  etagOf,
   gone,
   type Item,
   itemLabel,
@@ -377,8 +376,8 @@ async function planTestCase(
   if (input.prepared !== undefined) parts.push({ field: "prepared", body: { isPrepared: input.prepared }, show: (r) => (bool(r.isPrepared) ? "yes" : "no") });
   if (input.priority !== undefined) parts.push({ field: "priority", body: { priorityCode: input.priority }, show: (r) => priorityText(r.priorityCode) });
   const planned: Planned = { item, path: `${PATHS.manualTestCases}/${tc.id}`, scope: "testcases.write", before, parts, notes: [] };
-  const etag = etagOf(before);
-  if (etag) planned.ifMatch = etag;
+  // SAP checks the test case's exact timestamp, including fractional seconds.
+  if (typeof before.modifiedAt === "string") planned.ifMatch = before.modifiedAt;
   const add = input.addActivity;
   if (add) {
     const activities = activitiesOf(before);
@@ -392,16 +391,21 @@ async function planTestCase(
         const activityId = str(created?.uuid);
         if (!activityId) return `activity "${add.title}" sent, but Cloud ALM did not return its id; its steps were not added`;
         let steps = 0;
-        for (const [j, s] of add.steps.entries()) {
-          await writer.post("calm-testmanagement/v1/Actions", {
-            parent_ID: activityId,
-            title: s.title,
-            description: s.description,
-            expectedResult: s.expected,
-            sequence: j + 1,
-            isEvidenceRequired: s.evidence ?? false,
-          });
-          steps++;
+        try {
+          for (const [j, s] of add.steps.entries()) {
+            await writer.post("calm-testmanagement/v1/Actions", {
+              parent_ID: activityId,
+              title: s.title,
+              description: s.description,
+              expectedResult: s.expected,
+              sequence: j + 1,
+              isEvidenceRequired: s.evidence ?? false,
+            });
+            steps++;
+          }
+        } catch (error) {
+          const why = error instanceof CloudAlmError ? error.reason : "unexpected error";
+          return `Created activity "${short(add.title, 60)}" (${activityId}). Confirmed ${steps} of ${add.steps.length} steps before step ${steps + 1} failed: ${why}. Read the activity before adding any remaining steps.`;
         }
         const back = await afterWrite("reading it back", () =>
           readRow(calm, `${PATHS.manualTestCases}/${tc.id}`, { $expand: "toActivities($expand=toActions)" }),
@@ -488,13 +492,13 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
       const why = error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error";
       if (patched) {
         // The fields were written; only the step after them failed.
-        lines.push(`${head}:`, ...out, `  ${p.extra?.line ?? "the next step"}: not done (${why}); the changes above were written. Check the item before trying that part again.`);
+        lines.push(`${head}:`, ...out, `  ${p.extra?.line ?? "the next step"}: not confirmed (${why}); the changes above were written. Check the item before trying that part again.`);
         partial = true;
         continue;
       }
       failed++;
       firstError ??= error;
-      lines.push(`${head}: not changed (${why})`);
+      lines.push(`${head}: update failed (${why})`);
     }
   }
   if (failed && failed === plans.length && !partial) throw firstError;
@@ -676,8 +680,7 @@ async function deletePlan(
       (r) => str(r.taskDisplayId) ?? tasks.find((t) => t.id === r.taskId)?.displayId ?? str(r.taskId),
     );
     const what = `${name} (${activities.length} activities, ${steps} steps${links.length ? `, linked to ${links.join(", ")}` : ""})`;
-    const etag = etagOf(row);
-    const ifMatch = etag ? { ifMatch: etag } : {};
+    const ifMatch = typeof row.modifiedAt === "string" ? { ifMatch: row.modifiedAt } : {};
     if (input.force)
       return {
         item,

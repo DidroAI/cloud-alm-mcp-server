@@ -196,10 +196,11 @@ type Row = Record<string, unknown>;
 /**
  * The fake tenant with writes: POST, PATCH and DELETE change an in-memory
  * copy and are recorded in `writes` (POSTs also in `posts`). Answers like
- * Cloud ALM: a test case PATCH needs its ETag in If-Match (else 428), an
+ * Cloud ALM: a test case PATCH needs its modifiedAt timestamp in If-Match (else 428), an
  * approved requirement is not deleted (400), a path in `forbid`
  * ("METHOD path-prefix") answers 403 as for a missing scope.
  */
+export const TEST_CASE_MODIFIED_AT = "2026-11-12T10:30:45.123456789Z";
 const TENANT_ROWS = TENANT;
 export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
   const writes: Write[] = [];
@@ -228,7 +229,7 @@ export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
   rows.set(`calm-features/v1/Features/${FEATURE}`, { ...(TENANT[`calm-features/v1/Features/${FEATURE}`] as Row) });
   rows.set(`calm-testmanagement/v1/ManualTestCases/${TC2}`, {
     ...(TENANT[`calm-testmanagement/v1/ManualTestCases/${TC2}`] as Row),
-    "@etag": 'W/"1"',
+    modifiedAt: TEST_CASE_MODIFIED_AT,
   });
   rows.set(`calm-documents/v1/Documents/${DOC}`, { ...((TENANT["calm-documents/v1/Documents"] as { value: Row[] }).value[0] as Row) });
   // Link rows of the Tasks API, with GUID ids as Cloud ALM has.
@@ -259,13 +260,14 @@ export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
 
   function write(method: string, path: string, body: Row, ifMatch: string | null): Response {
     const created = (row: Row) => Response.json(row, { status: 201 });
+    const casePath = path.match(/^calm-testmanagement\/v1\/ManualTestCases\/[0-9a-f-]{36}(?:\/|$)/)?.[0].replace(/\/$/, "");
+    if (casePath && rows.has(casePath)) {
+      if (!ifMatch) return Response.json({ message: "Precondition required" }, { status: 428 });
+      if (ifMatch !== rows.get(casePath)?.modifiedAt) return Response.json({ message: "Precondition failed" }, { status: 412 });
+    }
     if (method === "PATCH") {
       const row = rows.get(path);
       if (!row) return Response.json({ message: "Not Found" }, { status: 404 });
-      if (path.startsWith("calm-testmanagement/")) {
-        if (!ifMatch) return Response.json({ code: "428", message: "Precondition required" }, { status: 428 });
-        if (ifMatch !== row["@etag"]) return Response.json({ code: "412", message: "ETag condition not met" }, { status: 412 });
-      }
       if (body.status && !statusOk(row.type, body.status))
         return Response.json([{ message: `Task status ID ${body.status} is not valid for the type ID ${row.type}.` }], { status: 400 });
       if (body.statusCode === "APPROVED_FOR_DEPLOYMENT")
@@ -273,7 +275,7 @@ export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
       Object.assign(row, body);
       // Cloud ALM derives a defect's sub-status from its status.
       if (body.status && !body.subStatus && row.type === "CALMDEF") row.subStatus = `DFC_${String(body.status).slice(7)}`;
-      if (row["@etag"]) row["@etag"] = `W/"${Number(String(row["@etag"]).slice(3, -1)) + 1}"`;
+      if (casePath) row.modifiedAt = "2026-11-12T10:30:46.987654321Z";
       return Response.json(row);
     }
     if (method === "DELETE") {
@@ -295,14 +297,13 @@ export function fakeWritableTenant(options: { forbid?: string[] } = {}) {
         uuid: NEW_TC,
         displayId: "8-1-9",
         title: body.title,
-        "@etag": 'W/"1"',
+        modifiedAt: TEST_CASE_MODIFIED_AT,
         toActivities: [{ title: "Check", sequence: 1, toActions: [{ title: "Open the order", sequence: 1 }] }],
       });
       return created({ uuid: NEW_TC, displayId: "8-1-9" });
     }
     const action = /^calm-testmanagement\/v1\/ManualTestCases\/([0-9a-f-]{36})\/api\.v1\.ExternalTestCaseServiceAPI\.forceDeletionIncludingTestRunsAndResults$/.exec(path);
     if (action) {
-      if (!ifMatch) return Response.json({ code: "428", message: "Precondition required" }, { status: 428 });
       rows.delete(`calm-testmanagement/v1/ManualTestCases/${action[1]}`);
       return Response.json({ value: true });
     }
