@@ -1,5 +1,11 @@
 # Privacy
 
+## Hosted browser connection
+
+When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector offers read-only tools.
+
+## Local installation
+
 `cloud-alm-mcp-server` runs on your computer, started by your MCP client
 (Claude Desktop, Claude Code, Codex, Cursor, VS Code, …). The default installation communicates with SAP.
 
