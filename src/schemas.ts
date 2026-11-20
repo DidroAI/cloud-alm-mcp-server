@@ -68,6 +68,7 @@ export const GET_OUT = z.object({
     }),
   ),
   errors: z.array(z.object({ id: z.string(), error: z.string() })),
+  notes: z.array(z.string()).optional(),
 });
 
 export const GAPS_OUT = z.object({

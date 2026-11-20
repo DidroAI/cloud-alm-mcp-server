@@ -364,6 +364,11 @@ describe("unknown project metrics", () => {
     expect(overview.data?.testResults).toBeUndefined();
     expect(overview.data?.notes.join(" ")).toContain("testResults");
     expect(overview.text).not.toContain("not in a test plan");
+    const details = await call("calm_get", { ids: ["8-3-1", "8-1-1"] });
+    expect(details.data?.items[0].fields.progress).toBeUndefined();
+    expect(details.data?.items[0].testCases.map((tc: { result: string }) => tc.result)).toEqual(["unknown", "unknown", "unknown"]);
+    expect(details.text).toContain("Latest result: unknown");
+    expect(details.data?.notes.join(" ")).toContain("testResults");
     const list = await call("calm_list", { types: ["test_case"] });
     expect(list.data?.items.every((item: { result: string }) => item.result === "unknown")).toBe(true);
     const filtered = await call("calm_list", { types: ["test_case"], status: "not in a test plan" });

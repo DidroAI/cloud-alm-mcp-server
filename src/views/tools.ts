@@ -465,7 +465,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const hit = (id: string, ...texts: (string | null | undefined)[]) => match(...texts) || textHits.has(id);
   const rows: Row[] = [];
   if (want.tasks) {
-    parts.push("tasks");
+    parts.push("tasks", "testCases", "features", "processLinks", "defects");
     for (const t of tasks) {
       if (!taskPass(t) || !hit(t.id, t.title, ...t.tags)) continue;
       rows.push({
@@ -606,7 +606,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   ];
   if (shown.length) lines.push("calm_get takes these ids (up to 10 at once) for details; calm_trace follows an item's links.");
   if (!input.types?.length && !query && !status && !tag && !taskOnly && priority === undefined && !input.changedSince) lines.push('Solution processes are listed with types ["process"].');
-  const footnotes = footer(snap, parts);
+  const footnotes = footer(snap, [...new Set(parts)]);
   lines.push(...footnotes);
   return {
     text: lines.join("\n"),
@@ -742,6 +742,7 @@ async function namer(snap: Snapshot, parts: readonly Part[] = ALL_PARTS) {
     processLinks,
     results,
     defectsKnown,
+    resultsKnown: want.has("testResults") && snap.complete("testResults", "testPlans"),
     defectsOf,
     /** The test case a defect was raised from. */
     raisedFrom: (defectId: string) => {
@@ -855,7 +856,9 @@ export async function get(
   const items = out.filter((x): x is { text: string; data: ItemDetail } => "data" in x);
   const errors = out.filter((x): x is { id: string; error: string } => "error" in x);
   const text = out.map((x) => ("data" in x ? x.text : `${x.id}: ${x.error}`)).join("\n\n---\n\n");
-  return { text, data: { project: { id: snap.project.id, name: snap.project.name }, items: items.map((x) => x.data), errors } };
+  if (parts.has("testResults")) parts.add("testPlans");
+  const notes = footer(snap, [...parts]);
+  return { text: [text, ...notes].join("\n"), data: { project: { id: snap.project.id, name: snap.project.name }, items: items.map((x) => x.data), errors, notes } };
 }
 
 const linked = (t: { displayId: string | null; title: string | null }, extra: Partial<Linked> = {}): Linked => ({
@@ -972,7 +975,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       lines.push(`${t.displayId} manual test case · ${t.isPrepared ? "prepared" : "not prepared"}${t.priorityCode !== null ? ` · priority ${priorityLabel(t.priorityCode)}` : ""} · "${t.title}" [${t.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
-      lines.push(`Latest result: ${result || "none recorded"}${results.some((r) => r.failed) ? " (Cloud ALM's API gives step counts per run, not which step failed or its actual result)" : ""}`);
+      lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}${results.some((r) => r.failed) ? " (Cloud ALM's API gives step counts per run, not which step failed or its actual result)" : ""}`);
       defectsLine(tc.id);
       if (t.tags.length) lines.push(`Tags: ${t.tags.map((g) => (g.group ? `${g.group}: ${g.label}` : g.label)).join("; ")}`);
       t.activities.forEach((a, i) => {
@@ -985,15 +988,15 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
         });
       });
       if (!t.activities.length) lines.push("No steps.");
-      data = { id: t.displayId, uuid: t.id, kind: "manual test case", title: t.title, status: t.isPrepared ? "prepared" : "not prepared", priority: priorityLabel(t.priorityCode), links, steps, results };
+      data = { id: t.displayId, uuid: t.id, kind: "manual test case", title: t.title, status: t.isPrepared ? "prepared" : "not prepared", priority: priorityLabel(t.priorityCode), links, steps, ...(n.resultsKnown ? { results } : {}) };
     } else {
       lines.push(`${tc.displayId} automated test case · ${tc.prepared ? "prepared" : "not prepared"}${tc.priority !== null ? ` · priority ${priorityLabel(tc.priority)}` : ""} · "${tc.title}" [${tc.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
-      lines.push(`Latest result: ${result || "none recorded"}`);
+      lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}`);
       defectsLine(tc.id);
       lines.push("Steps: run by the test automation tool; Cloud ALM keeps no steps for automated test cases.");
-      data = { id: tc.displayId, uuid: tc.id, kind: "automated test case", title: tc.title, status: tc.prepared ? "prepared" : "not prepared", priority: priorityLabel(tc.priority), links, results };
+      data = { id: tc.displayId, uuid: tc.id, kind: "automated test case", title: tc.title, status: tc.prepared ? "prepared" : "not prepared", priority: priorityLabel(tc.priority), links, ...(n.resultsKnown ? { results } : {}) };
     }
   } else if (ref.kind === "test plan") {
     const p = await calm.getTestPlan(ref.id);
@@ -1006,7 +1009,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const rows = [...p.testCases].sort(byDisplayId).map((t) => {
       const r = inPlan(t.testCaseId);
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
-      const word = r ? resultWords(r) : "not run";
+      const word = !n.resultsKnown ? "unknown" : r ? resultWords(r) : "not run";
       return { t, r, raised, word, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}` };
     });
     const statusOf = (x: (typeof rows)[number]) => (x.r && x.r.status.toLowerCase() !== "initial" ? x.r.status.toLowerCase() : "not run");
@@ -1015,8 +1018,8 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0);
     const progress = { total: rows.length, executed, passed, executedPct: pct(executed, rows.length), passedPct: pct(passed, rows.length), passRate: pct(passed, executed) };
     lines.push(
-      `Test cases (${rows.length})${rows.length ? `: ${counts(rows.map(statusOf))}` : ""}`,
-      ...(rows.length ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
+      `Test cases (${rows.length})${rows.length && n.resultsKnown ? `: ${counts(rows.map(statusOf))}` : ""}`,
+      ...(rows.length && n.resultsKnown ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
       ...rows.map((x) => x.line),
     );
     data = {
@@ -1024,7 +1027,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       uuid: p.id,
       kind: "test plan",
       title: p.title,
-      fields: { startDate: p.startDate, endDate: p.endDate, progress },
+      fields: { startDate: p.startDate, endDate: p.endDate, ...(n.resultsKnown ? { progress } : {}) },
       description,
       testCases: rows.map(({ t, word, raised }) => {
         const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
@@ -1120,7 +1123,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
-      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || NOT_IN_PLAN, defects: n.defectsOf(x.id).map((d) => d.displayId) })),
+      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: n.resultsKnown ? resultText(n.results.get(x.id)) || NOT_IN_PLAN : "unknown", defects: n.defectsOf(x.id).map((d) => d.displayId) })),
       documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
       ...(t?.type === "CALMDEF"
         ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null, blocks: blockedBy(taskId) }
@@ -1797,7 +1800,7 @@ export async function changes(
   for (const d of documents)
     if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
   for (const t of testCases)
-    if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || NOT_IN_PLAN, what: "changed", at: t.modifiedAt as string });
+    if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: snap.complete("testResults", "testPlans") ? resultText(results.get(t.id)) || NOT_IN_PLAN : "unknown", what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
   let resultsCut = false;
