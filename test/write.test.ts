@@ -18,6 +18,7 @@ import {
   REQ_DOC_LINK,
   TC2,
   TC2_LINK,
+  TEST_CASE_MODIFIED_AT,
   US1,
   US1_REQ_RELATION,
   US2,
@@ -144,6 +145,22 @@ describe("write mode", () => {
     await expect(writer.delete(`calm-features/v1/Features/${FEATURE}`)).rejects.toThrow("not a path");
     await expect(writer.patch(`calm-tasks/v1/tasks/${US1}`, {}, { ifMatch: 'x"\r\nX: y' })).rejects.toThrow("ETag");
   });
+  test("refuses missing or quoted test-case timestamps before sending the write", async () => {
+    const writer = new CloudAlmWriter({ accessToken: "t", baseUrl: BASE_URL });
+    const path = `calm-testmanagement/v1/ManualTestCases/${TC2}`;
+    await expect(writer.patch(path, {})).rejects.toThrow("modifiedAt");
+    await expect(writer.delete(path, { ifMatch: 'W/"1"' })).rejects.toThrow("modifiedAt");
+    await expect(writer.post(path + "/api.v1.ExternalTestCaseServiceAPI.forceDeletionIncludingTestRunsAndResults", {}, { ifMatch: "*" })).rejects.toThrow("modifiedAt");
+    expect(writer.log).toHaveLength(0);
+  });
+
+  test("a lost response leaves the write outcome unknown", async () => {
+    const fetcher = Object.assign(async () => { throw new TypeError("connection reset"); }, { preconnect: fetch.preconnect });
+    const writer = new CloudAlmWriter({ accessToken: "t", baseUrl: BASE_URL }, { fetch: fetcher });
+    await expect(writer.post("calm-tasks/v1/tasks", {})).rejects.toThrow("read the item before trying again");
+    expect(writer.log).toHaveLength(1);
+  });
+
 });
 
 describe("calm_link", () => {
@@ -273,7 +290,7 @@ describe("calm_update", () => {
     expect(writes).toHaveLength(1);
   });
 
-  test("a manual test case: PATCH with its ETag, addActivity appends an activity and its steps", async () => {
+  test("a manual test case: PATCH with its exact modifiedAt, addActivity appends an activity and its steps", async () => {
     const { call, writes } = await connect();
     const args = {
       ids: ["8-1-2"],
@@ -284,7 +301,7 @@ describe("calm_update", () => {
     expect(dry.text).toContain('8-1-2 manual test case "Release from the worklist":\n  prepared: yes → no\n  activities: 1 → 2 (adds "Undo" as activity 2 with 1 steps: "Reset the block")');
     const r = await call("calm_update", args);
     expect(r.error).toBe(false);
-    expect(writes[0]).toMatchObject({ method: "PATCH", path: `calm-testmanagement/v1/ManualTestCases/${TC2}`, body: { isPrepared: false }, ifMatch: 'W/"1"' });
+    expect(writes[0]).toMatchObject({ method: "PATCH", path: `calm-testmanagement/v1/ManualTestCases/${TC2}`, body: { isPrepared: false }, ifMatch: TEST_CASE_MODIFIED_AT });
     expect(writes[1]).toMatchObject({ method: "POST", path: "calm-testmanagement/v1/Activities", body: { parent_ID: TC2, title: "Undo", sequence: 2, isInScope: true } });
     expect(writes[2]).toMatchObject({
       method: "POST",
@@ -293,6 +310,17 @@ describe("calm_update", () => {
     });
     expect(r.text).toContain("prepared: yes → no");
     expect(r.text).toContain('added "Undo" with 1 steps (2 activities stored)');
+  });
+
+  test("an activity survives a failed step even when no parent fields changed", async () => {
+    const { call, writes } = await connect(undefined, ["POST calm-testmanagement/v1/Actions"]);
+    const result = await call("calm_update", {
+      ids: ["8-1-2"],
+      addActivity: { title: "Undo", steps: [{ title: "Reset", description: "Restore", expected: "Restored" }] },
+    });
+    expect(result.text).toContain(`Created activity "Undo" (${NEW_ACTIVITY}). Confirmed 0 of 1 steps`);
+    expect(result.text).toContain("Read the activity");
+    expect(writes.map(w => w.path)).toEqual(["calm-testmanagement/v1/Activities", "calm-testmanagement/v1/Actions"]);
   });
 
   test("no change when every field already has the value; a 403 names the scope", async () => {
@@ -352,8 +380,11 @@ describe("calm_delete", () => {
     expect(doc.text).toContain("the key lacks calm-api.documents.delete");
   });
 
-  test("with the scopes: a test case is deleted with its ETag, force uses the bound action", async () => {
+  test("with the scopes: a test case is deleted with its exact modifiedAt, force uses the bound action", async () => {
     const { call, writes } = await connect();
+    const normal = await connect();
+    expect((await normal.call("calm_delete", { ids: ["8-1-2"] })).error).toBe(false);
+    expect(normal.writes[0]).toMatchObject({ method: "DELETE", ifMatch: TEST_CASE_MODIFIED_AT });
     const dry = await call("calm_delete", { ids: ["8-1-2"], force: true, dryRun: true });
     expect(dry.text).toContain('force-delete 8-1-2 manual test case "Release from the worklist" (1 activities, 1 steps, linked to 3-2)');
     expect(dry.text).toContain("together with all its test runs and results");
@@ -362,7 +393,7 @@ describe("calm_delete", () => {
     expect(writes[0]).toMatchObject({
       method: "POST",
       path: `calm-testmanagement/v1/ManualTestCases/${TC2}/api.v1.ExternalTestCaseServiceAPI.forceDeletionIncludingTestRunsAndResults`,
-      ifMatch: 'W/"1"',
+      ifMatch: TEST_CASE_MODIFIED_AT,
     });
     expect((await call("calm_delete", { ids: ["7-1"] })).text).toBe('Deleted 7-1 document "Credit design".');
   });
@@ -385,7 +416,7 @@ describe("calm_comment, calm_create_feature, calm_create_document", () => {
     const r = await call("calm_update", { ids: ["3-4"], priority: 20, comment: "Lowered after triage" });
     expect(r.error).toBe(false);
     expect(writes.some((w) => w.method === "PATCH")).toBe(true);
-    expect(r.text).toContain("not done");
+    expect(r.text).toContain("not confirmed");
     expect(r.text).toContain("the changes above were written");
   });
 

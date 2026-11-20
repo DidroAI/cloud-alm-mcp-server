@@ -15,6 +15,8 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { sapLogo } from "./sap-logo.js";
+import { metricsCss, metricsScript } from "./project-metrics.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 
@@ -36,7 +38,7 @@ type Pending = {
   /** Whether it may be taken without the card's nonce (mode prefer). */
   allowChat: boolean;
   args: Record<string, unknown>;
-  preview: string;
+  fingerprint: string;
   subject: string;
   nonce: Buffer;
   expiresAt: number;
@@ -51,6 +53,16 @@ const pending = new Map<string, Pending>();
 /** Who may approve: the stdio user, or the holder of the same bearer token. */
 export const subjectOf = (token: string | undefined) =>
   token ? createHash("sha256").update(token).digest("hex") : "local";
+
+/** SAP may reorder JSON object properties between reads. Keep array order significant. */
+export function planFingerprint(plan: unknown): string {
+  const canonical = JSON.stringify(plan, (_key, value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, (value as Record<string, unknown>)[key]]))
+      : value
+  );
+  return createHash("sha256").update(canonical).digest("hex");
+}
 
 export type Proposal = { id: string; nonce: string; expiresAt: number };
 
@@ -145,9 +157,9 @@ export const OVERVIEW_URI = "ui://cloud-alm/overview-v1.html";
 
 /** The project overview card. */
 export function overviewHtml(): string {
-  return OVERVIEW_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle());
+  return OVERVIEW_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
 }
 
 export function cardHtml(): string {
-  return CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
+  return CARD_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
 }

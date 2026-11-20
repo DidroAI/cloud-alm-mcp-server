@@ -1,3 +1,4 @@
+import { feedbackSinkFromEnv } from "./feedback.js";
 import { webBaseFrom, webBaseFromKey } from "./views/links.js";
 import { existsSync } from "node:fs";
 import {
@@ -91,6 +92,7 @@ export function stdioFactory(
   const { reader, writer, grants } = clientsFrom(key, options);
   // Links to the Cloud ALM UI: configured, else the tenant the key opens.
   const webUrl = webBaseFrom(env.CALM_WEB_URL) ?? webBaseFromKey(key);
+  const feedback = feedbackSinkFromEnv(env);
   let writeTools: Promise<string[]> | undefined;
   return async () => {
     writeTools ??= grants().then((g) => writeToolsFor(tokenScopes(g.accessToken)));
@@ -99,6 +101,6 @@ export function stdioFactory(
       writeTools = undefined;
       return [] as string[];
     });
-    return createServer(reader, { ...serverOptionsForKey(writer, tools, env.CALM_CONTENT_PRESENTATION ?? "legacy"), ...(webUrl ? { webUrl } : {}) });
+    return createServer(reader, { ...serverOptionsForKey(writer, tools, env.CALM_CONTENT_PRESENTATION ?? "legacy", feedback), ...(webUrl ? { webUrl } : {}) });
   };
 }

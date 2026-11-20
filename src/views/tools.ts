@@ -79,7 +79,8 @@ function footer(snap: Snapshot, parts: Part[]): string[] {
     out.push(`Not readable with this key (missing scope): ${missing.join(", ")}.`);
   const failed = parts.filter((p) => snap.failed.has(p));
   if (failed.length) out.push(`Could not read now (SAP Cloud ALM error): ${failed.join(", ")}.`);
-  if (snap.truncated) out.push(`Some lists were cut at 1000 rows; counts are lower bounds.`);
+  const truncated = parts.filter(p => snap.truncatedParts.has(p));
+  if (truncated.length) out.push(`Partial SAP lists (row limit reached): ${truncated.join(", ")}. Counts and absence checks may be incomplete.`);
   return out;
 }
 
@@ -101,7 +102,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     lines.push(`${projects.length} projects. Pass projectId for one project's overview:`);
     for (const p of projects.slice(0, 50))
       lines.push(`- ${projectLabel(p)} · ${(p.purpose ?? "").toLowerCase()} · status ${p.status ?? "?"}`);
-    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose, status: p.status })) } };
+    return { text: lines.join("\n"), data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose, status: p.status })) } };
   }
   // The project list is already read: no second read for the project.
   const listed = projects.find((p) => p.id.toLowerCase() === (wanted ?? projects[0]?.id ?? "").toLowerCase());
@@ -119,6 +120,9 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
       snap.timeboxes(),
       snap.testResults(),
     ]);
+  const tasksKnown = snap.complete("tasks");
+  const casesKnown = snap.complete("testCases");
+  const resultsKnown = snap.complete("testResults", "testPlans");
   const phases = timeboxes.filter((t) => t.type === 1);
   const milestones = timeboxes.filter((t) => t.type === 0);
   const current = timeboxes.find((t) => t.id === p.phaseId);
@@ -134,27 +138,27 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     lines.push(`Solution processes: ${scoped.length} in scope of ${processes.length}${scoped.length ? ` (${scoped.slice(0, 6).map((x) => x.name).join("; ")}${scoped.length > 6 ? "; …" : ""})` : ""}`);
   const byType = new Map<string, TaskSummary[]>();
   for (const t of tasks) byType.set(typeLabel(t.type), [...(byType.get(typeLabel(t.type)) ?? []), t]);
-  lines.push(
+  if (tasksKnown) lines.push(
     `Tasks: ${[...byType.entries()].map(([type, list]) => `${list.length} ${list.length === 1 ? type : type.replace(/y$/, "ie").replace(/s?$/, "s")} (${counts(list.map((t) => statusLabel(t.status)))})`).join("; ") || "none"}`,
   );
   const defects = tasks.filter((t) => t.type === "CALMDEF");
-  if (defects.length)
+  if (tasksKnown && defects.length)
     lines.push(
       `Defects: ${counts(defects.map(taskStatus))} · priority: ${counts(defects.map((t) => priorityLabel(t.priority) ?? "none"))}`,
     );
-  if (features.length) lines.push(`Features: ${features.length} (${counts(features.map((f) => featureStatus(f.statusCode)))})`);
+  if (snap.complete("features") && features.length) lines.push(`Features: ${features.length} (${counts(features.map((f) => featureStatus(f.statusCode)))})`);
   const manual = testCases.filter((t) => t.kind === "manual");
   const automated = testCases.filter((t) => t.kind === "automated");
-  lines.push(
-    `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${testPlans.length}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
+  if (casesKnown) lines.push(
+    `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${snap.complete("testPlans") ? testPlans.length : "unknown"}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
   const latest = [...results.values()].flat();
   const notInPlan = testCases.filter((t) => !results.get(t.id)?.length).length;
-  if (latest.length || notInPlan)
+  if (resultsKnown && (latest.length || (casesKnown && notInPlan)))
     lines.push(
-      `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
+      `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${casesKnown && notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
     );
-  lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
+  if (snap.complete("documents")) lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
   const tags = counts(tasks.flatMap((t) => t.tags));
   if (tags) lines.push(`Tags: ${tags}`);
   // Gaps in one line; calm_gaps lists them.
@@ -164,9 +168,13 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   const untested = reqs.filter((t) => !tested.has(t.id)).length;
   const noProcess = reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).length;
   const orphans = testCases.filter((t) => !t.taskIds.length).length;
-  lines.push(
-    `Gaps: ${untested} of ${reqs.length} open requirements/user stories without a test case · ${noProcess} open requirement${noProcess === 1 ? "" : "s"} without a solution process · ${orphans} test case${orphans === 1 ? "" : "s"} linked to no task (calm_gaps lists them)`,
-  );
+  const gapCounts = {
+    untested: tasksKnown && casesKnown ? untested : null,
+    openRequirementsAndStories: tasksKnown ? reqs.length : null,
+    noProcess: tasksKnown && snap.complete("processLinks") ? noProcess : null,
+    orphanTestCases: casesKnown ? orphans : null,
+  };
+  lines.push(`Gaps: ${gapCounts.untested ?? "unknown"} of ${gapCounts.openRequirementsAndStories ?? "unknown"} open requirements/user stories without a test case · ${gapCounts.noProcess ?? "unknown"} open requirements without a solution process · ${gapCounts.orphanTestCases ?? "unknown"} test cases linked to no task (calm_gaps lists them)`);
   lines.push(ELSEWHERE);
   const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]);
   lines.push(...footnotes);
@@ -176,17 +184,23 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     data: {
       project: { id: p.id, name: p.name, purpose: p.purpose?.toLowerCase() ?? null, status: projectHealth(p.operationalStatus), phase: current?.name ?? null, otherProjects: projects.length - 1 },
       ...(o.webUrl ? { tenant: new URL(o.webUrl).hostname } : {}),
-      phases: phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })),
-      milestones: milestones.map((t) => ({ name: t.name, date: t.startDate })),
-      processes: { inScope: scoped.length, total: processes.length },
-      tasks: Object.fromEntries([...byType.entries()].map(([type, list]) => [type, { total: list.length, byStatus: tally(list.map((t) => statusLabel(t.status))) }])),
-      defects: { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) },
-      features: { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) },
-      testCases: { manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length, testPlans: testPlans.map((t) => ({ id: t.displayId, title: t.title })) },
-      testResults: { ...tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))), notInPlan },
-      documents: documents.map((d) => ({ id: d.displayId, title: d.title, type: documentType(d.documentTypeCode) })),
-      tags: tally(tasks.flatMap((t) => t.tags)),
-      gaps: { untested, openRequirementsAndStories: reqs.length, noProcess, orphanTestCases: orphans },
+      phases: snap.complete("timeboxes") ? phases.map((t) => ({ name: t.name, start: t.startDate, end: t.endDate, current: t.id === p.phaseId })) : undefined,
+      milestones: snap.complete("timeboxes") ? milestones.map((t) => ({ name: t.name, date: t.startDate })) : undefined,
+      processes: snap.complete("processes") ? { inScope: scoped.length, total: processes.length } : undefined,
+      tasks: tasksKnown ? Object.fromEntries([...byType.entries()].map(([type, list]) => [type, { total: list.length, byStatus: tally(list.map((t) => statusLabel(t.status))) }])) : undefined,
+      defects: tasksKnown ? { byStatus: tally(defects.map(taskStatus)), byPriority: tally(defects.map((t) => priorityLabel(t.priority) ?? "none")) } : undefined,
+      features: snap.complete("features") ? { total: features.length, byStatus: tally(features.map((f) => featureStatus(f.statusCode))) } : undefined,
+      testCases: casesKnown ? {
+        manual: manual.length, prepared: manual.filter((t) => t.prepared).length, automated: automated.length,
+        testPlans: snap.complete("testPlans") ? testPlans.map((t) => ({ id: t.displayId, title: t.title })) : undefined,
+      } : undefined,
+      testResults: resultsKnown ? {
+        ...tally(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))),
+        ...(casesKnown ? { notInPlan } : {}),
+      } : undefined,
+      documents: snap.complete("documents") ? documents.map((d) => ({ id: d.displayId, title: d.title, type: documentType(d.documentTypeCode) })) : undefined,
+      tags: tasksKnown ? tally(tasks.flatMap((t) => t.tags)) : undefined,
+      gaps: gapCounts,
       notes: footnotes,
     },
   };
@@ -382,6 +396,8 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         snap.defects().catch(() => ({ byTestCase: new Map<string, string[]>(), byDefect: new Map<string, string>() })),
       ])
     : [[], [], new Map<string, string[]>(), [], { byTestCase: new Map<string, string[]>(), byDefect: new Map<string, string>() }];
+  if (want.tasks && input.hasTests !== undefined && !snap.complete("tasks", "testCases"))
+    throw new CloudAlmError("bad_request", "Cannot apply hasTests because the source lists are incomplete. " + footer(snap, ["tasks", "testCases"]).join(" "));
   const processName = new Map(allProcesses.map((p) => [p.id, p.name]));
   const testsOf = (taskId: string) => allTests.filter((x) => x.taskIds.includes(taskId));
   const featuresOf = (taskId: string) => allFeatures.filter((f) => f.taskIds.includes(taskId));
@@ -393,7 +409,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
     return {
       ...(processes.length ? { processes } : {}),
       ...(features.length ? { features } : {}),
-      ...(t.type === "CALMREQU" || t.type === "CALMUS" ? { testCases: testsOf(t.id).length } : {}),
+      ...((t.type === "CALMREQU" || t.type === "CALMUS") && snap.complete("testCases") ? { testCases: testsOf(t.id).length } : {}),
       ...(raisedFrom ? { raisedFrom } : {}),
     };
   };
@@ -449,7 +465,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   const hit = (id: string, ...texts: (string | null | undefined)[]) => match(...texts) || textHits.has(id);
   const rows: Row[] = [];
   if (want.tasks) {
-    parts.push("tasks");
+    parts.push("tasks", "testCases", "features", "processLinks", "defects");
     for (const t of tasks) {
       if (!taskPass(t) || !hit(t.id, t.title, ...t.tags)) continue;
       rows.push({
@@ -478,7 +494,9 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         rows.push({ sort: "3", displayId: d.displayId, line: documentLine(d), data: { id: d.displayId, url: webUrl(o.webUrl, { kind: "document", displayId: d.displayId }), type: documentType(d.documentTypeCode), title: d.title, changedAt: d.modifiedAt } });
   }
   if (want.testCases) {
-    parts.push("testCases", "testResults");
+    parts.push("testCases", "testResults", "testPlans");
+    const resultsKnown = snap.complete("testResults", "testPlans");
+    if (resultStatus && !resultsKnown) throw new CloudAlmError("bad_request", "Cannot filter by result because the test results are incomplete. " + footer(snap, ["testResults", "testPlans"]).join(" "));
     for (const t of testCases) {
       if (!match(t.title, ...t.tags) || !tagOk(t.tags) || (priority !== undefined && t.priority !== priority)) continue;
       const latest = results.get(t.id) ?? [];
@@ -493,7 +511,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
       rows.push({
         sort: "4",
         displayId: t.displayId,
-        line: testCaseLine(t, latest),
+        line: testCaseLine(t, resultsKnown ? latest : null),
         data: {
           id: t.displayId,
           url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
@@ -502,8 +520,8 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           prepared: t.prepared !== false,
           priority: priorityLabel(t.priority),
           tags: t.tags,
-          result: resultText(latest) || NOT_IN_PLAN,
-          results: latest.map((r) => ({ plan: r.plan, status: r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase(), passed: r.passed, steps: r.steps, date: r.date })),
+          result: resultsKnown ? resultText(latest) || NOT_IN_PLAN : "unknown",
+          ...(resultsKnown ? { results: latest.map((r) => ({ plan: r.plan, status: r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase(), passed: r.passed, steps: r.steps, date: r.date })) } : {}),
         },
       });
     }
@@ -527,7 +545,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: "6",
           displayId: null,
           line: `${p.id} · solution process · ${p.isScoped ? "in scope" : "not in scope"} · "${short(p.name)}"`,
-          data: { id: p.id, type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
+          data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: p.isScoped ? "in scope" : "not in scope" },
         });
   }
   libraryKinds.forEach((kind, i) => {
@@ -538,7 +556,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
           sort: `7${kind}`,
           displayId: item.displayId,
           line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}`,
-          data: { id: item.displayId ?? item.id, type: kind.replace(/s$/, ""), title: item.title },
+          data: { id: item.displayId ?? item.id, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), type: kind.replace(/s$/, ""), title: item.title },
         });
   });
   rows.sort((a, b) => a.sort.localeCompare(b.sort) || byDisplayId(a, b));
@@ -588,7 +606,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
   ];
   if (shown.length) lines.push("calm_get takes these ids (up to 10 at once) for details; calm_trace follows an item's links.");
   if (!input.types?.length && !query && !status && !tag && !taskOnly && priority === undefined && !input.changedSince) lines.push('Solution processes are listed with types ["process"].');
-  const footnotes = footer(snap, parts);
+  const footnotes = footer(snap, [...new Set(parts)]);
   lines.push(...footnotes);
   return {
     text: lines.join("\n"),
@@ -709,7 +727,7 @@ async function namer(snap: Snapshot, parts: readonly Part[] = ALL_PARTS) {
   ]);
   const task = new Map(tasks.map((t) => [t.id.toLowerCase(), t]));
   const testCase = new Map(testCases.map((t) => [t.id.toLowerCase(), t]));
-  const defectsKnown = want.has("defects") && !snap.unavailable.has("defects") && !snap.failed.has("defects");
+  const defectsKnown = want.has("defects") && snap.complete("tasks", "defects");
   /** Defects raised from a test case, as tasks. */
   const defectsOf = (testCaseId: string) =>
     (defects.byTestCase.get(testCaseId.toLowerCase()) ?? [])
@@ -724,12 +742,14 @@ async function namer(snap: Snapshot, parts: readonly Part[] = ALL_PARTS) {
     processLinks,
     results,
     defectsKnown,
+    resultsKnown: want.has("testResults") && snap.complete("testResults", "testPlans"),
     defectsOf,
     /** The test case a defect was raised from. */
     raisedFrom: (defectId: string) => {
       const id = defects.byDefect.get(defectId.toLowerCase());
       return id ? testCase.get(id) : undefined;
     },
+    testCaseOf: (id: string) => testCase.get(id.toLowerCase()),
     taskOf: (id: string) => task.get(id.toLowerCase()),
     task: (id: string) => {
       const t = task.get(id.toLowerCase());
@@ -778,7 +798,7 @@ export function fenced(text: string, budget: number, id: string | null): { text:
   };
 }
 
-type Linked = { id: string | null; title: string | null; status?: string | null; result?: string | null };
+type Linked = { url?: string | undefined; id: string | null; title: string | null; status?: string | null; result?: string | null };
 export type ItemDetail = {
   id: string | null;
   uuid: string;
@@ -793,7 +813,7 @@ export type ItemDetail = {
   comments?: { date: string | null; author: string | null; text: string | null }[];
   steps?: { activity: string | null; step: string | null; do: string | null; expect: string | null; evidence: boolean }[];
   results?: { plan: string; status: string; date: string; actions: number; passed: number; failed: number }[];
-  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[] }[];
+  testCases?: { id: string | null; title: string | null; result: string | null; defects: string[]; url?: string; defectUrls?: Record<string, string> }[];
 };
 
 export async function get(
@@ -824,7 +844,7 @@ export async function get(
   // At most 10 ids, each 1–3 requests: all at once stays well inside the API limits.
   const out = await pool(refs, 10, (r) =>
     r.ref
-      ? getOne(calm, snap, n, r.ref, budget).then(
+      ? getOne(calm, snap, n, r.ref, budget, o.webUrl).then(
           (x) => {
             const url = refUrl(r.ref as Ref, o.webUrl);
             return url ? { text: `${x.text}\nOpen in Cloud ALM: ${url}`, data: { ...x.data, url } } : x;
@@ -836,7 +856,9 @@ export async function get(
   const items = out.filter((x): x is { text: string; data: ItemDetail } => "data" in x);
   const errors = out.filter((x): x is { id: string; error: string } => "error" in x);
   const text = out.map((x) => ("data" in x ? x.text : `${x.id}: ${x.error}`)).join("\n\n---\n\n");
-  return { text, data: { project: { id: snap.project.id, name: snap.project.name }, items: items.map((x) => x.data), errors } };
+  if (parts.has("testResults")) parts.add("testPlans");
+  const notes = footer(snap, [...parts]);
+  return { text: [text, ...notes].join("\n"), data: { project: { id: snap.project.id, name: snap.project.name }, items: items.map((x) => x.data), errors, notes } };
 }
 
 const linked = (t: { displayId: string | null; title: string | null }, extra: Partial<Linked> = {}): Linked => ({
@@ -845,7 +867,7 @@ const linked = (t: { displayId: string | null; title: string | null }, extra: Pa
   ...extra,
 });
 
-async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget: number): Promise<{ text: string; data: ItemDetail }> {
+async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget: number, base?: string): Promise<{ text: string; data: ItemDetail }> {
   const lines: string[] = [];
   const links: Record<string, Linked[]> = {};
   const list = (label: string, key: string, items: { line: string; link: Linked }[]) => {
@@ -855,17 +877,17 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
   };
   const taskL = (id: string) => {
     const t = n.taskOf(id);
-    return { line: n.task(id), link: t ? linked(t, { status: taskStatus(t) }) : { id: null, title: null } };
+    return { line: n.task(id), link: t ? linked(t, { status: taskStatus(t), url: webUrl(base, {kind:"task", type:t.type, displayId:t.displayId}) }) : { id: null, title: null } };
   };
-  const testCaseL = (t: SnapTestCase) => ({ line: n.testCase(t), link: linked(t, { result: resultText(n.results.get(t.id)) || null }) });
-  const featureL = (f: SnapFeature) => ({ line: n.feature(f), link: linked(f, { status: featureStatus(f.statusCode) }) });
-  const documentL = (d: SnapDocument) => ({ line: n.document(d), link: linked(d) });
-  const processL = (id: string) => ({ line: n.process(id), link: { id, title: n.process(id) } });
+  const testCaseL = (t: SnapTestCase) => ({ line: n.testCase(t), link: linked(t, { url: webUrl(base, {kind:"testCase", id:t.id, manual:t.kind === "manual"}), result: resultText(n.results.get(t.id)) || null }) });
+  const featureL = (f: SnapFeature) => ({ line: n.feature(f), link: linked(f, { url: webUrl(base, {kind:"feature", id:f.id}), status: featureStatus(f.statusCode) }) });
+  const documentL = (d: SnapDocument) => ({ line: n.document(d), link: linked(d, {url: webUrl(base, {kind:"document", displayId:d.displayId})}) });
+  const processL = (id: string) => ({ line: n.process(id), link: { id, title: n.process(id), url: webUrl(base, {kind:"process"}) } });
   const defectsLine = (testCaseId: string) => {
     if (!n.defectsKnown) return;
     const raised = n.defectsOf(testCaseId);
     lines.push(`Defects raised from it: ${raised.length ? raised.map(n.defect).join("; ") : "none"}`);
-    links.defects = raised.map((d) => linked(d, { status: taskStatus(d) }));
+    links.defects = raised.map((d) => linked(d, { status: taskStatus(d), url: webUrl(base, {kind:"task", type:d.type, displayId:d.displayId}) }));
   };
   let truncated = false;
   const own = (text: string | null, id: string | null) => {
@@ -953,7 +975,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       lines.push(`${t.displayId} manual test case · ${t.isPrepared ? "prepared" : "not prepared"}${t.priorityCode !== null ? ` · priority ${priorityLabel(t.priorityCode)}` : ""} · "${t.title}" [${t.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
-      lines.push(`Latest result: ${result || "none recorded"}${results.some((r) => r.failed) ? " (Cloud ALM's API gives step counts per run, not which step failed or its actual result)" : ""}`);
+      lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}${results.some((r) => r.failed) ? " (Cloud ALM's API gives step counts per run, not which step failed or its actual result)" : ""}`);
       defectsLine(tc.id);
       if (t.tags.length) lines.push(`Tags: ${t.tags.map((g) => (g.group ? `${g.group}: ${g.label}` : g.label)).join("; ")}`);
       t.activities.forEach((a, i) => {
@@ -966,15 +988,15 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
         });
       });
       if (!t.activities.length) lines.push("No steps.");
-      data = { id: t.displayId, uuid: t.id, kind: "manual test case", title: t.title, status: t.isPrepared ? "prepared" : "not prepared", priority: priorityLabel(t.priorityCode), links, steps, results };
+      data = { id: t.displayId, uuid: t.id, kind: "manual test case", title: t.title, status: t.isPrepared ? "prepared" : "not prepared", priority: priorityLabel(t.priorityCode), links, steps, ...(n.resultsKnown ? { results } : {}) };
     } else {
       lines.push(`${tc.displayId} automated test case · ${tc.prepared ? "prepared" : "not prepared"}${tc.priority !== null ? ` · priority ${priorityLabel(tc.priority)}` : ""} · "${tc.title}" [${tc.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
-      lines.push(`Latest result: ${result || "none recorded"}`);
+      lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}`);
       defectsLine(tc.id);
       lines.push("Steps: run by the test automation tool; Cloud ALM keeps no steps for automated test cases.");
-      data = { id: tc.displayId, uuid: tc.id, kind: "automated test case", title: tc.title, status: tc.prepared ? "prepared" : "not prepared", priority: priorityLabel(tc.priority), links, results };
+      data = { id: tc.displayId, uuid: tc.id, kind: "automated test case", title: tc.title, status: tc.prepared ? "prepared" : "not prepared", priority: priorityLabel(tc.priority), links, ...(n.resultsKnown ? { results } : {}) };
     }
   } else if (ref.kind === "test plan") {
     const p = await calm.getTestPlan(ref.id);
@@ -987,7 +1009,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const rows = [...p.testCases].sort(byDisplayId).map((t) => {
       const r = inPlan(t.testCaseId);
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
-      const word = r ? resultWords(r) : "not run";
+      const word = !n.resultsKnown ? "unknown" : r ? resultWords(r) : "not run";
       return { t, r, raised, word, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}` };
     });
     const statusOf = (x: (typeof rows)[number]) => (x.r && x.r.status.toLowerCase() !== "initial" ? x.r.status.toLowerCase() : "not run");
@@ -996,8 +1018,8 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const pct = (a: number, b: number) => (b ? Math.round((100 * a) / b) : 0);
     const progress = { total: rows.length, executed, passed, executedPct: pct(executed, rows.length), passedPct: pct(passed, rows.length), passRate: pct(passed, executed) };
     lines.push(
-      `Test cases (${rows.length})${rows.length ? `: ${counts(rows.map(statusOf))}` : ""}`,
-      ...(rows.length ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
+      `Test cases (${rows.length})${rows.length && n.resultsKnown ? `: ${counts(rows.map(statusOf))}` : ""}`,
+      ...(rows.length && n.resultsKnown ? [`Progress: executed ${executed} of ${rows.length} (${progress.executedPct}%), passed ${passed} of ${rows.length} (${progress.passedPct}%); pass rate of executed ${progress.passRate}%`] : []),
       ...rows.map((x) => x.line),
     );
     data = {
@@ -1005,9 +1027,17 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       uuid: p.id,
       kind: "test plan",
       title: p.title,
-      fields: { startDate: p.startDate, endDate: p.endDate, progress },
+      fields: { startDate: p.startDate, endDate: p.endDate, ...(n.resultsKnown ? { progress } : {}) },
       description,
-      testCases: rows.map((x) => ({ id: x.t.displayId, title: x.t.title, result: x.word, defects: x.raised })),
+      testCases: rows.map(({ t, word, raised }) => {
+        const url = t.testCaseId && webUrl(base, { kind: "testCase", id: t.testCaseId, manual: n.testCaseOf(t.testCaseId)?.kind === "manual" });
+        const defectUrls: Record<string, string> = {};
+        for (const id of raised) {
+          const target = webUrl(base, { kind: "task", type: "CALMDEF", displayId: id });
+          if (target && id !== "?") defectUrls[id] = target;
+        }
+        return { id: t.displayId, title: t.title, result: word, defects: raised, ...(url ? { url } : {}), ...(raised.length && base ? { defectUrls } : {}) };
+      }),
     };
   } else {
     const tasks = [...n.processLinks.entries()].filter(([, ps]) => ps.includes(ref.id)).map(([id]) => id);
@@ -1093,7 +1123,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
       under: parent ? (n.taskOf(parent)?.displayId ?? parent) : null,
       processes: (processLinks.get(taskId) ?? []).map(n.process),
       features: featureOf(taskId).map((f) => ({ id: f.displayId, title: f.title, status: featureStatus(f.statusCode), transports: transports.get(f.id) ?? null })),
-      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: resultText(n.results.get(x.id)) || NOT_IN_PLAN, defects: n.defectsOf(x.id).map((d) => d.displayId) })),
+      testCases: t?.type === "CALMDEF" ? [] : tcsAll.map((x) => ({ id: x.displayId, title: x.title, result: n.resultsKnown ? resultText(n.results.get(x.id)) || NOT_IN_PLAN : "unknown", defects: n.defectsOf(x.id).map((d) => d.displayId) })),
       documents: n.documents.filter((d) => d.taskIds.includes(taskId)).map((d) => ({ id: d.displayId, title: d.title })),
       ...(t?.type === "CALMDEF"
         ? { raisedFrom: n.raisedFrom(taskId)?.displayId ?? null, blocks: blockedBy(taskId) }
@@ -1206,6 +1236,15 @@ export async function gaps(
     ...(["failed_tests", "coverage", "orphan_tests", "unprepared_tests"].some((c) => checks.has(c as GapCheck)) ? (["testResults", "defects"] as const) : []),
   ]);
   const { tasks, features, testCases, processLinks, results } = n;
+  const resultsKnown = snap.complete("testResults", "testPlans");
+  // Missing source rows cannot establish that a relationship or test result is absent.
+  const required: Record<GapCheck, Part[]> = {
+    untested: ["tasks", "testCases"], no_process: ["tasks", "processLinks"], no_feature: ["tasks", "features"],
+    features: ["features", "testCases"], failed_tests: ["testCases", "testResults", "testPlans"],
+    orphan_tests: ["testCases"], unprepared_tests: ["testCases"], coverage: ["tasks", "testCases"],
+  };
+  const unknownChecks = [...checks].filter(check => !snap.complete(...required[check]));
+  for (const check of unknownChecks) checks.delete(check);
   const scope = input.includeClosed ? tasks : tasks.filter((t) => isOpen(t.status));
   const reqs = scope.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
   const tested = new Set(testCases.flatMap((t) => t.taskIds));
@@ -1231,6 +1270,7 @@ export async function gaps(
   };
   const latestWord = (id: string) => {
     const r = results.get(id) ?? [];
+    if (!resultsKnown) return "unknown";
     if (!r.length) return NOT_IN_PLAN;
     if (r.some((x) => /fail/i.test(x.status))) return "failed";
     if (r.every((x) => /pass/i.test(x.status))) return "passed";
@@ -1256,30 +1296,27 @@ export async function gaps(
   }
   if (checks.has("failed_tests")) {
     const failed = testCases.filter((t) => results.get(t.id)?.some((r) => /fail/i.test(r.status)));
-    if (snap.unavailable.has("testResults") || snap.failed.has("testResults"))
-      lines.push("", "Test cases whose latest run failed: unknown — test results need the key's analytics and test scopes (calm-api.analytics.read, calm-api.tests.read).");
-    else
-      section(
-        "failed_tests",
-        "Test cases whose latest run failed",
-        failed.sort(byDisplayId).map((t) => {
-          const covers = t.taskIds.map((id) => { const k = n.taskOf(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; });
-          const raised = n.defectsKnown ? n.defectsOf(t.id) : [];
-          const note = [covers.length ? `covers ${covers.join(", ")}` : "covers no task", n.defectsKnown ? (raised.length ? raised.map(n.defect).join("; ") : "no defect raised") : ""].filter(Boolean).join(" — ");
-          return {
-            id: t.displayId,
-            url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
-            type: `${t.kind} test case`,
-            title: t.title,
-            status: "failed",
-            ...testResultData(results.get(t.id)),
-            note,
-            covers: t.taskIds.map((id) => n.taskOf(id)?.displayId ?? id),
-            ...(n.defectsKnown ? { defects: raised.map((d) => d.displayId) } : {}),
-            line: `${testCaseLine(t, results.get(t.id))} — ${note}`,
-          };
-        }),
-      );
+    section(
+      "failed_tests",
+      "Test cases whose latest run failed",
+      failed.sort(byDisplayId).map((t) => {
+        const covers = t.taskIds.map((id) => { const k = n.taskOf(id); return k ? `${k.displayId} "${short(k.title, 60)}"` : id; });
+        const raised = n.defectsKnown ? n.defectsOf(t.id) : [];
+        const note = [covers.length ? `covers ${covers.join(", ")}` : "covers no task", n.defectsKnown ? (raised.length ? raised.map(n.defect).join("; ") : "no defect raised") : ""].filter(Boolean).join(" — ");
+        return {
+          id: t.displayId,
+          url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }),
+          type: `${t.kind} test case`,
+          title: t.title,
+          status: "failed",
+          ...testResultData(results.get(t.id)),
+          note,
+          covers: t.taskIds.map((id) => n.taskOf(id)?.displayId ?? id),
+          ...(n.defectsKnown ? { defects: raised.map((d) => d.displayId) } : {}),
+          line: `${testCaseLine(t, results.get(t.id))} — ${note}`,
+        };
+      }),
+    );
   }
   if (checks.has("no_process"))
     section("no_process", "Requirements without a solution process", reqs.filter((t) => t.type === "CALMREQU" && !processLinks.get(t.id)?.length).map((t) => taskItem(t)));
@@ -1306,8 +1343,8 @@ export async function gaps(
     type: `${t.kind} test case`,
     title: t.title,
     prepared: t.prepared !== false,
-    ...testResultData(results.get(t.id)),
-    line: testCaseLine(t, results.get(t.id)),
+    ...(resultsKnown ? testResultData(results.get(t.id)) : { result: "unknown" }),
+    line: testCaseLine(t, resultsKnown ? results.get(t.id) : null),
   });
   if (checks.has("orphan_tests"))
     section("orphan_tests", "Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testItem));
@@ -1321,6 +1358,7 @@ export async function gaps(
       // A test that is not prepared does not count as ready, whatever it shows.
       const verdict = !cases.length
         ? "no test"
+        : !resultsKnown ? "unknown"
         : words.every((w) => w === NOT_IN_PLAN)
           ? NOT_IN_PLAN
           : words.includes("failed")
@@ -1335,7 +1373,7 @@ export async function gaps(
       return { cases, words, verdict };
     };
     // Worst first: a requirement is only as ready as its weakest part.
-    const RANK = ["failed", "no test", "not prepared", NOT_IN_PLAN, "not run", "in progress", "passed"];
+    const RANK = ["failed", "unknown", "no test", "not prepared", NOT_IN_PLAN, "not run", "in progress", "passed"];
     const worst = (vs: string[]) => vs.reduce((a, b) => (RANK.indexOf(b) < RANK.indexOf(a) ? b : a), "passed");
     const sorted = reqs.sort(byDisplayId);
     // User stories under each requirement (one call each, capped).
@@ -1355,7 +1393,7 @@ export async function gaps(
           title: c.title,
           result: words[i] ?? "not run",
           prepared: c.prepared,
-          defects: n.defectsOf(c.id).map((d) => d.displayId),
+          ...(n.defectsKnown ? { defects: n.defectsOf(c.id).map((d) => d.displayId) } : {}),
         })),
         ...(children.length ? { children, rollup } : {}),
         line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}${children.length ? `; with its user stories (${children.map((c) => `${c.id} ${c.verdict}`).join(", ")}): ${rollup}` : ""}`,
@@ -1367,7 +1405,8 @@ export async function gaps(
     if (last) Object.assign(last, { summary: Object.fromEntries([...new Set(rows.map((r) => r.note ?? ""))].map((v) => [v, rows.filter((r) => r.note === v).length])) });
   }
   lines.push("", "Links counted: test case → task (Test Management), feature → task, task → solution process. Direct links only.");
-  const footnotes = footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "defects"]);
+  const footnotes = footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "testPlans", "defects"]);
+  if (unknownChecks.length) footnotes.push(`Checks with unknown results because source data is incomplete: ${unknownChecks.join(", ")}.`);
   lines.push(...footnotes);
   return {
     text: lines.join("\n"),
@@ -1683,7 +1722,7 @@ export async function projectsView(calm: CloudAlm, o: ViewOptions = {}) {
   ];
   return {
     text: lines.join("\n"),
-    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
+    data: { projects: projects.map((p) => ({ id: p.id, name: p.name, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), purpose: p.purpose?.toLowerCase() ?? null, status: p.status === "C" ? "closed" : "open", default: p.id === o.defaultProject })) },
   };
 }
 
@@ -1761,7 +1800,7 @@ export async function changes(
   for (const d of documents)
     if (after(d.modifiedAt)) rows.push({ id: d.displayId, type: documentType(d.documentTypeCode), title: d.title, status: null, what: "changed", at: d.modifiedAt as string });
   for (const t of testCases)
-    if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: resultText(results.get(t.id)) || NOT_IN_PLAN, what: "changed", at: t.modifiedAt as string });
+    if (after(t.modifiedAt)) rows.push({ id: t.displayId, url: webUrl(o.webUrl, { kind: "testCase", id: t.id, manual: t.kind === "manual" }), type: `${t.kind} test case`, title: t.title, status: snap.complete("testResults", "testPlans") ? resultText(results.get(t.id)) || NOT_IN_PLAN : "unknown", what: "changed", at: t.modifiedAt as string });
   rows.sort((a, b) => b.at.localeCompare(a.at));
   // Test results then and now, from the analytics snapshots.
   let resultsCut = false;

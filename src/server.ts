@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { FEEDBACK_TOOL, feedbackSchema, type FeedbackSink } from "./feedback.js";
 import { CONTENT_TOOLS, CONTENT_URI, contentHtml } from "./content-app.js";
 import { registerSkillPrompts } from "./prompts.js";
 import {
@@ -20,6 +22,7 @@ import {
   META_KEY,
   OVERVIEW_URI,
   overviewHtml,
+  planFingerprint,
   propose,
   take,
 } from "./approval.js";
@@ -35,7 +38,7 @@ import {
 import { forgetSnapshots } from "./views/snapshot.js";
 import { api } from "./views/api.js";
 import { ANALYTICS_OUT, API_OUT, CHANGES_OUT, GAPS_OUT, GET_OUT, LANDSCAPE_OUT, LIST_OUT, OVERVIEW_OUT, PROJECTS_OUT, TEAM_OUT, TRACE_OUT } from "./schemas.js";
-import { NOTHING_TO_DO } from "./views/items.js";
+import { NOTHING_TO_DO, type ReviewPlan } from "./views/items.js";
 import {
   comment,
   createDocument,
@@ -59,8 +62,10 @@ import {
   trace,
   type ViewOptions,
 } from "./views/tools.js";
+const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
+
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.1.2";
+export const SERVER_VERSION = "0.1.3";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
@@ -126,6 +131,10 @@ const READ_ONLY = {
 } as const;
 
 export type ServerOptions = ViewOptions & {
+  /** Fixture-backed demo. Identify example records to the model and the user. */
+  synthetic?: boolean;
+  /** Optional receiver for agent observations about the MCP itself. */
+  feedbackSink?: FeedbackSink;
   /** MCP Apps cards for reads. Default: on. */
   cards?: boolean;
   /** Attach cards to reads by default, or present a final view with calm_show. */
@@ -171,6 +180,7 @@ export function createServer(
   const explicit = options.cards !== false && options.contentPresentation === "explicit";
   const allowed = options.tools ? new Set(options.tools) : null;
   const show = explicit && (!allowed || (allowed.has("calm_show") && [...CONTENT_TOOLS].some(name => allowed.has(name))));
+  const feedback = !allowed || allowed.has(FEEDBACK_TOOL) ? options.feedbackSink : undefined;
   const subject = options.approvalSubject ?? "local";
   const server = new McpServer(
     {
@@ -178,10 +188,10 @@ export function createServer(
       version: SERVER_VERSION,
       title: "SAP Cloud ALM",
       websiteUrl: "https://github.com/DidroAI/cloud-alm-mcp-server",
-      icons: [{ src: "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png", mimeType: "image/png", sizes: ["512x512"] }],
+      icons: [{ src: `data:image/png;base64,${icon}`, mimeType: "image/png", sizes: ["512x512"] }],
     },
     {
-      instructions: `${INSTRUCTIONS}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
+      instructions: `${options.synthetic ? "This connection uses synthetic example records. Identify them as demo data in answers. " : ""}${INSTRUCTIONS}${feedback ? " After encountering unexpected tool behavior or an inefficient workflow, even if successful, call calm_report_feedback once for that distinct observation and continue the task. Only report friction you experienced yourself. Use generic language and omit record values, identifiers, credentials and chat text." : ""}${show ? " For a visual answer, read first and call calm_show once with the final selection. For text or exports, answer directly." : ""} ${
         options.writer && options.writeMode === "on"
           ? (options.approval ?? "prefer") !== "off"
             ? `Write tools are on, with the user's approval: a write only proposes the change and answers with a preview; nothing is written until the user approves it (in the approval card${(options.approval ?? "prefer") === "prefer" ? ", or by saying yes in the chat, after which you call calm_confirm with the id and the tool's name" : ""}). Never call calm_confirm without the user's yes to that exact change. calm_delete cannot be undone; features cannot be deleted at all.`
@@ -197,19 +207,21 @@ export function createServer(
     // Writes wait for approval unless the embedder turns it off by name.
     options.writer && writeMode === "on" ? (options.approval ?? "prefer") : "off";
   /** Write tools by name, so an approval can run the stored call. */
-  const writes = new Map<string, { title: string; run: (args: Record<string, unknown>) => Promise<string> }>();
+  type WriteCall = (args: Record<string, unknown>, reviewPlan?: ReviewPlan) => Promise<Out>;
+  const writes = new Map<string, WriteCall>();
 
   type Extra = ServerContext;
   const gated = async (
     name: string,
     title: string,
     args: Record<string, unknown>,
-    run: (args: Record<string, unknown>) => Promise<string>,
+    run: WriteCall,
     ctx: Extra,
   ): Promise<CallToolResult> => {
     // "Create a defect" rather than the tool's generic "Create a task".
     if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
-    const preview = await answer(() => run({ ...args, dryRun: true }));
+    let fingerprint: string | undefined;
+    const preview = await answer(() => run({ ...args, dryRun: true }, plan => { fingerprint = planFingerprint(plan); }));
     if (preview.isError) return preview;
     const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
     // The same plan as data, for the card's field-by-field view.
@@ -223,7 +235,8 @@ export function createServer(
     if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }], structuredContent: { nothingToDo: true, text } };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
-    const p = propose({ tool: name, args, preview: text, subject, allowChat: approval === "prefer" });
+    if (!fingerprint) return { isError: true, content: [{ type: "text", text: "Could not prepare this change for approval." }] };
+    const p = propose({ tool: name, args, fingerprint, subject, allowChat: approval === "prefer" });
     return proposalAnswer(name, title, text, p, changeWithTenant);
   };
   const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>): CallToolResult => {
@@ -247,16 +260,16 @@ export function createServer(
     title: string,
     description: string,
     inputSchema: Shape,
-    write: (args: z.infer<z.ZodObject<Shape>>) => Promise<Out>,
+    write: (args: z.infer<z.ZodObject<Shape>>, reviewPlan?: ReviewPlan) => Promise<Out>,
     outputSchema?: z.ZodObject,
   ) => {
     if (allowed && !allowed.has(name)) return;
     const isWrite = (WRITE_TOOL_NAMES as readonly string[]).includes(name);
     // After a write, cached reads of the project are stale: drop them.
     const run = isWrite
-      ? async (args: z.infer<z.ZodObject<Shape>>) => {
+      ? async (args: z.infer<z.ZodObject<Shape>>, reviewPlan?: ReviewPlan) => {
           try {
-            return await write(args);
+            return await write(args, reviewPlan);
           } finally {
             if ((args as { dryRun?: boolean }).dryRun !== true) forgetSnapshots(calm);
           }
@@ -270,8 +283,8 @@ export function createServer(
       annotations: isWrite ? { ...WRITE, destructiveHint: DESTRUCTIVE.has(name), title } : { ...READ_ONLY, title },
     };
     if (isWrite && approval !== "off") {
-      const runAny = run as unknown as (args: Record<string, unknown>) => Promise<string>;
-      writes.set(name, { title, run: runAny });
+      const runAny = run as unknown as WriteCall;
+      writes.set(name, runAny);
       registerAppTool(
         server,
         name,
@@ -440,7 +453,7 @@ export function createServer(
 
   const writer = options.writer;
   if (writer && writeMode !== "off") {
-    const w = { ...options, writeMode } as const;
+    const writeOptions = (reviewPlan?: ReviewPlan) => ({ ...options, writeMode, reviewPlan } as const);
     const dryRun = z.boolean().optional().describe("true: answer with what would be sent, send nothing");
     const step = z.object({
       title: z.string().min(1).max(500),
@@ -460,7 +473,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createTestCase(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createTestCase(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_link",
@@ -473,7 +486,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => link(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => link(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_tag",
@@ -486,7 +499,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => tag(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => tag(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_task",
@@ -506,7 +519,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createTask(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createTask(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     const priority = z.union([z.literal(10), z.literal(20), z.literal(30), z.literal(40)]).describe("10 very high, 20 high, 30 medium, 40 low");
     const date = z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/, "YYYY-MM-DD, or empty to clear");
@@ -541,7 +554,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => update(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => update(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_delete",
@@ -554,7 +567,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => remove(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => remove(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_comment",
@@ -566,7 +579,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => comment(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => comment(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_feature",
@@ -581,7 +594,7 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createFeature(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createFeature(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
     tool(
       "calm_create_document",
@@ -597,10 +610,25 @@ export function createServer(
         projectId,
         dryRun,
       },
-      (a) => createDocument(calm, writer, defined(a) as never, w),
+      (a, reviewPlan) => createDocument(calm, writer, defined(a) as never, writeOptions(reviewPlan)),
     );
   }
   if (approval !== "off") registerApproval();
+  if (feedback) {
+    server.registerTool(FEEDBACK_TOOL, {
+      title: "Report MCP friction",
+      description: "Send your own observation about tool behavior to the configured feedback inbox. Describe unexpected behavior or extra work, even after success. Use generic language and omit tenant data, credentials and chat text.",
+      inputSchema: feedbackSchema([...TOOL_NAMES, ...WRITE_TOOL_NAMES, ...APPROVAL_TOOL_NAMES, "calm_show"]),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    }, async args => {
+      try {
+        const id = await feedback(args, SERVER_VERSION);
+        return { content: [{ type: "text", text: `Feedback received (${id}). Continue the task.` }] };
+      } catch {
+        return { isError: true, content: [{ type: "text", text: "Feedback delivery unconfirmed. Continue the task without retrying." }] };
+      }
+    });
+  }
   if (show) {
     registerAppTool(server, "calm_show", {
       title: "Show Cloud ALM",
@@ -623,7 +651,7 @@ export function createServer(
   if (show || (options.cards !== false && !explicit && [...contentSchemas.keys()].some(name => name !== "calm_overview")))
     registerAppResource(server, "Cloud ALM content", CONTENT_URI,
       { description: "Projects and items from SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
-      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml() }] }),
+      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml(options.synthetic) }] }),
     );
   if (!explicit && options.cards !== false && (!allowed || allowed.has("calm_overview")))
     registerAppResource(
@@ -651,17 +679,11 @@ export function createServer(
         if (!approve) return { content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);
         if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
-        // The user approved a preview: write only if the change still reads
-        // the same (ids and names are resolved again, and items may have
-        // changed since).
-        const again = await answer(() => write.run({ ...p.args, dryRun: true }));
-        const now = previewText(String((again.content[0] as { text?: string })?.text ?? ""));
-        if (again.isError || now !== p.preview)
-          return {
-            isError: true,
-            content: [{ type: "text", text: `Not written: the change no longer matches what the user approved. It would now be:\n${now}\nPropose it again and ask the user.` }],
-          };
-        return answer(() => write.run({ ...p.args, dryRun: false }));
+        // The write checks the same resolved plan it executes, before its first mutation.
+        return answer(() => write({ ...p.args, dryRun: false }, plan => {
+          if (planFingerprint(plan) !== p.fingerprint)
+            throw new CloudAlmError("bad_request", "The change no longer matches what the user approved. Nothing was written. Propose the change again.");
+        }));
       } catch (error) {
         if (error instanceof ApprovalError) return { isError: true, content: [{ type: "text", text: error.message }] };
         throw error;
@@ -710,10 +732,11 @@ export function createServer(
  * read-only key gets read tools only), every write waiting for the user's
  * approval. There is nothing else to configure.
  */
-export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[], presentationMode = process.env.CALM_CONTENT_PRESENTATION): ServerOptions {
+export function serverOptionsForKey(writer: CloudAlmWriter | undefined, writeTools: readonly string[], presentationMode = process.env.CALM_CONTENT_PRESENTATION, feedbackSink?: FeedbackSink): ServerOptions {
   const presentation: ServerOptions = presentationMode === "explicit" ? { contentPresentation: "explicit" } : {};
+  if (feedbackSink) presentation.feedbackSink = feedbackSink;
   if (!writer || !writeTools.length) return presentation;
-  return { ...presentation, writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...(presentation.contentPresentation ? ["calm_show"] : []), ...writeTools] };
+  return { ...presentation, writer, writeMode: "on", approval: "prefer", tools: [...TOOL_NAMES, ...(presentation.contentPresentation ? ["calm_show"] : []), ...(feedbackSink ? [FEEDBACK_TOOL] : []), ...writeTools] };
 }
 
 /** Write tools, offered only when writing is on. */

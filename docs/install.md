@@ -10,7 +10,7 @@ them to the release line.
 The key, in every channel: a service key of the "SAP Cloud ALM API" instance
 in SAP BTP, downloaded as a JSON file.
 
-## 1. Any client: the setup command (recommended)
+## 1. Local clients: the setup command (recommended)
 
 ```sh
 npx -y cloud-alm-mcp-server setup
@@ -18,7 +18,8 @@ npx -y cloud-alm-mcp-server setup
 
 Finds the key in `~/Downloads`, checks it against SAP, saves it readable only
 by you, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
-whichever are installed. Needs [Node.js 22 or later](https://nodejs.org).
+whichever are installed. If the downloaded file is gone, setup reuses the saved
+key. Needs [Node.js 22 or later](https://nodejs.org).
 
 ```sh
 npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API
@@ -47,7 +48,7 @@ Claude Desktop warns that the extension gets access to your computer and
 that its developer information is not verified by Anthropic. It shows this
 for every extension installed from a file rather than from Anthropic's
 directory. The extension runs `dist/cli.js` from this repository on your
-machine and talks only to SAP ([PRIVACY.md](../PRIVACY.md)); each release is
+machine and connects only to SAP by default ([PRIVACY.md](../PRIVACY.md)); each release is
 built by GitHub Actions from a tagged commit.
 
 Badge:
@@ -168,6 +169,6 @@ log):
 
 ## Privacy line
 
-No telemetry. The server talks only to your key's SAP token host and to your
+By default the server connects only to your key's SAP token host and to your
 Cloud ALM API (`*.alm.cloud.sap`); what the tools return goes to the AI model
 your client uses. See [PRIVACY.md](../PRIVACY.md).

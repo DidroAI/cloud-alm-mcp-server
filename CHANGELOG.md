@@ -6,10 +6,19 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-20
+
 ### Added
 
 - Compact project and item cards with SAP links, expandable results and paging.
 - Optional explicit presentation with `calm_show` for MCP Apps hosts.
+
+- Horizon project dashboards, test-plan case and defect tables, and field-by-field write approvals.
+- Optional agent friction reports to an operator-configured inbox.
+
+### Changed
+
+- Setup checks SAP read access before saving a key or changing client settings.
 
 ## [0.1.2] - 2026-11-16
 

@@ -84,7 +84,7 @@ Not installed globally? Put npx in front, as in:
   npx -y ${packageSpec(version())} setup
 
 setup without a file takes the newest service key JSON downloaded to
-~/Downloads in the last week (or in the current directory). init reads the
+~/Downloads in the last week, then reuses a previously saved key. init reads the
 file given, or stdin ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
 by you, at:
   ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
@@ -194,14 +194,13 @@ async function readKeyInput(
 }
 
 /**
- * Check a key and save it. Undefined when the key did not give a token
- * (nothing saved) or a different key is saved and replacing is not allowed.
+ * Check a key before installing or rotating it. Warnings allow partial access.
  */
 async function checkAndSave(
   io: Io,
   input: { text: string; origin: string; file?: string },
   options: { replace: boolean; skipCheck: boolean },
-): Promise<string | undefined> {
+): Promise<{ path: string; projectsReadable: boolean } | undefined> {
   const key = parseServiceKeyText(input.text, input.origin);
   const target = savedKeyPath(io.env);
   const text = `${input.text.trim()}\n`;
@@ -214,28 +213,38 @@ async function checkAndSave(
     return undefined;
   }
 
+  let projectsReadable = false;
   if (!options.skipCheck) {
     const checks = await keyChecks(key, fetchOption(io));
     printChecks(io, checks);
-    if (checks.some((c) => c.name === "Token" && c.status === "fail")) {
-      io.err("\nNot saved: the key did not give a token.");
+    const failure = checks.find((check) => check.status === "fail");
+    if (failure) {
+      if (failure.name === "Scopes")
+        io.err("Ask your SAP BTP admin for a key with a read scope listed above, then rerun this command.");
+      else if (failure.name === "Read")
+        io.err("The key obtained a token, but the API read failed. Check the Read message above and retry this command.");
+      else
+        io.err("The key did not give a token. Check the Token message above and retry this command.");
       return undefined;
     }
+    projectsReadable = checks.some(check => check.name === "Read" && check.status === "ok");
   }
 
   if (!unchanged) writeSecretFile(target, text);
+  else if ((io.platform ?? process.platform) !== "win32") chmodSync(target, 0o600);
   const how = unchanged ? "already saved" : exists ? "saved, replacing the one before," : "saved";
   // Windows has no file modes; the key lies in the user's own profile there.
   const mode = (io.platform ?? process.platform) === "win32" ? "" : " (mode 600)";
   io.out(`\nKey ${how} at ${target}${mode}.`);
-  return target;
+  return { path: target, projectsReadable };
 }
 
 async function init(io: Io, args: string[]): Promise<number> {
   const flags = parseFlags(args);
   const input = await readKeyInput(io, flags.positional[0]);
-  const target = await checkAndSave(io, input, { replace: flags.force, skipCheck: flags.skipCheck });
-  if (!target) return 1;
+  const savedKey = await checkAndSave(io, input, { replace: flags.force, skipCheck: flags.skipCheck });
+  if (!savedKey) return 1;
+  const target = savedKey.path;
   if (input.file && resolve(input.file) !== resolve(target))
     io.out(`You can now delete ${input.file}.`);
   printSnippets(io, target);
@@ -257,6 +266,7 @@ async function setup(io: Io, args: string[]): Promise<number> {
 
   let input: { text: string; origin: string; file?: string };
   const arg = flags.positional[0];
+  const saved = savedKeyPath(io.env);
   if (arg) input = await readKeyInput(io, arg);
   else {
     // Downloads only: a key planted in a cloned repository is never picked up.
@@ -264,6 +274,8 @@ async function setup(io: Io, args: string[]): Promise<number> {
     if (found) {
       io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
       input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
+    } else if (existsSync(saved)) {
+      input = await readKeyInput(io, saved);
     } else {
       const byFile = `${cli(io)} setup <file>`;
       for (const dir of unreadable)
@@ -294,7 +306,6 @@ async function setup(io: Io, args: string[]): Promise<number> {
   io.out(`Tenant: ${tenant}`);
   if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(new URL(key.uaa.url).hostname))
     io.err(`! The key's token address ${new URL(key.uaa.url).hostname} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
-  const saved = savedKeyPath(io.env);
   if (!arg && !flags.force && existsSync(saved)) {
     let before: string | undefined;
     try {
@@ -305,8 +316,9 @@ async function setup(io: Io, args: string[]): Promise<number> {
       return 1;
     }
   }
-  const target = await checkAndSave(io, input, { replace: true, skipCheck: flags.skipCheck });
-  if (!target) return 1;
+  const savedKey = await checkAndSave(io, input, { replace: true, skipCheck: flags.skipCheck });
+  if (!savedKey) return 1;
+  const target = savedKey.path;
 
   const spec = packageSpec(version());
   const clients = flags.clients ?? (await detectClients(e));
@@ -333,7 +345,10 @@ async function setup(io: Io, args: string[]): Promise<number> {
 
   if (input.file && resolve(input.file) !== resolve(target))
     io.out(`\nYou can now delete ${input.file}.`);
-  io.out('Open a new chat and ask: "Where does my Cloud ALM project stand?"');
+  if (savedKey.projectsReadable && failures < clients.length)
+    io.out('Open a new chat and ask: "Which Cloud ALM projects can I access?"');
+  else if (!savedKey.projectsReadable && !flags.skipCheck)
+    io.out("Project access was refused. Use the Cloud ALM tools permitted by your service key.");
   io.out(`Check the setup any time with: ${cli(io)} doctor`);
   return failures ? 1 : 0;
 }

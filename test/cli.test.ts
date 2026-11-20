@@ -470,6 +470,45 @@ describe("setup", () => {
     expect(all).not.toContain(CLIENT_ID);
   });
 
+  test("unusable scopes stop setup before changing a saved key or client", async () => {
+    const m = machine({ cursor: true });
+    const config = join(m.home, ".cursor", "mcp.json");
+    writeFileSync(config, "{}");
+    const original = io({ fetch: fakeFetch().fetcher });
+    await runCommand(original.io, ["init", keyFile()]);
+    const saved = savedKeyPath(original.io.env);
+    const before = readFileSync(saved, "utf8");
+    const t = io({ fetch: fakeFetch({ scope: ["unrelated.scope"], projectsStatus: 403 }).fetcher });
+    t.io.setup = m.setup;
+    const replacement = keyFile(JSON.stringify({ ...KEY, extra: "replacement" }));
+    expect(await runCommand(t.io, ["setup", replacement])).toBe(1);
+    expect(t.all()).toContain("Ask your SAP BTP admin");
+    expect(t.all()).not.toContain("Open a new chat");
+    expect(readFileSync(saved, "utf8")).toBe(before);
+    expect(readFileSync(config, "utf8")).toBe("{}");
+  });
+
+  test("a failed API read after token exchange is reported separately from missing scopes", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch({ projectsStatus: 503 }).fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(1);
+    expect(t.all()).toContain("the API read failed");
+    expect(t.all()).not.toContain("Ask your SAP BTP admin");
+    expect(existsSync(savedKeyPath(t.io.env))).toBe(false);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(false);
+  });
+
+  test("a landscape-only key can set up a client when projects are refused", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch({ scope: ["calm-api.landscape.read"], projectsStatus: 403 }).fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
+    expect(t.all()).toContain("Project access was refused");
+    expect(t.all()).not.toContain("Which Cloud ALM projects can I access?");
+  });
+
   test("replaces a key saved before; a broken client config fails with the snippet to add by hand", async () => {
     const m = machine({ desktop: "{ not json" });
     const first = io({ fetch: fakeFetch().fetcher });
@@ -483,6 +522,56 @@ describe("setup", () => {
     expect(t.all()).toContain("✗ Claude Desktop");
     expect(t.all()).toContain("Add it by hand");
     expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8")).extra).toBe("new");
+  });
+
+  test("reuses the saved key after the downloaded copy has been deleted", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    const downloaded = join(m.home, "Downloads", "key.json");
+    writeFileSync(downloaded, KEY_TEXT);
+    expect(await runCommand(t.io, ["setup", "--client", "none"])).toBe(0);
+    rmSync(downloaded);
+    const saved = savedKeyPath(t.io.env);
+    if (process.platform !== "win32") chmodSync(saved, 0o644);
+    expect(await runCommand(t.io, ["setup", "--client", "cursor"])).toBe(0);
+    if (process.platform !== "win32") expect(statSync(saved).mode & 0o777).toBe(0o600);
+    const config = JSON.parse(readFileSync(join(m.home, ".cursor", "mcp.json"), "utf8"));
+    expect(config.mcpServers["cloud-alm"].env.CALM_SERVICE_KEY).toBe(saved);
+    const configPath = join(m.home, ".cursor", "mcp.json");
+    writeFileSync(configPath + ".bak", "previous configuration");
+    expect(await runCommand(t.io, ["setup", "--client", "cursor"])).toBe(0);
+    expect(readFileSync(configPath + ".bak", "utf8")).toBe("previous configuration");
+  });
+
+  test("a failed CLI add does not remove the existing client registration", async () => {
+    const m = machine();
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = { ...m.setup, exec: async (cmd, args) => {
+      m.calls.push([cmd, ...args].join(" "));
+      return { code: 1, stdout: "", stderr: "Permission denied" };
+    } };
+    expect(await runCommand(t.io, ["setup", keyFile(), "--client", "claude-code,codex"])).toBe(1);
+    expect(m.calls.length).toBe(2);
+    expect(m.calls.every(call => call.includes("mcp add"))).toBe(true);
+  });
+
+  test("upgrades Claude Code's existing user registration in place", async () => {
+    const m = machine();
+    const t = io({ fetch: fakeFetch().fetcher });
+    const claudeDir = join(m.home, "claude-profile");
+    mkdirSync(claudeDir);
+    const path = join(claudeDir, ".claude.json");
+    const before = JSON.stringify({ theme: "dark", mcpServers: { other: { command: "x" }, "cloud-alm": { command: "beta" } } });
+    writeFileSync(path, before);
+    t.io.setup = { ...m.setup, env: { CLAUDE_CONFIG_DIR: claudeDir }, exec: async () =>
+      ({ code: 1, stdout: "", stderr: "MCP server cloud-alm already exists in user config" }) };
+    expect(await runCommand(t.io, ["setup", keyFile(), "--client", "claude-code"])).toBe(0);
+    expect(readFileSync(`${path}.bak`, "utf8")).toBe(before);
+    const after = JSON.parse(readFileSync(path, "utf8"));
+    expect(after.theme).toBe("dark");
+    expect(after.mcpServers.other).toEqual({ command: "x" });
+    expect(after.mcpServers["cloud-alm"].args).toEqual(["-y", packageSpec(version())]);
   });
 
   test("without a key in Downloads and no terminal, says where to get one", async () => {
@@ -690,6 +779,19 @@ describe("uninstall", () => {
     expect(again.all()).toContain("No saved key at");
     expect(await runCommand(again.io, ["uninstall", "extra"])).toBe(2);
     expect(await runCommand(again.io, ["uninstall", "--force"])).toBe(2);
+  });
+
+  test("distinguishes a removal failure from an absent registration", async () => {
+    const m = installed();
+    const t = io();
+    let message = "Permission denied";
+    t.io.setup = { ...m.setup, exec: async (_cmd, args) => args[0] === "--version"
+      ? { code: 0, stdout: "", stderr: "" }
+      : { code: 1, stdout: "", stderr: message } };
+    expect(await runCommand(t.io, ["uninstall", "--client", "claude-code"])).toBe(1);
+    expect(t.all()).toContain("Permission denied");
+    message = 'No MCP server named "cloud-alm" in user scope';
+    expect(await runCommand(t.io, ["uninstall", "--client", "claude-code"])).toBe(0);
   });
 
   test("a config that is not JSON is left alone and reported", async () => {

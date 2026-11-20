@@ -11,6 +11,7 @@ import { createServer as createHttpServer } from "node:http";
 import { text } from "node:stream/consumers";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { COMMANDS, runCommand } from "./cli/main.js";
+import { feedbackSinkFromEnv } from "./feedback.js";
 import { createHttpHandler } from "./http.js";
 import { toNodeListener } from "./node-http.js";
 import { stdioFactory } from "./stdio.js";
@@ -40,8 +41,10 @@ if (COMMANDS.includes(mode)) {
 } else if (mode === "http") {
   const port = Number(process.env.PORT ?? 3333);
   const host = process.env.HOST ?? "127.0.0.1";
+  const feedbackSink = feedbackSinkFromEnv(process.env);
   const handler = createHttpHandler(
     {
+      ...(feedbackSink ? { feedbackSink } : {}),
       ...(process.env.CALM_API_URL ? { baseUrl: process.env.CALM_API_URL } : {}),
       ...(process.env.CALM_WEB_URL ? { webUrl: process.env.CALM_WEB_URL } : {}),
     },

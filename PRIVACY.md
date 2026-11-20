@@ -1,17 +1,27 @@
 # Privacy
 
 `cloud-alm-mcp-server` runs on your computer, started by your MCP client
-(Claude Desktop, Claude Code, Codex, Cursor, VS Code, …). Didro operates no
-service behind it and receives nothing from it.
+(Claude Desktop, Claude Code, Codex, Cursor, VS Code, …). The default installation communicates with SAP.
 
 ## What the server collects
 
-Nothing. It has no telemetry, no analytics, no crash reports and no update
-check. It writes no log of your data.
+The server sends no background analytics, crash reports or update checks.
+When an operator sets `CALM_FEEDBACK_URL`, agents can report friction they
+encounter through `calm_report_feedback`. Each report includes a generated
+ID, MCP server version, tool name, outcome, a short agent-written observation
+and an optional suggestion. The operator chooses who receives these reports
+and how the receiver stores them. Didro receives a report only if the operator
+configures a Didro receiver.
+
+The tool instructs agents to describe generic behavior and checks for common
+identifiers and credentials. Free text can still include private information.
+The server does not attach SAP results, credentials, tenant details or chat
+history. It can attach a dedicated receiver token from `CALM_FEEDBACK_TOKEN`.
+Remove the receiver URL and restart the server to disable the tool.
 
 ## Where it connects
 
-Only to the two SAP addresses named in your service key:
+By default, to the two SAP addresses named in your service key:
 
 - the key's token host (`uaa.url`, for example
   `https://<subaccount>.authentication.eu20.hana.ondemand.com`), to get an

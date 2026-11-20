@@ -129,6 +129,22 @@ describe("tools", () => {
     expect(text).toContain("9-9: not_found");
   });
 
+  test("plan, manual case and defect link to the connected SAP tenant", async () => {
+    const base = "https://example.eu20.alm.cloud.sap";
+    const { call } = await connect(TENANT, { webUrl: base });
+    const result = await call("calm_get", { ids: ["8-3-1"] });
+    expect(result.structured).toMatchObject({
+      items: [expect.objectContaining({
+        url: expect.stringContaining(base + "/launchpad#testPlan-display"),
+        testCases: expect.arrayContaining([expect.objectContaining({
+          id: "8-1-1",
+          url: expect.stringContaining("&/manual/"),
+          defectUrls: { "3-4": expect.stringContaining("&/taskDetail/3-4") },
+        })]),
+      })],
+    });
+  });
+
   test("trace: requirement → user stories, features, transports, tests", async () => {
     const { call } = await connect();
     const { text } = await call("calm_trace", { id: "3-3" });

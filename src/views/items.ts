@@ -11,9 +11,13 @@ import { idFromUrl } from "./links.js";
 import { short, typeLabel } from "./text.js";
 import type { ViewOptions } from "./tools.js";
 
+export type ReviewPlan = (resolved: unknown) => void;
+
 export type WriteOptions = ViewOptions & {
   /** "dry-run": every write tool answers with what it would send. */
   writeMode?: "on" | "dry-run";
+  /** Bind or verify the resolved operation before its first mutation. */
+  reviewPlan?: ReviewPlan | undefined;
 };
 
 export const textToHtml = (text: string) =>
@@ -230,12 +234,6 @@ export async function needing<T>(scope: string, run: () => Promise<T>): Promise<
 export function readRow(calm: CloudAlm, path: string, query?: Record<string, string>): Promise<Row> {
   return calm.operation(async (s) => rowOf(await s.get(path, query)));
 }
-
-/** An entity's ETag: OData's `@etag`, else none. */
-export const etagOf = (row: Row) => {
-  const tag = row["@etag"] ?? row["@odata.etag"];
-  return typeof tag === "string" ? tag : undefined;
-};
 
 /** Whether a read says the item is gone. */
 export async function gone(read: () => Promise<unknown>): Promise<boolean | string> {

@@ -1,3 +1,4 @@
+import type { FeedbackSink } from "./feedback.js";
 import { webBaseFrom } from "./views/links.js";
 import { SNAPSHOT_TTL_MS } from "./views/snapshot.js";
 import { subjectOf } from "./approval.js";
@@ -22,6 +23,8 @@ export type HttpOptions = {
   webUrl?: string;
   /** Options for the reader (tests pass a fake `fetch` here). */
   reader?: CloudAlmOptions;
+  /** Receiver used by the default server factory. */
+  feedbackSink?: FeedbackSink;
   /** Largest accepted request body. Default 256 KB. */
   maxBodyBytes?: number;
   /** Tool options for tests and embedding. Default: from each caller's token, as the key decides. */
@@ -79,11 +82,11 @@ export function createHttpHandler(options: HttpOptions = {}) {
     // The caller's token decides: write tools when its scopes allow them.
     const serverOptions = options.server
       ? { ...options.server, ...(options.server.writeMode && options.server.writeMode !== "off" ? { writer } : {}) }
-      : serverOptionsForKey(writer, writeToolsFor(tokenScopes(token)));
+      : serverOptionsForKey(writer, writeToolsFor(tokenScopes(token)), undefined, options.feedbackSink);
     return createServer(readerFor(token, baseUrl), {
       ...serverOptions,
       // Approvals arrive in a later request (card or chat), and only from the same token.
-      approvalSubject: subjectOf(token),
+      approvalSubject: `${subjectOf(token)} ${baseUrl}`,
       ...(webUrl ? { webUrl } : {}),
     });
   };
@@ -119,11 +122,11 @@ export function createHttpHandler(options: HttpOptions = {}) {
       return refuse(401, "A Cloud ALM bearer token is required.", {
         "www-authenticate": 'Bearer realm="cloud-alm"',
       });
-    const baseUrl = request.headers.get(BASE_URL_HEADER) ?? options.baseUrl;
+    let baseUrl = request.headers.get(BASE_URL_HEADER) ?? options.baseUrl;
     if (!baseUrl)
       return refuse(400, `No Cloud ALM API address: send ${BASE_URL_HEADER}.`);
     try {
-      apiRoot(baseUrl, options.reader?.hostPattern);
+      baseUrl = apiRoot(baseUrl, options.reader?.hostPattern);
     } catch (error) {
       return refuse(
         400,

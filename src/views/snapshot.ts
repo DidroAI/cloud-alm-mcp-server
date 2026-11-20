@@ -139,7 +139,12 @@ export async function pool<T, R>(
 }
 
 export class Snapshot {
-  truncated = false;
+  readonly truncatedParts = new Set<Part>();
+  get truncated() { return this.truncatedParts.size > 0; }
+
+  complete(...parts: Part[]): boolean {
+    return parts.every(part => !this.unavailable.has(part) && !this.failed.has(part) && !this.truncatedParts.has(part));
+  }
   /** Parts the key may not read (403). */
   readonly unavailable = new Set<Part>();
   /** Optional parts whose read failed this time (not kept: retried next call). */
@@ -202,7 +207,7 @@ export class Snapshot {
             out.push(...rows.map(taskSummary));
             if (rows.length < PAGE) return out;
           }
-          this.truncated = true;
+          this.truncatedParts.add("tasks");
           return out;
         }),
       [],
@@ -210,7 +215,7 @@ export class Snapshot {
   }
 
   /** An OData list of the project, paged (Cloud ALM caps `$top` at 500). */
-  private odata(path: string, query: Record<string, string>) {
+  private odata(part: Part, path: string, query: Record<string, string>) {
     return this.calm.operation(async (s) => {
       const out: Row[] = [];
       for (let skip = 0; skip < MAX_ROWS; skip += ODATA_PAGE) {
@@ -225,7 +230,7 @@ export class Snapshot {
         out.push(...rows);
         if (rows.length < ODATA_PAGE) return out;
       }
-      this.truncated = true;
+      this.truncatedParts.add(part);
       return out;
     });
   }
@@ -235,7 +240,7 @@ export class Snapshot {
       "features",
       async () =>
         (
-          await this.odata(PATHS.features, {
+          await this.odata("features", PATHS.features, {
             $expand: "toTaskAssignments",
           })
         ).map((r) => ({
@@ -253,7 +258,7 @@ export class Snapshot {
       "documents",
       async () =>
         (
-          await this.odata(PATHS.documents, {
+          await this.odata("documents", PATHS.documents, {
             $select:
               "uuid,displayId,title,projectId,documentTypeCode,statusCode,isTemplate,version,modifiedAt",
             $expand:
@@ -279,7 +284,7 @@ export class Snapshot {
         // Manual and automated lists are independent: read both at once.
         const lists = await Promise.all(
           (["manual", "automated"] as const).map(async (kind) => {
-            const rows = await this.odata(
+            const rows = await this.odata("testCases",
               kind === "manual"
                 ? PATHS.manualTestCases
                 : PATHS.automatedTestCases,
@@ -318,7 +323,7 @@ export class Snapshot {
     return this.once(
       "testPlans",
       async () =>
-        (await this.odata(PATHS.testPlans, { $expand: "toTestCaseAssignments($select=testCaseId)" })).map((r) => ({
+        (await this.odata("testPlans", PATHS.testPlans, { $expand: "toTestCaseAssignments($select=testCaseId)" })).map((r) => ({
           ...testPlan(r),
           testCaseIds: ids(children(r.toTestCaseAssignments), "testCaseId").map((x) => x.toLowerCase()),
         })),
@@ -338,7 +343,7 @@ export class Snapshot {
                 $top: ODATA_PAGE,
               }),
             );
-            if (rows.length >= ODATA_PAGE) this.truncated = true;
+            if (rows.length >= ODATA_PAGE) this.truncatedParts.add("processes");
             return rows.map(solutionProcess);
           },
         ),
@@ -406,7 +411,7 @@ export class Snapshot {
       rows.push(...result.rows);
       if (!result.truncated) return rows;
     }
-    this.truncated = true;
+    this.truncatedParts.add(dataset === "Tests" ? "testResults" : "defects");
     return rows;
   }
 
@@ -441,7 +446,10 @@ export class Snapshot {
         }
         // A test case assigned to a plan but never run has no analytics row:
         // the plan's assignments say it is in the plan, not yet run.
-        const plans = await this.testPlans().catch(() => []);
+        const plans = await this.testPlans().catch(() => {
+          this.failed.add("testPlans");
+          return [];
+        });
         const byLower = new Map([...map.keys()].map((k) => [k.toLowerCase(), k]));
         for (const plan of plans)
           for (const tc of plan.testCaseIds) {

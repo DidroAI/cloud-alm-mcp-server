@@ -149,8 +149,8 @@ export const resultText = (results: TestResult[] | undefined) =>
     .map((r) => `${resultWords(r)} in ${short(r.plan, 40)}`)
     .join("; ");
 
-export const testCaseLine = (t: SnapTestCase, results?: TestResult[]) => {
-  const result = resultText(results);
+export const testCaseLine = (t: SnapTestCase, results?: TestResult[] | null) => {
+  const result = results === null ? "unknown" : resultText(results);
   return `${t.displayId ?? "?"} · ${t.kind} test case · ${t.prepared === false ? "not prepared" : "prepared"} · ${result || NOT_IN_PLAN} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
 };
 

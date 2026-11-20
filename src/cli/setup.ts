@@ -5,6 +5,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { isServiceKey, stripBom } from "./key.js";
@@ -202,10 +203,13 @@ export function mergeJsonConfig(
   path: string,
   entry: unknown,
   write: (path: string, text: string) => void,
+  requireExisting = false,
 ): string {
   const config = readJsonConfig(path, "add the entry by hand");
   const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
   const replaced = SERVER_KEY in servers;
+  if (requireExisting && !replaced) throw new Error(`Could not locate the existing user entry in ${path}.`);
+  if (replaced && isDeepStrictEqual(servers[SERVER_KEY], entry)) return "already configured";
   config.mcpServers = { ...servers, [SERVER_KEY]: entry };
   write(path, `${JSON.stringify(config, null, 2)}\n`);
   return replaced ? "replaced" : "added";
@@ -225,16 +229,22 @@ export async function configureClient(
   try {
     switch (client) {
       case "claude-code": {
-        await e.exec("claude", ["mcp", "remove", SERVER_KEY, "--scope", "user"]);
         const r = await e.exec("claude", [
           "mcp", "add", SERVER_KEY, "--scope", "user", "-e", env, "--", "npx", "-y", spec,
         ]);
+        // Claude rejects duplicate names. Update an existing user entry in a
+        // single config write so a failed replacement leaves it available.
+        if (r.code !== 0 && (r.stderr + r.stdout).includes(`MCP server ${SERVER_KEY} already exists in user config`)) {
+          const path = join(e.env.CLAUDE_CONFIG_DIR || e.home, ".claude.json");
+          const entry = { type: "stdio", command: "npx", args: ["-y", spec], env: { CALM_SERVICE_KEY: keyPath } };
+          const how = mergeJsonConfig(path, entry, write, true);
+          return { client, label, ok: true, detail: `${how} in ${path}` };
+        }
         return r.code === 0
           ? { client, label, ok: true, detail: "added for all projects (claude mcp add --scope user)" }
           : fail(`claude mcp add failed: ${firstLine(r.stderr || r.stdout)}`);
       }
       case "codex": {
-        await e.exec("codex", ["mcp", "remove", SERVER_KEY]);
         const r = await e.exec("codex", ["mcp", "add", SERVER_KEY, "--env", env, "--", "npx", "-y", spec]);
         return r.code === 0
           ? { client, label, ok: true, detail: "added (~/.codex/config.toml)" }
@@ -279,9 +289,15 @@ export async function unconfigureClient(
       case "claude-code":
       case "codex": {
         const cli = client === "codex" ? "codex" : "claude";
-        if ((await e.exec(cli, ["--version"])).code !== 0) return result(true, "not installed");
+        const probe = await e.exec(cli, ["--version"]);
+        if (probe.code === 127) return result(true, "not installed");
+        if (probe.code !== 0) return result(false, `${cli} --version failed: ${firstLine(probe.stderr || probe.stdout)}`);
         const r = await e.exec(cli, ["mcp", "remove", SERVER_KEY, ...(cli === "claude" ? ["--scope", "user"] : [])]);
-        return result(true, r.code === 0 ? `removed (${cli} mcp remove)` : "was not set up");
+        if (r.code === 0) return result(true, `removed (${cli} mcp remove)`);
+        const message = r.stderr || r.stdout;
+        if (message.includes(`No MCP server named "${SERVER_KEY}" in user scope`) ||
+            message.includes(`No MCP server named '${SERVER_KEY}' found`)) return result(true, "was not set up");
+        return result(false, `${cli} mcp remove failed: ${firstLine(message)}`);
       }
       case "claude-desktop":
         return fromFiles(claudeDesktopConfigs(e));

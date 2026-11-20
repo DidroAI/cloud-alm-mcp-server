@@ -11,7 +11,9 @@ Codex, Cursor or VS Code, and let the assistant prepare changes that you
 approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
-[Installation guide](https://docs.didro.ai/cloud-alm/#install) · [Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting)
+[Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting) or [connect your own SAP tenant](https://docs.didro.ai/cloud-alm/#install).
+
+For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` with Node.js 22 or later. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.
 
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
@@ -22,8 +24,8 @@ server, `cloud-alm-mcp-server`.
   **Approve**.
 
 <p>
-<img src="docs/images/overview-light.png" alt="Project overview card: phases, key figures, test results, defects by priority, gaps" width="49%">
-<img src="docs/images/update-light.png" alt="Approval card: priority very high → high, due date, new comment, Approve / Reject" width="49%">
+<img src="docs/images/overview-light.png" alt="Project overview card: findings, project status and expandable breakdowns" width="49%">
+<img src="docs/images/update-light.png" alt="Approval card: priority high → very high, new comment, Approve / Reject" width="49%">
 </p>
 
 > MIT licence. An independent open-source project, not
@@ -34,18 +36,21 @@ server, `cloud-alm-mcp-server`.
 
 - **Your key, your machine.** The server runs on your computer with a
   service key of the *SAP Cloud ALM API* from your SAP BTP subaccount. No
-  telemetry; it talks only to SAP ([PRIVACY.md](PRIVACY.md)).
+  background telemetry. By default it connects only to SAP ([PRIVACY.md](PRIVACY.md)).
 - **The key decides.** A read-only key reads. A key with write scopes also
   lets the assistant *propose* changes: create, update, comment, link, tag,
   delete. Every change waits for your approval in a card (or your "yes" in
   the chat).
-- **Links back to Cloud ALM.** Items come with a link that opens them in the
-  Cloud ALM UI, and you can paste a Cloud ALM link wherever an id is asked.
+- **Links back to Cloud ALM.** With a tenant UI address, record cards can open
+  requirements, defects, tasks, features, documents and manual test cases directly.
+  Test plans, automated test cases and processes open their SAP list. Project
+  links open the launchpad. Dashboard counts and approval fields are plain text.
+  The synthetic demo has no tenant links.
 
 ### Browsing results in chat
 
 In clients with MCP Apps, project lists, search results and item details open
-as cards. Select a linked title to open SAP Cloud ALM. **View all** expands
+as cards. Use the Cloud ALM links to open the source record or its SAP app. **View all** expands
 a compact list in hosts with fullscreen support. **Load more** fetches the
 next page with the same filters. Clients that use text receive the read result.
 
@@ -54,6 +59,10 @@ For a host that supports MCP Apps and tool calls from a card, set
 the final selection. The assistant reads the data, then calls `calm_show`
 with selected IDs or list filters. The card fetches those records when it
 opens. For a text answer or an export, the assistant can skip that last call.
+
+### Optional agent feedback
+
+The hosted demo lets agents report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. Local reporting is off by default. Operators can enable it for their installation with a receiver URL and token. Reports should describe tool behavior in generic terms. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
 
 ## Setup in 2 minutes (video)
 
@@ -74,7 +83,7 @@ its JSON. Step by step, with an e-mail you can send to your BTP admin:
 
 ## 2. Install
 
-**Any client, one command** (needs [Node.js 22+](https://nodejs.org)):
+**Local clients, one command** (needs [Node.js 22+](https://nodejs.org)):
 
 ```sh
 npx -y cloud-alm-mcp-server setup

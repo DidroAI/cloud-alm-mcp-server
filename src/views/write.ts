@@ -131,6 +131,7 @@ export async function createTestCase(
     ...(near.length ? [`similar test cases exist: ${near.join("; ")}`] : []),
     "test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope",
   ];
+  o.reviewPlan?.({ body, covered: covered.map(t => t.id), plan, notes });
   if (dry(o, input.dryRun))
     return `${dryNote(o)} Would create ${plan}.\n${outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline}\nNote: ${notes.join("; ")}.`;
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
@@ -208,6 +209,8 @@ export async function link(
     return `${NOTHING_TO_DO} ${plan.name} is ${unlink ? "not linked to" : "already linked to"} ${plan.skipped.join(", ")}.`;
   const skippedNote = plan.skipped.length ? ` ${unlink ? "Not linked" : "Already linked"}: ${plan.skipped.join(", ")}.` : "";
   const notes = plan.notes.length ? ` Note: ${plan.notes.join("; ")}.` : "";
+  o.reviewPlan?.({ project: snap.project.id, source: source.id, verb, tasks: tasks.map(t => ({ id: t.id, title: t.title })),
+    todo: plan.todo.map(t => t.id), title: plan.title, notes: plan.notes, skipped: plan.skipped });
   if (dry(o, input.dryRun))
     return `${dryNote(o)} Would ${verb} ${plan.name} "${short(plan.title, 70)}" ${prep} ${plan.todo.map(label).join("; ")}.${skippedNote}${notes}`;
   const done: string[] = [];
@@ -395,13 +398,18 @@ export async function tag(
   const snap = await snapshot(calm, input.projectId, o);
   const tasks = await tasksByRef(snap, input.tasks);
   const lines: string[] = [];
+  const plans = [];
   for (const t of tasks) {
-    // Read just before writing: the call replaces the whole list.
+    // Resolve the entire batch before approving or changing any tags.
     const before = await allTags(calm, t.id);
     const kept = before.filter((x) => !remove.has(x.toLowerCase()));
     const keys = new Set(kept.map((x) => x.toLowerCase()));
     const target = [...kept, ...add.filter((x) => !keys.has(x.toLowerCase()))];
     const same = target.length === before.length && target.every((x, i) => x === before[i]);
+    plans.push({ task: t, before, target, same });
+  }
+  o.reviewPlan?.({ project: snap.project.id, items: plans.map(p => ({ id: p.task.id, before: p.before, after: p.target })) });
+  for (const { task: t, before, target, same } of plans) {
     if (same) {
       lines.push(`${t.displayId}: no change (${before.join(", ") || "no tags"})`);
       continue;
@@ -411,6 +419,11 @@ export async function tag(
       continue;
     }
     try {
+      if (plans.length > 1) {
+        const current = await allTags(calm, t.id);
+        if (current.length !== before.length || current.some((tag, i) => tag !== before[i]))
+          throw new CloudAlmError("bad_request", "The task’s tags changed during the batch; review the current tags before retrying.");
+      }
       await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: t.id, tags: target });
     } catch (error) {
       // Report the tasks already tagged, then this one's failure.
@@ -510,6 +523,7 @@ export async function createTask(
   };
   const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.assignee ? `, assigned to ${input.assignee}` : ""}${input.startDate ? `, start ${input.startDate}` : ""}${input.dueDate ? `, due ${input.dueDate}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
   const extra = `${description ? `\nDescription: ${description.length > 600 ? `${description.slice(0, 600)} …` : description}` : ""}${warnings.length ? `\nNote: ${warnings.join("; ")}.` : ""}`;
+  o.reviewPlan?.({ body, tags: input.tags, plan, warnings });
   if (dry(o, input.dryRun)) {
     const fields = [
       ["Scope", scopeName],
