@@ -538,6 +538,10 @@ describe("setup", () => {
     if (process.platform !== "win32") expect(statSync(saved).mode & 0o777).toBe(0o600);
     const config = JSON.parse(readFileSync(join(m.home, ".cursor", "mcp.json"), "utf8"));
     expect(config.mcpServers["cloud-alm"].env.CALM_SERVICE_KEY).toBe(saved);
+    const configPath = join(m.home, ".cursor", "mcp.json");
+    writeFileSync(configPath + ".bak", "previous configuration");
+    expect(await runCommand(t.io, ["setup", "--client", "cursor"])).toBe(0);
+    expect(readFileSync(configPath + ".bak", "utf8")).toBe("previous configuration");
   });
 
   test("a failed CLI add does not remove the existing client registration", async () => {

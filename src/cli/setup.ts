@@ -5,6 +5,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { isServiceKey, stripBom } from "./key.js";
@@ -208,6 +209,7 @@ export function mergeJsonConfig(
   const servers = (config.mcpServers ?? {}) as Record<string, unknown>;
   const replaced = SERVER_KEY in servers;
   if (requireExisting && !replaced) throw new Error(`Could not locate the existing user entry in ${path}.`);
+  if (replaced && isDeepStrictEqual(servers[SERVER_KEY], entry)) return "already configured";
   config.mcpServers = { ...servers, [SERVER_KEY]: entry };
   write(path, `${JSON.stringify(config, null, 2)}\n`);
   return replaced ? "replaced" : "added";
@@ -235,8 +237,8 @@ export async function configureClient(
         if (r.code !== 0 && (r.stderr + r.stdout).includes(`MCP server ${SERVER_KEY} already exists in user config`)) {
           const path = join(e.env.CLAUDE_CONFIG_DIR || e.home, ".claude.json");
           const entry = { type: "stdio", command: "npx", args: ["-y", spec], env: { CALM_SERVICE_KEY: keyPath } };
-          mergeJsonConfig(path, entry, write, true);
-          return { client, label, ok: true, detail: `updated in ${path}` };
+          const how = mergeJsonConfig(path, entry, write, true);
+          return { client, label, ok: true, detail: `${how} in ${path}` };
         }
         return r.code === 0
           ? { client, label, ok: true, detail: "added for all projects (claude mcp add --scope user)" }
