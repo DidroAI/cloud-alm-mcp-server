@@ -136,6 +136,7 @@ function authorize(origin, params) {
       <input type="hidden" name="csrf" value="${csrf}">
       <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
       <p class="hint">Anyone using this connection can read the records your key allows.</p>
+      ${process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
       <button class="button" type="submit">Connect to ${platform(redirect)}</button>
     </form>
     <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The app discards the file and encrypts the temporary SAP token in the session database. ${platform(redirect)} receives a separate connector token.</p></details>`,

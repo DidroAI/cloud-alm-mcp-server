@@ -1,10 +1,27 @@
+import { randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { createHttpHandler } from "cloud-alm-mcp-server";
 import { digest, open } from "../lib/crypto.mjs";
 import { limited, json } from "../lib/http.mjs";
 import { metadata, oauth } from "../lib/oauth.mjs";
 
-const server = { writeMode: "off", contentPresentation: "explicit" };
+async function reportFeedback(fields, serverVersion) {
+  const reportId = randomUUID();
+  const response = await fetch("https://docs.didro.ai/cloud-alm/feedback", {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(5000),
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.DIDRO_HOSTED_FEEDBACK_TOKEN}` },
+    body: JSON.stringify({ ...fields, serverVersion, reportId }),
+  });
+  if (!response.ok) throw new Error("Feedback could not be delivered");
+  return reportId;
+}
+const server = {
+  writeMode: "off",
+  contentPresentation: "explicit",
+  ...(process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? { feedbackSink: reportFeedback } : {}),
+};
 const discovery = createHttpHandler({
   server,
   reader: {

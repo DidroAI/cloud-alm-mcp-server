@@ -7,3 +7,5 @@ Create a dedicated PostgreSQL database and apply schema.sql. Set DATABASE_URL to
 The browser uploads the service key directly to the consent endpoint. The server uses SAP client credentials once, discards the key, and stores only the temporary SAP grant encrypted with AES-256-GCM. The connector bearer is random and stored as a digest. Sessions expire after at most one hour and can be revoked through the advertised OAuth revocation endpoint. Expired rows are pruned on the next successful link. Reconnect when the session expires. This preview supports commercial SAP client-secret keys on regional Cloud ALM endpoints. It does not offer refresh tokens or write tools.
 
 Registration is limited to ChatGPT and Claude browser callbacks. Register dynamically in the client. Tenant reads require the user's authorization. MCP initialization, the tool catalog and public UI resources are available during connector creation.
+
+Didro’s hosted service uses https://calm.didro.ai/mcp. Set the deployment secret DIDRO_HOSTED_FEEDBACK_TOKEN to enable its authenticated feedback tool and consent disclosure. The credential is issued for the private Didro feedback receiver.
