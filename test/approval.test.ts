@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createMcpHandler } from "@modelcontextprotocol/server";
-import { CARD_URI, cardHtml, clearPending, META_KEY, propose, take } from "../src/approval.js";
+import { CARD_TEMPLATE } from "../src/approval-card.js";
+import { CARD_URI, cardHtml, clearPending, META_KEY, propose, settle, statusOf, take } from "../src/approval.js";
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
 import { createHttpHandler } from "../src/http.js";
@@ -91,6 +92,40 @@ describe("approval of writes", () => {
     const again = await call("calm_approve", { ...a, decision: "approve" });
     expect(again.error).toBe(true);
     expect(posts.length).toBe(1);
+  });
+
+  test("a card drawn again learns how its proposal ended; a second approval is told the outcome", async () => {
+    const { call, posts } = await connect("ui", { approval: "required" });
+    const status = async (id: string) => ((await call("calm_approval_status", { id })).structured as unknown as { status: string; summary?: string });
+    const r = await call("calm_create_task", NEW_DEFECT);
+    const a = r.meta?.[META_KEY] as { id: string; nonce: string };
+    expect((await status(a.id)).status).toBe("pending");
+    expect((await status("0".repeat(12))).status).toBe("unknown");
+    const ok = await call("calm_approve", { ...a, decision: "approve" });
+    const after = await status(a.id);
+    expect(after.status).toBe("approved");
+    expect(after.summary).toBe(ok.text);
+    // Not "nothing was written": it was.
+    const again = await call("calm_approve", { ...a, decision: "approve" });
+    expect(again.error).toBe(true);
+    expect(again.text).toContain("already approved");
+    expect(again.text).not.toContain("nothing was written");
+    expect(posts.length).toBe(1);
+
+    const second = (await call("calm_create_task", NEW_DEFECT)).meta?.[META_KEY] as { id: string; nonce: string };
+    await call("calm_approve", { ...second, decision: "reject" });
+    expect((await status(second.id)).status).toBe("rejected");
+    expect((await call("calm_approve", { ...second, decision: "approve" })).text).toContain("already rejected");
+    expect(posts.length).toBe(1);
+  });
+
+  test("the outcome of a proposal is its approver's only", () => {
+    const p = propose({ tool: "calm_tag", args: {}, fingerprint: "p", subject: "s", allowChat: false }, 0);
+    take(p.id, "s", p.nonce, 1);
+    settle(p.id, "approved", "Tagged.");
+    expect(statusOf(p.id, "s", 2)).toEqual({ status: "approved", summary: "Tagged." });
+    expect(statusOf(p.id, "other", 2)).toEqual({ status: "unknown" });
+    expect(statusOf(p.id, "s", 61 * 60_000)).toEqual({ status: "unknown" });
   });
 
   test("confirmation checks the full source value and only resolves the update once", async () => {
@@ -273,7 +308,7 @@ describe("pending store", () => {
     const q = propose(entry, 0);
     expect(() => take(q.id, "s", undefined, 1)).toThrow("approval card");
     expect(take(q.id, "s", q.nonce, 1).tool).toBe("calm_tag");
-    expect(() => take(q.id, "s", q.nonce, 1)).toThrow("unknown");
+    expect(() => take(q.id, "s", q.nonce, 1)).toThrow("already approved");
   });
 
 
@@ -286,6 +321,9 @@ describe("pending store", () => {
     expect(html).not.toContain("__APP_BUNDLE__");
     expect(html).not.toContain("__META_KEY__");
     expect(html).toContain("const applyDocumentTheme = ");
+    // The whole change is on the page: no scroll box inside the card, and no escapes shown as typed.
+    expect(CARD_TEMPLATE).not.toMatch(/max-height|overflow:auto/);
+    expect(html).toContain("SAP Cloud ALM · Change request");
   });
 });
 

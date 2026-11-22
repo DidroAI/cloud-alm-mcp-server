@@ -299,7 +299,8 @@ function safeLink(value) {
 function recordLink(label, value) {
   const url = safeLink(value);
   if (!url) return node("span", label);
-  const a = node("a", label + " ↗");
+  // The arrow stays with the last word.
+  const a = node("a", label + "\u00a0↗");
   a.href = url;
   a.target = "_blank";
   a.rel = "noopener noreferrer";

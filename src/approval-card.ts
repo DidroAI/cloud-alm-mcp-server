@@ -2,8 +2,11 @@
  * The approval card's page: SAP Horizon-inspired, light and dark, text
  * only (every value goes through textContent). cardHtml() in approval.ts
  * inserts the ext-apps bundle and the _meta key at the markers.
+ *
+ * A plain template, not String.raw: Bun writes non-ASCII characters of a
+ * template as \u escapes, which a raw template would show as typed.
  */
-export const CARD_TEMPLATE = String.raw`<!doctype html>
+export const CARD_TEMPLATE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cloud ALM approval</title>
 <style>
@@ -86,9 +89,18 @@ h1{font-size:16px;line-height:1.3;font-weight:700;margin:2px 0 0;overflow-wrap:a
 .chh{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 16px 8px;border-top:1px solid var(--line)}
 h2{font-size:13px;font-weight:700;margin:0}
 .chn{font-size:12px;color:var(--label);white-space:nowrap}
-.c{max-height:380px;overflow:auto;border-top:1px solid var(--line);background:var(--surface);padding:0 16px}
+.c{border-top:1px solid var(--line);background:var(--surface);padding:0 16px}
 .it{background:var(--surface);padding:12px 0}
 .it+.it{margin-top:8px}
+/* An item with nothing but a name (a delete, mostly): one line, so a long list stays readable without a scroll box. */
+.it.slim{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;padding:8px 0}
+.it.slim+.it{margin-top:0;border-top:1px solid var(--line)}
+.it.slim .itt{margin:0;flex:1;min-width:40%}
+.it.slim .kind{font-size:12px;color:var(--label)}
+.it.slim .badge{font-size:12px}
+.morew{padding:0 16px 8px}
+button.more{min-height:32px;min-width:0;padding:0;border:0;border-radius:2px;background:transparent;font-size:13px}
+button.more:hover:not(:disabled){background:transparent;text-decoration:underline}
 .it[data-op=create]{border-left-color:var(--pos-edge)}
 .it[data-op=delete]{border-left-color:var(--neg-edge)}
 .ih{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:12px;color:var(--label)}
@@ -109,7 +121,7 @@ table.fl{margin-top:10px;width:100%;border-collapse:collapse;table-layout:fixed;
 details{border-top:1px solid var(--line)}
 summary{padding:8px 16px;font-size:12px;color:var(--link);cursor:pointer;width:fit-content;border-radius:6px}
 details.solo>summary{display:none}
-pre{margin:0;padding:10px 16px;background:var(--sunken);font:12.5px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}
+pre{margin:0;padding:10px 16px;background:var(--sunken);font:12.5px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* Footer toolbar: expiry on the left, one emphasized action */
 .ft{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--line)}
@@ -125,7 +137,6 @@ button.ok:hover:not(:disabled){background:var(--brand-hover);border-color:var(--
 .card[data-kind=delete] button.ok:hover:not(:disabled){background:var(--danger-hover);border-color:var(--danger-hover)}
 button:disabled{opacity:.45;cursor:default}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.c:focus-visible,pre:focus-visible{outline-offset:-2px}
 .card[data-state=unknown] .acts,.card[data-state=closed] .acts,.card[data-state=approved] .acts,.card[data-state=rejected] .acts,.card[data-state=expired] .acts,.card[data-state=blocked] .acts,.card[data-state=chat] .acts,.card[data-state=info] .acts,.card[data-state=failed] .acts,.card[data-state=preparing] .acts{display:none}
 .card[data-state=info] .ft,.card[data-state=failed] .ft,.card[data-state=preparing] .ft{display:none}
 .card[data-state=rejected] .c,.card[data-state=expired] .c{opacity:.75}
@@ -147,10 +158,11 @@ button:disabled{opacity:.45;cursor:default}
 <p class="strip danger" id="warn" role="alert" hidden></p>
 <section id="ch" aria-labelledby="chh" hidden>
   <div class="chh"><h2 id="chh">What will change</h2><span class="chn" id="chn"></span></div>
-  <div class="c" id="c" tabindex="0" role="group" aria-labelledby="chh"></div>
+  <div class="c" id="c" role="group" aria-labelledby="chh"></div>
+  <div class="morew" id="morew" hidden><button id="more" class="more" type="button"></button></div>
 </section>
 <ul class="notes" id="notes" hidden></ul>
-<details id="pd" hidden><summary>Request details</summary><dl class="facts" id="technical"></dl><pre id="p" tabindex="0"></pre></details>
+<details id="pd" hidden><summary>Request details</summary><dl class="facts" id="technical"></dl><pre id="p"></pre></details>
 <p class="strip" id="m" role="status" aria-live="polite" hidden></p>
 <footer class="ft">
   <span class="x"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.500V8l2.3 1.5"/></svg><span id="x">Nothing is written until you approve.</span></span>
@@ -181,7 +193,12 @@ const say = (text, cls = "") => {
   m.textContent = text;
   m.hidden = !text;
 };
-const buttons = (on) => { $("ok").disabled = $("no").disabled = !on; };
+/** A delete stays locked while part of its list is folded away: the user approves what they were shown. */
+let folded = false;
+let live = false;
+const buttons = (on) => { live = on; $("no").disabled = !on; $("ok").disabled = !on || (folded && card.dataset.kind === "delete"); };
+/** Items shown before the rest folds behind "Show all". */
+const SHOWN = 8;
 const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const app = new App({ name: "cloud-alm-approval", version: "3" });
 let pending;
@@ -244,6 +261,19 @@ function renderChange(change) {
     if (filled(item.id)) head.append(el("span", "id", str(item.id)));
     if (filled(item.type)) head.append(el("span", "", str(item.type)));
     if (op !== "update") head.append(el("span", "badge", op === "create" ? "New" : "Will be deleted"));
+    const slim = !item.fields?.length && !filled(item.note) && filled(item.title);
+    if (slim) {
+      // One line: id, title, type, badge.
+      block.classList.add("slim");
+      const id = head.querySelector(".id");
+      block.append(...(id ? [id] : []), el("div", "itt", str(item.title)));
+      if (filled(item.type)) block.append(el("span", "kind", str(item.type)));
+      if (op !== "update") block.append(el("span", "badge", op === "create" ? "New" : "Will be deleted"));
+      block.hidden = box.childElementCount >= SHOWN && items.length > SHOWN + 1;
+      box.append(block);
+      continue;
+    }
+    block.hidden = box.childElementCount >= SHOWN && items.length > SHOWN + 1;
     block.append(head);
     if (filled(item.title)) block.append(el("div", "itt", str(item.title)));
     if (item.fields?.length) {
@@ -255,6 +285,15 @@ function renderChange(change) {
   }
   const kind = OPS[change.kind] ?? "update";
   card.dataset.kind = kind;
+  folded = items.length > SHOWN + 1;
+  $("morew").hidden = !folded;
+  $("more").textContent = "Show all " + items.length + " items" + (kind === "delete" ? " before deleting" : "");
+  $("more").onclick = () => {
+    for (const block of box.children) block.hidden = false;
+    folded = false;
+    $("morew").hidden = true;
+    buttons(live);
+  };
   $("chh").textContent = kind === "create" ? "What will be created" : kind === "delete" ? "What will be deleted" : "What will change";
   $("chn").textContent = plural(items.length, "item") + (fields && kind !== "delete" ? " · " + plural(fields, "field") : "");
   $("ch").hidden = false;
@@ -351,10 +390,33 @@ app.ontoolresult = (result) => {
       : "This app does not pass answers from cards to the server. Open the change in an app that does.", pending.chat !== false ? "" : "err");
     return;
   }
-  buttons(true);
   tick();
   if (a.expiresAt) ticking = setInterval(tick, 20000);
+  settled(a.id).then((over) => { if (!over && pending?.id === a.id && !done && card.dataset.state === "waiting") buttons(true); });
 };
+
+/**
+ * A card drawn again (a reload, another device) asks how its proposal
+ * ended, and shows that instead of live buttons. Resolves false when it is
+ * still pending, or the server or host does not answer.
+ */
+async function settled(id) {
+  let s;
+  try {
+    const r = await Promise.race([
+      app.callServerTool({ name: "calm_approval_status", arguments: { id } }),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
+    if (r && !r.isError) s = r.structuredContent;
+  } catch {}
+  if (pending?.id !== id || done) return true;
+  if (s?.status === "approved") { finish("approved", "Approved earlier"); say(s.summary || "Written to Cloud ALM.", "done"); }
+  else if (s?.status === "rejected") finish("rejected", "Rejected earlier · nothing was written");
+  else if (s?.status === "failed") { finish("closed", "Closed"); say(s.summary || "This approval was used and its write failed. Ask again in the chat.", "err"); }
+  else if (s?.status === "working") { finish("working", "Started from another view"); say("This change is being written. Read the record in Cloud ALM for the result.", "busy"); }
+  else return false;
+  return true;
+}
 
 async function decide(decision) {
   if (!pending || done || expired()) return;

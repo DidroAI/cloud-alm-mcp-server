@@ -24,6 +24,8 @@ import {
   overviewHtml,
   planFingerprint,
   propose,
+  settle,
+  statusOf,
   take,
 } from "./approval.js";
 import { z } from "zod";
@@ -122,6 +124,9 @@ const WRITE = {
 
 /** Write tools that can remove or overwrite what is there. */
 const DESTRUCTIVE = new Set(["calm_update", "calm_delete", "calm_link", "calm_tag"]);
+
+/** On the listing and on the content item: hosts read either. */
+const UI_META = { ui: { csp: {}, prefersBorder: true } };
 
 const READ_ONLY = {
   readOnlyHint: true,
@@ -652,16 +657,16 @@ export function createServer(
   }
   if (show || (options.cards !== false && !explicit && [...contentSchemas.keys()].some(name => name !== "calm_overview")))
     registerAppResource(server, "Cloud ALM content", CONTENT_URI,
-      { description: "Projects and items from SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
-      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml(options.synthetic) }] }),
+      { description: "Projects and items from SAP Cloud ALM", _meta: UI_META },
+      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml(options.synthetic), _meta: UI_META }] }),
     );
   if (!explicit && options.cards !== false && (!allowed || allowed.has("calm_overview")))
     registerAppResource(
       server,
       "Cloud ALM project overview",
       OVERVIEW_URI,
-      { description: "A Cloud ALM project at a glance", _meta: { ui: { csp: {}, prefersBorder: true } } },
-      async () => ({ contents: [{ uri: OVERVIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: overviewHtml() }] }),
+      { description: "A Cloud ALM project at a glance", _meta: UI_META },
+      async () => ({ contents: [{ uri: OVERVIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: overviewHtml(), _meta: UI_META }] }),
     );
   if (options.prompts !== false) registerSkillPrompts(server);
   return server;
@@ -672,20 +677,32 @@ export function createServer(
       server,
       "Cloud ALM approval",
       CARD_URI,
-      { description: "Approve or reject a change to SAP Cloud ALM", _meta: { ui: { csp: {}, prefersBorder: true } } },
-      async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: cardHtml() }] }),
+      { description: "Approve or reject a change to SAP Cloud ALM", _meta: UI_META },
+      async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: cardHtml(), _meta: UI_META }] }),
     );
     const decide = async (id: string, nonce: string | undefined, approve: boolean, tool?: string): Promise<CallToolResult> => {
       try {
         const p = take(id, subject, nonce, Date.now(), tool);
+        if (!approve) settle(id, "rejected");
         if (!approve) return { structuredContent: { proposalId: id, tool: p.tool, decision: "rejected" }, content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);
-        if (!write) return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
+        if (!write) {
+          settle(id, "failed", `${p.tool} is not offered by this server.`);
+          return { isError: true, content: [{ type: "text", text: `${p.tool} is not offered by this server.` }] };
+        }
         // The write checks the same resolved plan it executes, before its first mutation.
-        const result = await answer(() => write({ ...p.args, dryRun: false }, plan => {
-          if (planFingerprint(plan) !== p.fingerprint)
-            throw new CloudAlmError("bad_request", "The change no longer matches what the user approved. Nothing was written. Propose the change again.");
-        }));
+        let result: CallToolResult;
+        try {
+          result = await answer(() => write({ ...p.args, dryRun: false }, plan => {
+            if (planFingerprint(plan) !== p.fingerprint)
+              throw new CloudAlmError("bad_request", "The change no longer matches what the user approved. Nothing was written. Propose the change again.");
+          }));
+        } catch (error) {
+          settle(id, "failed");
+          throw error;
+        }
+        const summary = (result.content.find(block => block.type === "text") as { text?: string } | undefined)?.text;
+        settle(id, result.isError ? "failed" : "approved", summary);
         if (result.isError) return result;
         return { ...result, structuredContent: { ...(typeof result.structuredContent === "object" ? result.structuredContent : {}), proposalId: id, tool: p.tool, decision: "approved", summary: result.content.find(block => block.type === "text")?.text } };
       } catch (error) {
@@ -710,6 +727,21 @@ export function createServer(
         _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
       },
       ((a: { id: string; nonce?: string; decision: string }) => decide(a.id, a.nonce, a.decision === "approve")) as never,
+    );
+    registerAppTool(
+      server,
+      "calm_approval_status",
+      {
+        title: "Approval status (approval card only)",
+        description: "For the approval card only. Whether a proposed change is still pending, or how it ended.",
+        inputSchema: { id: z.string().regex(/^[0-9a-f]{12}$/) } as never,
+        annotations: { ...READ_ONLY, title: "Approval status" },
+        _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
+      },
+      ((a: { id: string }) => {
+        const s = statusOf(a.id, subject);
+        return { structuredContent: s, content: [{ type: "text", text: s.status }] };
+      }) as never,
     );
     if (approval === "prefer")
       server.registerTool(
