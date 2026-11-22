@@ -236,15 +236,18 @@ export function createServer(
     const only = (change?.items as { id?: string | null }[] | undefined)?.length === 1 ? (change?.items as { id?: string | null }[])[0]?.id : null;
     if (only && (change?.kind === "update" || change?.kind === "delete") && name !== "calm_comment")
       title = `${name === "calm_delete" ? (args.soft === true ? "Mark obsolete:" : "Delete") : "Change"} ${only}`;
+    // The card names the kind of item, not its id: "Change user story".
+    const onlyType = (change?.items as { type?: string }[] | undefined)?.[0]?.type;
+    const cardTitle = title.endsWith(` ${only}`) ? `${title.slice(0, -String(only).length - 1).replace(/:$/, "")} ${onlyType ?? "item"}` : title;
     // Nothing would change: say so, and ask nobody to approve it.
     if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }], structuredContent: { nothingToDo: true, text } };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     if (!fingerprint) return { isError: true, content: [{ type: "text", text: "Could not prepare this change for approval." }] };
     const p = propose({ tool: name, args, fingerprint, subject, allowChat: approval === "prefer" });
-    return proposalAnswer(name, title, text, p, changeWithTenant);
+    return proposalAnswer(name, title, text, p, changeWithTenant, cardTitle);
   };
-  const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>): CallToolResult => {
+  const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>, cardTitle = title): CallToolResult => {
     const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
@@ -254,8 +257,8 @@ export function createServer(
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
       // Some hosts show the model only structuredContent, so it repeats the
       // ask; the nonce stays in _meta.
-      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, ...(change ? { change } : {}), expiresAt: new Date(p.expiresAt).toISOString(), chat: approval === "prefer", next: ask } },
-      _meta: { [META_KEY]: { ...p, title, tool: name, preview: text, ...(change ? { change } : {}), chat: approval === "prefer" } },
+      structuredContent: { approval: { id: p.id, tool: name, title: cardTitle, preview: text, ...(change ? { change } : {}), expiresAt: new Date(p.expiresAt).toISOString(), chat: approval === "prefer", next: ask } },
+      _meta: { [META_KEY]: { ...p, title: cardTitle, tool: name, preview: text, ...(change ? { change } : {}), chat: approval === "prefer" } },
     };
   };
 

@@ -8,6 +8,7 @@ All notable changes to this package. The format follows
 
 - The approval card shows the whole change on the page instead of a scroll box inside the card. Lists of more than nine items fold behind "Show all"; a delete stays locked until its full list is shown.
 - A card drawn again after its change was approved or rejected shows that outcome instead of live buttons, and a second approval is told what happened rather than "nothing was written".
+- The approval card is written for consultants: no item ids, tool name or request id, no status dots or bullets, capitalised item types, and plain sentences where it used to show the answer meant for the agent.
 - Fixed escape sequences shown as typed in the approval card when the server runs from source under Bun.
 - In result tables, the arrow of "Open record" stays with its word.
 

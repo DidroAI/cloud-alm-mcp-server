@@ -323,7 +323,9 @@ describe("pending store", () => {
     expect(html).toContain("const applyDocumentTheme = ");
     // The whole change is on the page: no scroll box inside the card, and no escapes shown as typed.
     expect(CARD_TEMPLATE).not.toMatch(/max-height|overflow:auto/);
-    expect(html).toContain("SAP Cloud ALM · Change request");
+    expect(html).toContain("Preparing the change…");
+    // For consultants: no request id, no tool name on the card.
+    expect(CARD_TEMPLATE).not.toMatch(/Request details|"Tool"|"Request"/);
   });
 });
 
