@@ -125,6 +125,10 @@ says it supports, and the user approves it in one of these ways:
 | the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, VS Code, Goose |
 | the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name | every client |
 
+A card drawn again (a reload, another device) asks `calm_approval_status`,
+also visible to the card only, how its change ended, and shows that
+instead of live buttons.
+
 The card's button calls `calm_approve`, a tool visible to the card only,
 with a one-time token that travels in the result's `_meta`, never in the
 text the model reads. If the host drops `_meta` (some do, e.g. on reload),

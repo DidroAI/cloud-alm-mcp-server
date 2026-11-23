@@ -50,6 +50,17 @@ type Pending = {
  */
 const pending = new Map<string, Pending>();
 
+/** How a proposal ended. `working` while its write runs; `failed` when the write was refused. */
+export type Outcome = { status: "working" | "approved" | "rejected" | "failed"; summary?: string };
+/** A decided proposal keeps this much of the write's answer. */
+const MAX_SUMMARY = 2000;
+/**
+ * Decided proposals, until they would have expired: a card drawn again
+ * (a reload, another device) shows what happened instead of live buttons,
+ * and a second approval is told the outcome, not "nothing was written".
+ */
+const decided = new Map<string, Outcome & { subject: string; expiresAt: number }>();
+
 /** Who may approve: the stdio user, or the holder of the same bearer token. */
 export const subjectOf = (token: string | undefined) =>
   token ? createHash("sha256").update(token).digest("hex") : "local";
@@ -99,6 +110,15 @@ export function take(
   tool?: string,
 ): Pending {
   const p = pending.get(id);
+  const d = decided.get(id);
+  if (d && d.subject === subject && d.expiresAt > now)
+    throw new ApprovalError(
+      d.status === "rejected"
+        ? "This change was already rejected; nothing was written."
+        : d.status === "failed"
+          ? `This approval was already used and its write failed; it is not run again. Propose the change again.${d.summary ? ` Answer then: ${d.summary}` : ""}`
+          : `This change was already approved; it is not run again.${d.summary ? ` Answer then: ${d.summary}` : ""}`,
+    );
   if (!p || p.expiresAt <= now) {
     pending.delete(id);
     throw new ApprovalError("This approval is unknown or expired; nothing was written. Propose the change again and ask the user.");
@@ -114,12 +134,36 @@ export function take(
       throw new ApprovalError("Approval refused: bad token; nothing was written.");
   }
   pending.delete(id);
+  for (const [key, e] of decided) if (e.expiresAt <= now) decided.delete(key);
+  while (decided.size >= MAX_PENDING) {
+    const oldest = decided.keys().next().value;
+    if (oldest === undefined) break;
+    decided.delete(oldest);
+  }
+  decided.set(id, { subject, expiresAt: p.expiresAt, status: "working" });
   return p;
 }
 
-/** Forget every pending write (tests). */
+/** What came of a taken proposal. */
+export function settle(id: string, status: Exclude<Outcome["status"], "working">, summary?: string) {
+  const d = decided.get(id);
+  if (!d) return;
+  d.status = status;
+  if (summary) d.summary = summary.length > MAX_SUMMARY ? `${summary.slice(0, MAX_SUMMARY)} …` : summary;
+}
+
+/** Where a proposal stands, for its approver only; anyone else's is unknown. */
+export function statusOf(id: string, subject: string, now = Date.now()): Outcome | { status: "pending" | "unknown" } {
+  const d = decided.get(id);
+  if (d && d.subject === subject && d.expiresAt > now) return { status: d.status, ...(d.summary ? { summary: d.summary } : {}) };
+  const p = pending.get(id);
+  return { status: p && p.subject === subject && p.expiresAt > now ? "pending" : "unknown" };
+}
+
+/** Forget every pending and decided write (tests). */
 export function clearPending() {
   pending.clear();
+  decided.clear();
 }
 
 let appJs: string | undefined;

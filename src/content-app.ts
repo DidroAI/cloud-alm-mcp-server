@@ -299,7 +299,8 @@ function safeLink(value) {
 function recordLink(label, value) {
   const url = safeLink(value);
   if (!url) return node("span", label);
-  const a = node("a", label + " ↗");
+  // The arrow stays with the last word.
+  const a = node("a", label + "\u00a0↗");
   a.href = url;
   a.target = "_blank";
   a.rel = "noopener noreferrer";
@@ -409,7 +410,7 @@ function itemList(items, details) {
       const name = node("div");
       name.append(node("strong", item.title || item.name || item.id), node("small", item.id));
       const cells = [name, item.result || item.status ? badge(item.result || item.status) : "—"];
-      if (priority) cells.push(item.priority || "—");
+      if (priority) cells.push(item.priority ? String(item.priority).charAt(0).toUpperCase() + String(item.priority).slice(1) : "—");
       if (hasSource) cells.push(sourceAction(item));
       return cells;
     }), "Cloud ALM records");
