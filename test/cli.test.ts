@@ -612,7 +612,7 @@ describe("setup", () => {
     const keyPath = join(m.home, "Downloads", "calm-demo-key.json");
     writeFileSync(keyPath, KEY_TEXT);
     const t = io({ fetch: fakeFetch().fetcher });
-    const q = asked(["found", ["cursor"]]);
+    const q = asked(["found", ["cursor"], true]);
     t.io.setup = m.setup;
     t.io.prompts = async () => q.prompts;
     expect(await runCommand(t.io, ["setup"])).toBe(0);
@@ -624,6 +624,9 @@ describe("setup", () => {
     expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
     expect(m.calls.some((c) => c.startsWith("claude mcp add"))).toBe(false);
     expect(q.all()).toContain("✓ Cursor");
+    expect(q.seen[2]?.message).toContain("Also install the 9 Cloud ALM skills");
+    expect(existsSync(join(m.home, ".cursor", "skills", "cloud-alm-fit-gap", "SKILL.md"))).toBe(true);
+    expect(q.all()).toContain(`9 installed in ${join(m.home, ".cursor", "skills")} (Cursor)`);
     expect(q.all()).toContain("Reload the Cursor window.");
     expect(q.all()).toContain(`You can now delete ${keyPath}`);
     expect(q.all()).toContain("Cloud ALM is ready.");
@@ -687,13 +690,48 @@ describe("setup", () => {
     expect(await runCommand(first.io, ["setup", keyFile(), "--client", "none"])).toBe(0);
     const other = JSON.stringify({ ...KEY, uaa: { ...KEY.uaa, url: "https://other.authentication.eu20.hana.ondemand.com" } });
     const t = io({ fetch: fakeFetch().fetcher });
-    const k = asked(["paste", other, false, "saved", ["cursor"]]);
+    const k = asked(["paste", other, false, "saved", ["cursor"], false]);
     t.io.setup = m.setup;
     t.io.prompts = async () => k.prompts;
     expect(await runCommand(t.io, ["setup"])).toBe(0);
     expect(k.seen[0]?.labels?.[0]).toBe("Keep the key saved before");
+    expect(existsSync(join(m.home, ".cursor", "skills"))).toBe(false);
     expect(k.seen[2]?.message).toContain("A key for another tenant (example) is saved. Replace it with the key for other?");
     expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
+  });
+
+  test("installs the skills where each app reads them, replaces old copies, and uninstall takes only ours out", async () => {
+    const m = machine({ claude: true, codex: true, cursor: true });
+    const claudeSkills = join(m.home, ".claude", "skills");
+    mkdirSync(join(claudeSkills, "my-own-skill"), { recursive: true });
+    writeFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "mine");
+    mkdirSync(join(claudeSkills, "cloud-alm-fit-gap"), { recursive: true });
+    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "old");
+    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "stale.md"), "old");
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
+    expect(readFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "utf8")).toContain("name: cloud-alm-fit-gap");
+    expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap", "stale.md"))).toBe(false);
+    expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report", "SKILL.md"))).toBe(true);
+    // Cursor reads Claude Code's folder: no second copy.
+    expect(existsSync(join(m.home, ".cursor", "skills"))).toBe(false);
+    expect(t.all()).toContain(`✓ Skills         9 installed in ${claudeSkills} (Claude Code, Cursor)`);
+    expect(t.all()).toContain(`9 installed in ${join(m.home, ".agents", "skills")} (Codex)`);
+
+    const u = io();
+    u.io.setup = m.setup;
+    expect(await runCommand(u.io, ["uninstall"])).toBe(0);
+    expect(u.all()).toContain(`9 removed from ${claudeSkills}`);
+    expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap"))).toBe(false);
+    expect(readFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine");
+    expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report"))).toBe(false);
+
+    const n = io({ fetch: fakeFetch().fetcher });
+    n.io.setup = m.setup;
+    expect(await runCommand(n.io, ["setup", keyFile(), "--no-skills"])).toBe(0);
+    expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap"))).toBe(false);
+    expect(n.all()).not.toContain("Skills");
   });
 
   test("--no-input and a named file ask nothing, even at a terminal", async () => {

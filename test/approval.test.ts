@@ -361,6 +361,60 @@ test("a proposal carries the change field by field for the card", async () => {
   expect((r.meta?.[META_KEY] as { change?: unknown }).change).toEqual(change);
 });
 
+test("once a card that can approve is on screen, a yes passed on in the chat is refused", async () => {
+  const { call, posts } = await connect("ui", { approval: "prefer" });
+  const r = await call("calm_create_task", NEW_DEFECT);
+  const a = r.meta?.[META_KEY] as { id: string; nonce: string };
+  // A card whose host dropped the nonce cannot approve by it: the chat stays open.
+  await call("calm_approval_status", { id: a.id });
+  await call("calm_approval_status", { id: a.id, nonce: "A".repeat(22) });
+  expect(statusOf(a.id, "local").status).toBe("pending");
+  // The real card says it is there.
+  expect((await call("calm_approval_status", { id: a.id, nonce: a.nonce })).text).toBe("pending");
+  const byAgent = await call("calm_confirm", { id: a.id, tool: "calm_create_task" });
+  expect(byAgent.error).toBe(true);
+  expect(byAgent.text).toContain("can only be approved in the approval card");
+  expect(byAgent.text).toContain("Do not confirm it for them");
+  expect(posts.length).toBe(0);
+  // The refusal used nothing up: the card still approves.
+  expect((await call("calm_approve", { id: a.id, nonce: a.nonce, decision: "approve" })).error).toBe(false);
+  expect(posts.length).toBe(1);
+
+  const other = await call("calm_create_task", { ...NEW_DEFECT, title: "No card here" });
+  const b = other.meta?.[META_KEY] as { id: string };
+  expect(other.text).toContain("do not call calm_confirm (it is refused once the card is on their screen)");
+  expect((await call("calm_confirm", { id: b.id, tool: "calm_create_task" })).error).toBe(false);
+});
+
+test("link, tag, test case, feature and document carry their change for the card; a dry run does too, without ids", async () => {
+  const { call } = await connect("ui", { approval: "prefer" });
+  type Shown = { kind: string; items: { id?: string; type?: string; title?: string; note?: string; fields?: { field: string; before?: string; after?: string }[] }[]; warnings?: string[] };
+  const proposed = async (name: string, args: Record<string, unknown>) =>
+    ((await call(name, args)).meta?.[META_KEY] as { change?: Shown } | undefined)?.change;
+  const tag = await proposed("calm_tag", { tasks: ["3-1"], add: ["Review"] });
+  expect(tag?.items[0]?.fields?.[0]).toMatchObject({ field: "Tags" });
+  expect(tag?.items[0]?.fields?.[0]?.after).toContain("Review");
+  const feature = await proposed("calm_create_feature", { title: "Credit limit release", tasks: ["3-1"] });
+  expect(feature).toMatchObject({ kind: "create", items: [{ type: "feature", title: "Credit limit release" }] });
+  expect(feature?.warnings?.[0]).toBe("A feature cannot be deleted once it is created");
+  expect(JSON.stringify(feature)).not.toContain("3-1");
+  const document = await proposed("calm_create_document", { title: "Workshop minutes", content: "Decisions of the day.", tasks: ["3-1"] });
+  expect(document?.items[0]?.fields?.map((f) => f.field)).toEqual(["Type", "Status", "Priority", "Linked to", "Content"]);
+
+  const dry = (await call("calm_tag", { tasks: ["3-1"], add: ["Review"], dryRun: true })) as unknown as { structured?: { change?: Shown }; meta?: Record<string, unknown> };
+  expect(dry.structured?.change?.items[0]?.fields?.[0]?.field).toBe("Tags");
+  expect(dry.meta?.[META_KEY]).toBeUndefined();
+  const dryDelete = (await call("calm_delete", { ids: ["3-3"], dryRun: true })) as unknown as { structured?: { change?: Shown } };
+  expect(dryDelete.structured?.change?.items[0]?.note ?? "").not.toMatch(/\b3-3\b/);
+});
+
+test("the card draws a dry run as a preview, field by field", () => {
+  const html = cardHtml();
+  expect(html).toContain("A preview only. Nothing was sent to Cloud ALM.");
+  expect(html).toContain("Nothing sent");
+  expect(CARD_URI).toBe("ui://cloud-alm/approve-v3.html");
+});
+
 test("calm_overview carries the overview card", async () => {
   const { client } = await connect("ui", { approval: "prefer" });
   const tool = (await client.listTools()).tools.find((t) => t.name === "calm_overview");

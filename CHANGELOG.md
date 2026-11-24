@@ -6,6 +6,13 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-24
+
+- The nine skills are rewritten to lead with SAP domain knowledge, researched from SAP Activate, SAP Learning, SAP's Cloud ALM pages and practitioner sources: how a senior consultant challenges a gap and rates it against clean core, runs a fit-to-standard workshop, sorts notes into the right Cloud ALM objects, designs and judges tests, routes a defect by root cause, and rates a project red, amber or green. Where practice differs between projects, the skill says so and follows the project's convention.
+- Once the approval card is on the user's screen, only the card approves: `calm_confirm` is refused, so an assistant cannot pass on a "yes" the user did not give. Approval in the chat remains for apps that show no card or a card without buttons.
+- Every write tool shows its change in the card field by field: link, tag, create test case, create feature and create document no longer fall back to raw text. A dry run draws the same view as a preview, marked "Nothing sent".
+- The card has a new address (`approve-v3`), so apps that kept an older card load the current one.
+- `setup` installs the nine skills where Claude Code, Codex and Cursor read them, so the assistant uses a workflow on its own when a request matches; the wizard asks first, `--no-skills` skips it, and `uninstall` takes them out again.
 - Agent reports are on by default for local installations: when the assistant runs into a tool problem it can send Didro a short report (tool name, outcome, one or two generic sentences; no records, credentials or chat text). Turn them off with `cloud-alm-mcp-server feedback off` or `CALM_FEEDBACK=off`; `doctor` and `setup` say which it is. `CALM_FEEDBACK_URL` still sends them to a receiver of your own. See PRIVACY.md.
 - The hosted connector takes these reports at `/feedback`, without a credential, and passes well-formed ones to Didro's inbox.
 

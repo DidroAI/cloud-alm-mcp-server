@@ -24,7 +24,8 @@ import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 export type ApprovalMode = "off" | "prefer" | "required";
 export const APPROVAL_MODES: ApprovalMode[] = ["off", "prefer", "required"];
 
-export const CARD_URI = "ui://cloud-alm/approve-v2.html";
+/** Hosts keep a card by its address: give it a new one whenever the card changes. */
+export const CARD_URI = "ui://cloud-alm/approve-v3.html";
 export const META_KEY = "cloud-alm/approval";
 /** Long enough for a user who answers a turn later; still single-use and bound to one change. */
 export const TTL_MS = 60 * 60_000;
@@ -127,7 +128,7 @@ export function take(
   if (tool !== undefined && tool !== p.tool)
     throw new ApprovalError(`This approval is for ${p.tool}, not ${tool}; nothing was written.`);
   if (nonce === undefined && !p.allowChat)
-    throw new ApprovalError("This change can only be approved in the approval card; nothing was written.");
+    throw new ApprovalError("This change can only be approved in the approval card; nothing was written. The card is on the user's screen: they approve or reject it there. Do not confirm it for them.");
   if (nonce !== undefined) {
     const given = Buffer.from(nonce, "base64url");
     if (given.length !== p.nonce.length || !timingSafeEqual(given, p.nonce))
@@ -142,6 +143,18 @@ export function take(
   }
   decided.set(id, { subject, expiresAt: p.expiresAt, status: "working" });
   return p;
+}
+
+/**
+ * A card that can approve is on the user's screen (it proved so with the
+ * nonce only it holds): from now on only that card decides, and a yes
+ * passed on by the agent in the chat is refused.
+ */
+export function cardShown(id: string, subject: string, nonce: string, now = Date.now()) {
+  const p = pending.get(id);
+  if (!p || p.subject !== subject || p.expiresAt <= now) return;
+  const given = Buffer.from(nonce, "base64url");
+  if (given.length === p.nonce.length && timingSafeEqual(given, p.nonce)) p.allowChat = false;
 }
 
 /** What came of a taken proposal. */

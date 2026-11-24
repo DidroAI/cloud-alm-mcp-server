@@ -26,6 +26,7 @@ import {
   textToHtml,
   type WriteOptions,
   type Change,
+  changeItem,
 } from "./items.js";
 import { short, statusLabel, typeLabel } from "./text.js";
 
@@ -132,8 +133,28 @@ export async function createTestCase(
     "test cases cannot be tagged through the API; deleting one needs the key's calm-api.testcases.delete scope",
   ];
   o.reviewPlan?.({ body, covered: covered.map(t => t.id), plan, notes });
-  if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\n${outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline}\nNote: ${notes.join("; ")}.`;
+  if (dry(o, input.dryRun)) {
+    const shown = outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline;
+    const warnings = [
+      ...covered.flatMap((t) => (allCases.some((c) => c.taskIds.includes(t.id)) ? [`${named(t)} already has a test case: check this one adds a case they do not cover`] : [])),
+      ...(near.length ? ["Test cases with a similar title exist"] : []),
+    ];
+    const change: Change = {
+      kind: "create",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{
+        type: "test case", title: body.title, op: "create",
+        fields: [
+          { field: "Scope", after: scopeName },
+          { field: "Priority", after: PRIORITY_NAMES[body.priorityCode] ?? String(body.priorityCode) },
+          ...(covered.length ? [{ field: "Covers", after: covered.map(named).join("\n") }] : []),
+          { field: "Steps", after: shown },
+        ],
+      }],
+      ...(warnings.length ? { warnings } : {}),
+    };
+    return { text: `${dryNote(o)} Would create ${plan}.\n${shown}\nNote: ${notes.join("; ")}.`, data: { change } };
+  }
   const created = (await writer.post("calm-testmanagement/v1/ManualTestCases", body)) as {
     uuid?: string;
     displayId?: string;
@@ -168,6 +189,9 @@ export async function createTestCase(
 // ---------------------------------------------------------------------------
 
 /** What one `calm_link` call will do, before it does it. */
+/** A task as people name it: its kind and title, no id. */
+const named = (t: TaskSummary) => `${typeLabel(t.type)} "${short(t.title, 70)}"`;
+
 type LinkPlan = {
   /** "test case 8-1-2", "requirement 3-1"… */
   name: string;
@@ -211,8 +235,18 @@ export async function link(
   const notes = plan.notes.length ? ` Note: ${plan.notes.join("; ")}.` : "";
   o.reviewPlan?.({ project: snap.project.id, source: source.id, verb, tasks: tasks.map(t => ({ id: t.id, title: t.title })),
     todo: plan.todo.map(t => t.id), title: plan.title, notes: plan.notes, skipped: plan.skipped });
-  if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would ${verb} ${plan.name} "${short(plan.title, 70)}" ${prep} ${plan.todo.map(label).join("; ")}.${skippedNote}${notes}`;
+  if (dry(o, input.dryRun)) {
+    const change: Change = {
+      kind: "update",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{
+        ...changeItem(source), op: "update",
+        fields: [{ field: unlink ? "Remove the link to" : "Link to", after: plan.todo.map(named).join("\n") }],
+      }],
+      ...(plan.notes.length ? { warnings: plan.notes } : {}),
+    };
+    return { text: `${dryNote(o)} Would ${verb} ${plan.name} "${short(plan.title, 70)}" ${prep} ${plan.todo.map(label).join("; ")}.${skippedNote}${notes}`, data: { change } };
+  }
   const done: string[] = [];
   const failed: string[] = [];
   for (const t of plan.todo) {
@@ -440,6 +474,17 @@ export async function tag(
     );
   }
   if (lines.every((l) => / no change \(/.test(l))) return `${NOTHING_TO_DO} ${lines.join("; ")}.`;
+  if (dry(o, input.dryRun)) {
+    const change: Change = {
+      kind: "update",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: plans.filter((p) => !p.same).map((p) => ({
+        id: p.task.displayId, type: typeLabel(p.task.type), title: p.task.title, op: "update" as const,
+        fields: [{ field: "Tags", before: p.before.join(", ") || "none", after: p.target.join(", ") || "none" }],
+      })),
+    };
+    return { text: lines.join("\n"), data: { change } };
+  }
   return lines.join("\n");
 }
 

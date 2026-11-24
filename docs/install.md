@@ -16,7 +16,7 @@ in SAP BTP, downloaded as a JSON file.
 npx -y cloud-alm-mcp-server setup
 ```
 
-In a terminal, setup asks two questions:
+In a terminal, setup asks three questions:
 
 1. **Which service key?** Choose the key file (type its path or drag it into
    the window), paste the key (it is not shown), use a key found in
@@ -24,6 +24,11 @@ In a terminal, setup asks two questions:
    have a key yet" says how to get one.
 2. **Which apps?** Claude Code, Codex, Claude Desktop and Cursor, the ones
    installed, all ticked.
+3. **The skills too?** The nine workflows of `skills/` (fit-gap, workshop
+   preparation, status report, test readiness…), copied to where Claude Code
+   (`~/.claude/skills`), Codex (`~/.agents/skills`) and Cursor read them, so
+   the assistant uses one on its own when a request matches. Claude Desktop
+   reads no skills from disk: there they are the server's prompts.
 
 Between the two it checks the key against SAP and saves it readable only by
 you; at the end it says what to restart. Needs
@@ -31,8 +36,9 @@ you; at the end it says what to restart. Needs
 
 Run by an AI agent, in CI, through a pipe or with `--no-input`, setup asks
 nothing: it takes the newest key in `~/Downloads` from the last week, then the
-key saved before, and adds the server to every app installed. `setup <file>`
-and `--client <list>` answer the two questions up front.
+key saved before, adds the server to every app installed and installs the
+skills. `setup <file>`, `--client <list>` and `--no-skills` answer the
+questions up front. `uninstall` takes the skills out again.
 
 ```sh
 npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API

@@ -796,8 +796,28 @@ export async function createFeature(
     ...(similar.length ? [`similar features exist: ${similar.join("; ")}`] : []),
   ];
   o.reviewPlan?.({ body, tasks: tasks.map(t => t.id), plan, notes });
-  if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\nNote: ${notes.join("; ")}.`;
+  if (dry(o, input.dryRun)) {
+    const description = input.description?.trim();
+    const change: Change = {
+      kind: "create",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{
+        type: "feature", title, op: "create",
+        fields: [
+          { field: "Status", after: featureStatus(statusCode) },
+          { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
+          ...(tasks.length ? [{ field: "Delivers", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
+          ...(description ? [{ field: "Description", after: description.length > 600 ? `${description.slice(0, 600)} …` : description }] : []),
+        ],
+      }],
+      warnings: [
+        "A feature cannot be deleted once it is created",
+        ...(already.length ? ["A linked item is already delivered by another feature: check this is not the same delivery"] : []),
+        ...(similar.length ? ["Features with a similar title exist"] : []),
+      ],
+    };
+    return { text: `${dryNote(o)} Would create ${plan}.\nNote: ${notes.join("; ")}.`, data: { change } };
+  }
   const created = (await needing("features.write", () => writer.post(PATHS.features, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
   if (!id)
@@ -884,8 +904,25 @@ export async function createDocument(
   };
   const plan = `document "${title}" (${typeCode ? DOCUMENT_TYPES[typeCode] : "default type"}, ${DOCUMENT_STATUS_NAME[status]}, priority ${priorityText(body.priorityCode)}, ${input.content.trim().length} characters of content: "${short(input.content, 120)}")${tasks.length ? ` linked to ${tasks.map(label).join("; ")}` : ""}`;
   o.reviewPlan?.({ body, plan });
-  if (dry(o, input.dryRun))
-    return `${dryNote(o)} Would create ${plan}.\nNote: after create, Cloud ALM's API cannot change a document's title, content, status, priority or type; deleting it needs calm-api.documents.delete.`;
+  if (dry(o, input.dryRun)) {
+    const text = input.content.trim();
+    const change: Change = {
+      kind: "create",
+      project: { id: snap.project.id, name: snap.project.name },
+      items: [{
+        type: "document", title, op: "create",
+        fields: [
+          { field: "Type", after: typeCode ? (DOCUMENT_TYPES[typeCode] ?? typeCode) : "Default type" },
+          { field: "Status", after: DOCUMENT_STATUS_NAME[status] ?? String(status) },
+          { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
+          ...(tasks.length ? [{ field: "Linked to", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
+          { field: "Content", after: text.length > 600 ? `${text.slice(0, 600)} …` : text },
+        ],
+      }],
+      warnings: ["After it is created, a document's title, content, status, priority and type cannot be changed from here"],
+    };
+    return { text: `${dryNote(o)} Would create ${plan}.\nNote: after create, Cloud ALM's API cannot change a document's title, content, status, priority or type; deleting it needs calm-api.documents.delete.`, data: { change } };
+  }
   const created = (await needing("documents.write", () => writer.post(PATHS.documents, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
   if (!id)

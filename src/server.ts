@@ -26,8 +26,7 @@ import {
   propose,
   settle,
   statusOf,
-  take,
-} from "./approval.js";
+  take, cardShown } from "./approval.js";
 import { z } from "zod";
 import type { CloudAlmWriter } from "./calm/writer.js";
 import {
@@ -67,7 +66,7 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.3.0";
+export const SERVER_VERSION = "0.3.1";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
@@ -216,6 +215,19 @@ export function createServer(
   const writes = new Map<string, WriteCall>();
 
   type Extra = ServerContext;
+  /** A change as people read it: an item is named by its kind and title, not its id ("3-14 user story" → "user story"). */
+  const forPeople = (change: Record<string, unknown> | undefined) => {
+    const items = ((change?.items ?? []) as { id?: string | null; type?: string; note?: string }[]);
+    const plain = (s: string) => items.reduce((t, i) => (i.id && i.type ? t.split(`${i.id} ${i.type} `).join(`${i.type} `) : t), s);
+    const shown = change ? { ...change, items: items.map(i => (typeof i.note === "string" ? { ...i, note: plain(i.note) } : i)) } : change;
+    return { items, plain, shown };
+  };
+  /** A dry run's answer, with the change for the card in plain words too. */
+  const dryRun = async (run: () => Promise<Out>): Promise<CallToolResult> => {
+    const result = await answer(run);
+    const content = result.structuredContent as { change?: Record<string, unknown> } | undefined;
+    return content?.change ? { ...result, structuredContent: { ...content, change: forPeople(content.change).shown } } : result;
+  };
   const gated = async (
     name: string,
     title: string,
@@ -231,10 +243,7 @@ export function createServer(
     const raw = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
     // The same plan as data, for the card's field-by-field view.
     const change = (preview.structuredContent as { change?: Record<string, unknown> } | undefined)?.change;
-    const items = ((change?.items ?? []) as { id?: string | null; type?: string; note?: string }[]);
-    // For people: an item is named by its kind and title, not its id ("3-14 user story" → "user story").
-    const plain = (s: string) => items.reduce((t, i) => (i.id && i.type ? t.split(`${i.id} ${i.type} `).join(`${i.type} `) : t), s);
-    const shown = change ? { ...change, items: items.map(i => (typeof i.note === "string" ? { ...i, note: plain(i.note) } : i)) } : change;
+    const { items, plain, shown } = forPeople(change);
     // One item: name its kind ("Change user story", "Delete defect").
     if (items.length === 1 && items[0]?.id && (change?.kind === "update" || change?.kind === "delete") && name !== "calm_comment")
       title = `${name === "calm_delete" ? (args.soft === true ? "Mark obsolete:" : "Delete") : "Change"} ${items[0].type ?? "item"}`;
@@ -251,7 +260,7 @@ export function createServer(
     const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
-        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change in plain words (items by title and kind; no ids, tool names or field keys) and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" and tool "${name}" (valid ${ttl}). Do not call ${name} again for this change.`
+        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one: then say only that it waits for them there, and do not call calm_confirm (it is refused once the card is on their screen). Without a card, they approve by saying yes in the chat: show them this change in plain words (items by title and kind; no ids, tool names or field keys) and ask. Only after their yes to this exact change, in a later message of theirs, call calm_confirm with id "${p.id}" and tool "${name}" (valid ${ttl}). Do not call ${name} again for this change.`
         : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid ${ttl}); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
     return {
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
@@ -298,7 +307,7 @@ export function createServer(
         name,
         { ...config, _meta: { ui: { resourceUri: CARD_URI } } },
         ((args: Record<string, unknown>, extra: Extra) =>
-          args.dryRun === true ? answer(() => runAny(args)) : gated(name, title, args, runAny, extra)) as never,
+          args.dryRun === true ? dryRun(() => runAny(args)) : gated(name, title, args, runAny, extra)) as never,
       );
       return;
     }
@@ -737,11 +746,16 @@ export function createServer(
       {
         title: "Approval status (approval card only)",
         description: "For the approval card only. Whether a proposed change is still pending, or how it ended.",
-        inputSchema: { id: z.string().regex(/^[0-9a-f]{12}$/) } as never,
+        inputSchema: {
+          id: z.string().regex(/^[0-9a-f]{12}$/),
+          // A card that holds the nonce can approve: the chat no longer can.
+          nonce: z.string().min(16).max(64).optional(),
+        } as never,
         annotations: { ...READ_ONLY, title: "Approval status" },
         _meta: { ui: { resourceUri: CARD_URI, visibility: ["app"] } },
       },
-      ((a: { id: string }) => {
+      ((a: { id: string; nonce?: string }) => {
+        if (a.nonce) cardShown(a.id, subject, a.nonce);
         const s = statusOf(a.id, subject);
         return { structuredContent: s, content: [{ type: "text", text: s.status }] };
       }) as never,

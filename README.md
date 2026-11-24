@@ -154,8 +154,9 @@ prompt or slash-command menu):
 | `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
 | `cloud-alm-test-design` | test cases for what is untested |
 
-For Claude Code, copy a skill's folder to `~/.claude/skills/`; for other
-agents, use the prompts or point the agent to the SKILL.md.
+`setup` installs them for Claude Code, Codex and Cursor (skip with
+`--no-skills`); in other apps, use the prompts or point the agent to the
+SKILL.md.
 
 ## Approving changes
 
