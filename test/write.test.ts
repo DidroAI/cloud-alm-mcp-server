@@ -34,8 +34,8 @@ async function connect(options: ServerOptions = { writeMode: "on" }, forbid: str
   const client = new Client({ name: "test", version: "0" });
   await client.connect(clientSide);
   const call = async (name: string, args: Record<string, unknown>) => {
-    const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[] };
-    return { error: !!r.isError, text: r.content[0]?.text ?? "" };
+    const r = (await client.callTool({ name, arguments: args })) as { isError?: boolean; content: { text: string }[]; structuredContent?: Record<string, unknown> };
+    return { error: !!r.isError, text: r.content[0]?.text ?? "", structured: r.structuredContent };
   };
   return { client, call, posts: fake.posts, writes: fake.writes };
 }
@@ -179,6 +179,15 @@ describe("calm_link", () => {
     const r = await call("calm_link", { from: "7-1", tasks: ["3-2"], dryRun: true });
     expect(r.text).toBe('Dry run, nothing sent. Would link document 7-1 "Credit design" to 3-2 user story "Release blocked orders from a worklist".');
     expect(writes).toEqual([]);
+    // The same for the card, in people's words: kinds and titles, no ids.
+    expect(r.structured?.change).toMatchObject({
+      kind: "update",
+      items: [{ type: "document", title: "Credit design", fields: [{ field: "Link to", after: 'user story "Release blocked orders from a worklist"' }] }],
+    });
+    const tc = await call("calm_create_test_case", { ...testCase, dryRun: true });
+    const fields = (tc.structured?.change as { items: { type: string; fields: { field: string; after: string }[] }[] }).items[0]?.fields ?? [];
+    expect(fields.map((f) => f.field)).toContain("Steps");
+    expect(fields.find((f) => f.field === "Steps")?.after).toContain(testCase.activities[0]?.steps[0]?.expected ?? "?");
   });
 
   test("a document is linked through the Tasks API and unlinked by its assignment id", async () => {

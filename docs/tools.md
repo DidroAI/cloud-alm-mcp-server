@@ -123,7 +123,7 @@ says it supports, and the user approves it in one of these ways:
 | Where | How | Clients (Nov 2026) |
 | --- | --- | --- |
 | the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, VS Code, Goose |
-| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name | every client |
+| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name. Refused once a card with working buttons is on the user's screen: then only the card approves | clients without the card, or with a card without buttons |
 
 A card drawn again (a reload, another device) asks `calm_approval_status`,
 also visible to the card only, how its change ended, and shows that

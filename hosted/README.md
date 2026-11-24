@@ -8,4 +8,4 @@ The browser uploads the service key directly to the consent endpoint. The server
 
 Registration is limited to ChatGPT and Claude browser callbacks. Register dynamically in the client. Tenant reads require the user's authorization. MCP initialization, the tool catalog and public UI resources are available during connector creation.
 
-Didro’s hosted service uses https://calm.didro.ai/mcp. Set the deployment secret DIDRO_HOSTED_FEEDBACK_TOKEN to enable its authenticated feedback tool and consent disclosure. The credential is issued for the private Didro feedback receiver.
+Didro’s hosted service uses https://calm.didro.ai/mcp. Set the deployment secret DIDRO_HOSTED_FEEDBACK_TOKEN to enable its authenticated feedback tool and consent disclosure. The credential is issued for the private Didro feedback receiver. With the same secret set, `/feedback` is the public inbox for local installations: it takes a well-formed report without a credential, limits each sender and each instance per hour, and passes the report to the receiver with the secret.

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { createHttpHandler } from "cloud-alm-mcp-server";
 import { digest, open } from "../lib/crypto.mjs";
+import { createFeedbackIntake } from "../lib/feedback.mjs";
 import { limited, json } from "../lib/http.mjs";
 import { metadata, oauth } from "../lib/oauth.mjs";
 
@@ -43,6 +44,7 @@ const publicMethods = new Set([
 const schemes = [{ type: "oauth2", scopes: ["calm.read"] }];
 
 export function createGateway({ origin, sql, exchange, reader }) {
+  const feedback = createFeedbackIntake({ token: process.env.DIDRO_HOSTED_FEEDBACK_TOKEN });
   const live = createHttpHandler({ server, reader });
   const challenge = `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp", scope="calm.read"`;
   async function mcp(req) {
@@ -130,6 +132,7 @@ export function createGateway({ origin, sql, exchange, reader }) {
       const doc = metadata(origin, url.pathname);
       if (doc && req.method === "GET") return json(doc);
       if (url.pathname === "/mcp") return await mcp(req);
+      if (url.pathname === "/feedback") return await feedback(req);
       if (url.pathname.startsWith("/oauth/"))
         return await oauth(req, url, origin, sql, exchange);
       return json({ error: "not_found" }, 404);

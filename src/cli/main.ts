@@ -15,8 +15,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
 import { type Check, keyChecks, MIN_NODE, nodeCheck } from "./checks.js";
 import { cliCommand, clientSnippets, PACKAGE_NAME, packageSpec, version } from "./clients.js";
+import { FEEDBACK_ENV, localFeedback, setLocalFeedback } from "../feedback.js";
 import {
   CONFIG_DIR_ENV,
+  configDir,
   expandHome,
   keySecrets,
   keySource,
@@ -35,7 +37,11 @@ import {
   defaultSetupEnv,
   detectClients,
   findDownloadedKey,
+  installSkills,
   parseClients,
+  removeSkills,
+  skillNames,
+  skillsDirs,
   type SetupEnv,
   unconfigureClient,
 } from "./setup.js";
@@ -75,10 +81,15 @@ Usage:
       --client <list>              Only these: claude-code,codex,claude-desktop,
                                    cursor, all or none
       --no-input                   Ask nothing (agents and scripts)
+      --no-skills                  Do not install the skills (fit-gap, status
+                                   report…) for Claude Code, Codex and Cursor
   ${PACKAGE_NAME} init [file|-]    Check a service key, save it, print client config
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
   ${PACKAGE_NAME} doctor           Check the setup: key, token, scopes, API, Node
+  ${PACKAGE_NAME} feedback [on|off]  Short reports from your assistant to Didro about
+                                   tool problems (no records, no chat text):
+                                   say whether they are on, or switch them
   ${PACKAGE_NAME} uninstall        Remove the server from the clients setup knows
                                    (each changed file is kept as .bak)
       --key                        Also delete the saved service key
@@ -100,6 +111,7 @@ by you, at:
 Environment:
   ${SERVICE_KEY_ENV}   the service key: a file path or the JSON itself
                      (default: the key saved by init)
+  ${FEEDBACK_ENV}=off  no reports about tool problems from this client
   PORT, HOST         http mode: where to listen (default 127.0.0.1:3333)
   CALM_API_URL       http mode: API address when no X-Calm-Api-Url header
 
@@ -149,10 +161,10 @@ export function writeSecretFile(path: string, text: string) {
   renameSync(tmp, path);
 }
 
-type Flags = { positional: string[]; force: boolean; skipCheck: boolean; key: boolean; noInput: boolean; clients?: Client[] };
+type Flags = { positional: string[]; force: boolean; skipCheck: boolean; key: boolean; noInput: boolean; noSkills: boolean; clients?: Client[] };
 
 function parseFlags(args: string[], command = "init"): Flags {
-  const flags: Flags = { positional: [], force: false, skipCheck: false, key: false, noInput: false };
+  const flags: Flags = { positional: [], force: false, skipCheck: false, key: false, noInput: false, noSkills: false };
   const takesClients = command === "setup" || command === "uninstall";
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
@@ -160,6 +172,7 @@ function parseFlags(args: string[], command = "init"): Flags {
     else if (command !== "uninstall" && arg === "--force") flags.force = true;
     else if (command !== "uninstall" && arg === "--skip-check") flags.skipCheck = true;
     else if (command === "setup" && arg === "--no-input") flags.noInput = true;
+    else if (command === "setup" && arg === "--no-skills") flags.noSkills = true;
     else if (takesClients && (arg === "--client" || arg.startsWith("--client="))) {
       const value = arg.includes("=") ? arg.slice(9) : args[++i];
       if (!value) throw new UsageError("--client needs a value.");
@@ -361,6 +374,21 @@ async function askForKey(io: Io, e: SetupEnv, p: Prompts): Promise<KeyInput | un
   }
 }
 
+/**
+ * Install the skills for the apps that read skills from disk; one line per
+ * folder for the report. Nothing when no such app was set up.
+ */
+function addSkills(clients: Client[], e: SetupEnv): string[] {
+  return skillsDirs(clients, e).map(({ dir, clients: readers }) => {
+    const who = readers.map((c) => LABEL[c]).join(", ");
+    try {
+      return `${MARK.ok} ${"Skills".padEnd(14)} ${installSkills(dir)} installed in ${dir} (${who})`;
+    } catch (error) {
+      return `${MARK.warn} ${"Skills".padEnd(14)} not installed in ${dir}: ${(error as Error).message}`;
+    }
+  });
+}
+
 /** What to do in each app before the server shows up. */
 const RESTART: Record<Client, string> = {
   "claude-desktop": "Quit Claude Desktop fully and open it again.",
@@ -438,6 +466,18 @@ async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<nu
     }
     clients = picked;
   }
+  let withSkills = !flags.noSkills && skillsDirs(clients, e).length > 0;
+  if (withSkills) {
+    const yes = await p.select(`Also install the ${skillNames().length} Cloud ALM skills (fit-gap, workshop preparation, status report, test readiness…)?`, [
+      { value: true, label: "Yes", hint: "your assistant uses them on its own when a request matches" },
+      { value: false, label: "No" },
+    ]);
+    if (yes === undefined) {
+      p.cancel("Setup cancelled. The key is saved; no app was changed.");
+      return 1;
+    }
+    withSkills = yes;
+  }
 
   const snippets = clientSnippets(target, e.platform, spec);
   const byHand = (wanted: string[]) =>
@@ -455,6 +495,7 @@ async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<nu
       (r.ok ? done : failed).push(client);
     }
     const missing = CLIENTS.filter((c) => !detected.includes(c)).map((c) => LABEL[c]);
+    if (withSkills) results.push(...addSkills(done, e));
     if (missing.length && !flags.clients) results.push(`Not found on this computer: ${missing.join(", ")}.`);
     p.info(results.join("\n"));
     if (failed.length) p.note(byHand(failed.map((c) => LABEL[c])), "Add these by hand");
@@ -471,6 +512,12 @@ async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<nu
     next.push(`You can now delete ${input.file}: the key is saved, readable only by you.`);
   next.push(`Check the setup any time with: ${cli(io)} doctor`);
   p.note(next.join("\n"), "Next");
+  const reports = localFeedback(io.env, configDir(io.env, e.platform));
+  if (reports.on)
+    p.info(
+      "Your assistant can send Didro short reports about tool problems.\n" +
+        `They hold no records, credentials or chat text. Turn them off with: ${cli(io)} feedback off`,
+    );
   p.outro(failed.length ? "Finished, with apps to add by hand." : done.length ? "Cloud ALM is ready." : "The key is saved.");
   return failed.length ? 1 : 0;
 }
@@ -555,15 +602,18 @@ async function setup(io: Io, args: string[]): Promise<number> {
   io.out("\nMCP clients:");
   const snippets = clientSnippets(target, e.platform, spec);
   let failures = 0;
+  const configured: Client[] = [];
   for (const client of clients) {
     const r = await configureClient(client, e, target, spec, writeConfigFile);
     io.out(`${r.ok ? MARK.ok : MARK.fail} ${r.label.padEnd(14)} ${r.detail}`);
+    if (r.ok) configured.push(client);
     if (!r.ok) {
       failures++;
       const s = snippets.find((x) => x.client === LABEL[client]);
       if (s) io.out(`  Add it by hand (${s.where}):\n${s.text.replace(/^/gm, "    ")}`);
     }
   }
+  if (!flags.noSkills) for (const line of addSkills(configured, e)) io.out(line);
   const missing = CLIENTS.filter((c) => !clients.includes(c)).map((c) => LABEL[c]);
   if (missing.length && !flags.clients)
     io.out(`  Not found: ${missing.join(", ")}. Run \`${cli(io)} init\` to print their configuration.`);
@@ -575,6 +625,7 @@ async function setup(io: Io, args: string[]): Promise<number> {
   else if (!savedKey.projectsReadable && !flags.skipCheck)
     io.out("Project access was refused. Use the Cloud ALM tools permitted by your service key.");
   io.out(`Check the setup any time with: ${cli(io)} doctor`);
+  io.out(`Reports about tool problems: ${feedbackLine(io)}`);
   return failures ? 1 : 0;
 }
 
@@ -591,6 +642,18 @@ async function uninstall(io: Io, args: string[]): Promise<number> {
     const r = await unconfigureClient(client, e, writeConfigFile);
     io.out(`${r.ok ? MARK.ok : MARK.fail} ${r.label.padEnd(14)} ${r.detail}`);
     if (!r.ok) failures++;
+  }
+  for (const { dir } of skillsDirs(flags.clients ?? CLIENTS, e).concat(
+    // A copy made for Cursor alone, when Claude Code and Codex were not there.
+    (flags.clients ?? CLIENTS).includes("cursor") ? skillsDirs(["cursor"], e) : [],
+  )) {
+    try {
+      const removed = removeSkills(dir);
+      if (removed) io.out(`${MARK.ok} ${"Skills".padEnd(14)} ${removed} removed from ${dir}`);
+    } catch (error) {
+      io.out(`${MARK.fail} ${"Skills".padEnd(14)} not removed from ${dir}: ${(error as Error).message}`);
+      failures++;
+    }
   }
   const saved = savedKeyPath(io.env);
   if (flags.key) {
@@ -654,12 +717,32 @@ async function doctor(io: Io): Promise<number> {
       : { name: "Key", status: "ok", detail: source.label },
   );
   checks.push(...(await keyChecks(key, fetchOption(io))));
+  checks.push({ name: "Reports", status: "ok", detail: feedbackLine(io) });
   printChecks(io, checks);
   io.out(failed(checks) ? "\nSetup has problems." : "\nReady.");
   return failed(checks) ? 1 : 0;
 }
 
-export const COMMANDS = ["setup", "init", "doctor", "uninstall", "help", "--help", "-h", "--version", "-v", "version"];
+/** Whether the assistant's reports about tool problems are on, and how to switch them. */
+const feedbackLine = (io: Io) => {
+  const { on, detail } = localFeedback(io.env, configDir(io.env, io.platform ?? process.platform));
+  return `${detail}; turn ${on ? "off" : "on"} with: ${cli(io)} feedback ${on ? "off" : "on"}`;
+};
+
+function feedback(io: Io, args: string[]): number {
+  const [choice, ...more] = args;
+  if (more.length || (choice !== undefined && choice !== "on" && choice !== "off"))
+    throw new UsageError("feedback takes on or off.");
+  const dir = configDir(io.env, io.platform ?? process.platform);
+  if (choice) setLocalFeedback(choice === "on", dir);
+  const state = localFeedback(io.env, dir);
+  io.out(`Reports about tool problems: ${state.detail}.`);
+  if (choice) io.out("Start a new chat (quit and reopen Claude Desktop) for it to take effect.");
+  else io.out(`Turn them ${state.on ? "off" : "on"} with: ${cli(io)} feedback ${state.on ? "off" : "on"}`);
+  return 0;
+}
+
+export const COMMANDS = ["setup", "init", "doctor", "uninstall", "feedback", "help", "--help", "-h", "--version", "-v", "version"];
 
 /** Run a setup command; returns the exit code. Never prints a secret. */
 export async function runCommand(io: Io, argv: string[]): Promise<number> {
@@ -686,6 +769,8 @@ export async function runCommand(io: Io, argv: string[]): Promise<number> {
         return await doctor(io);
       case "uninstall":
         return await uninstall(io, rest);
+      case "feedback":
+        return feedback(io, rest);
       default:
         throw new UsageError(`Unknown command ${command}.`);
     }

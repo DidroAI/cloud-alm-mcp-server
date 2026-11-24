@@ -38,7 +38,7 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
 
 - **Your key, your machine.** The server runs on your computer with a
   service key of the *SAP Cloud ALM API* from your SAP BTP subaccount. No
-  background telemetry. By default it connects only to SAP ([PRIVACY.md](PRIVACY.md)).
+  background telemetry. It connects to SAP and, when your assistant reports a tool problem, to Didro ([PRIVACY.md](PRIVACY.md)).
 - **The key decides.** A read-only key reads. A key with write scopes also
   lets the assistant *propose* changes: create, update, comment, link, tag,
   delete. Every change waits for your approval in a card (or your "yes" in
@@ -62,9 +62,9 @@ the final selection. The assistant reads the data, then calls `calm_show`
 with selected IDs or list filters. The card fetches those records when it
 opens. For a text answer or an export, the assistant can skip that last call.
 
-### Optional agent feedback
+### Agent feedback
 
-The hosted demo lets agents report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. Local reporting is off by default. Operators can enable it for their installation with a receiver URL and token. Reports should describe tool behavior in generic terms. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
+Your assistant can report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. A report is the tool's name, the outcome and one or two generic sentences: no records, credentials or chat text ([PRIVACY.md](PRIVACY.md)). It is on by default; turn it off with `npx -y cloud-alm-mcp-server feedback off` or `CALM_FEEDBACK=off`. Operators can send the reports to a receiver of their own with `CALM_FEEDBACK_URL`. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
 
 ## Setup in 2 minutes (video)
 
@@ -154,8 +154,9 @@ prompt or slash-command menu):
 | `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
 | `cloud-alm-test-design` | test cases for what is untested |
 
-For Claude Code, copy a skill's folder to `~/.claude/skills/`; for other
-agents, use the prompts or point the agent to the SKILL.md.
+`setup` installs them for Claude Code, Codex and Cursor (skip with
+`--no-skills`); in other apps, use the prompts or point the agent to the
+SKILL.md.
 
 ## Approving changes
 

@@ -29,8 +29,9 @@ npx -y cloud-alm-mcp-server setup
 Run by an agent, `setup` asks nothing. It looks for the newest service key JSON in `~/Downloads` (downloaded
 in the last 7 days), checks it against SAP, saves it readable only by the
 user, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
-whichever are installed. It prints one line per check and per client, never
-the key.
+whichever are installed, and installs the skills (fit-gap, status report…)
+for Claude Code, Codex and Cursor. It prints one line per check and per
+client, never the key.
 
 Read the output:
 

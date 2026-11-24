@@ -356,6 +356,16 @@ app.ontoolresult = (result) => {
   if (!a) {
     const text = (result?.content ?? []).map((c) => c?.text ?? "").join(NL).trim();
     const chat = /calm_confirm/.test(text);
+    // A dry run: the same field-by-field view as a proposal, without buttons.
+    const preview = !result?.isError && result?.structuredContent?.change;
+    if (preview && renderChange(preview)) {
+      $("t").textContent = "Preview";
+      state("info", "Nothing sent");
+      renderFacts({ change: preview });
+      plainText("", false);
+      $("x").textContent = "A preview only. Nothing was sent to Cloud ALM.";
+      return;
+    }
     $("t").textContent = result?.isError ? "Not proposed" : chat ? "Approve in the chat" : "Nothing waits for approval here.";
     state(result?.isError ? "failed" : "info", chat ? "Approve in chat" : undefined);
     plainText(text, true);
@@ -397,7 +407,8 @@ async function settled(id) {
   let s;
   try {
     const r = await Promise.race([
-      app.callServerTool({ name: "calm_approval_status", arguments: { id } }),
+      // With the nonce: the server then takes approval from this card only.
+      app.callServerTool({ name: "calm_approval_status", arguments: { id, ...(pending?.id === id && pending.nonce ? { nonce: pending.nonce } : {}) } }),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
     if (r && !r.isError) s = r.structuredContent;

@@ -4,7 +4,8 @@
  * agent can run it for the user. Never prints the key's contents.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -330,3 +331,57 @@ export const defaultSetupEnv = (env: Record<string, string | undefined>): SetupE
   execPath: process.execPath,
 });
 
+/** The skills shipped with this package: `skills/<name>/SKILL.md`. */
+export const SKILLS_SOURCE = fileURLToPath(new URL("../../skills/", import.meta.url));
+
+/** The names of the skills in a folder: its subfolders that hold a SKILL.md. */
+export function skillNames(source: string = SKILLS_SOURCE): string[] {
+  try {
+    return readdirSync(source).filter((name) => existsSync(join(source, name, "SKILL.md"))).sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Where each client reads a user's skills. Cursor also reads Claude Code's
+ * and the shared `~/.agents/skills` folder, so it gets a folder of its own
+ * only when neither is written. Claude Desktop reads none from disk: there
+ * the workflows are the server's prompts.
+ */
+export function skillsDirs(clients: Client[], e: Pick<SetupEnv, "home" | "env">): { dir: string; clients: Client[] }[] {
+  const dirs: { dir: string; clients: Client[] }[] = [];
+  if (clients.includes("claude-code"))
+    dirs.push({ dir: join(e.env.CLAUDE_CONFIG_DIR || join(e.home, ".claude"), "skills"), clients: ["claude-code"] });
+  if (clients.includes("codex")) dirs.push({ dir: join(e.home, ".agents", "skills"), clients: ["codex"] });
+  if (clients.includes("cursor")) {
+    const shared = dirs[0];
+    if (shared) shared.clients.push("cursor");
+    else dirs.push({ dir: join(e.home, ".cursor", "skills"), clients: ["cursor"] });
+  }
+  return dirs;
+}
+
+/** Copy the skills into a client's folder, replacing copies from an earlier version. */
+export function installSkills(dir: string, source: string = SKILLS_SOURCE): number {
+  const names = skillNames(source);
+  for (const name of names) {
+    const target = join(dir, name);
+    rmSync(target, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    cpSync(join(source, name), target, { recursive: true });
+  }
+  return names.length;
+}
+
+/** Take this package's skills out of a folder; other skills there are left alone. */
+export function removeSkills(dir: string, source: string = SKILLS_SOURCE): number {
+  let removed = 0;
+  for (const name of skillNames(source)) {
+    const target = join(dir, name);
+    if (!existsSync(join(target, "SKILL.md"))) continue;
+    rmSync(target, { recursive: true, force: true });
+    removed++;
+  }
+  return removed;
+}
