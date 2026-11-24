@@ -6,6 +6,9 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+- Agent reports are on by default for local installations: when the assistant runs into a tool problem it can send Didro a short report (tool name, outcome, one or two generic sentences; no records, credentials or chat text). Turn them off with `cloud-alm-mcp-server feedback off` or `CALM_FEEDBACK=off`; `doctor` and `setup` say which it is. `CALM_FEEDBACK_URL` still sends them to a receiver of your own. See PRIVACY.md.
+- The hosted connector takes these reports at `/feedback`, without a credential, and passes well-formed ones to Didro's inbox.
+
 ## [0.3.0] - 2026-11-24
 
 - `setup` in a terminal is a short wizard: it asks which service key to use (a file by its path, a pasted key that is not shown, a key found in `~/Downloads`, or the one saved before) and which apps to add the server to, and ends with what to restart. A key in `~/Downloads` is offered, no longer taken unasked.

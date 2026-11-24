@@ -15,8 +15,10 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
 import { type Check, keyChecks, MIN_NODE, nodeCheck } from "./checks.js";
 import { cliCommand, clientSnippets, PACKAGE_NAME, packageSpec, version } from "./clients.js";
+import { FEEDBACK_ENV, localFeedback, setLocalFeedback } from "../feedback.js";
 import {
   CONFIG_DIR_ENV,
+  configDir,
   expandHome,
   keySecrets,
   keySource,
@@ -79,6 +81,9 @@ Usage:
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
   ${PACKAGE_NAME} doctor           Check the setup: key, token, scopes, API, Node
+  ${PACKAGE_NAME} feedback [on|off]  Short reports from your assistant to Didro about
+                                   tool problems (no records, no chat text):
+                                   say whether they are on, or switch them
   ${PACKAGE_NAME} uninstall        Remove the server from the clients setup knows
                                    (each changed file is kept as .bak)
       --key                        Also delete the saved service key
@@ -100,6 +105,7 @@ by you, at:
 Environment:
   ${SERVICE_KEY_ENV}   the service key: a file path or the JSON itself
                      (default: the key saved by init)
+  ${FEEDBACK_ENV}=off  no reports about tool problems from this client
   PORT, HOST         http mode: where to listen (default 127.0.0.1:3333)
   CALM_API_URL       http mode: API address when no X-Calm-Api-Url header
 
@@ -471,6 +477,12 @@ async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<nu
     next.push(`You can now delete ${input.file}: the key is saved, readable only by you.`);
   next.push(`Check the setup any time with: ${cli(io)} doctor`);
   p.note(next.join("\n"), "Next");
+  const reports = localFeedback(io.env, configDir(io.env, e.platform));
+  if (reports.on)
+    p.info(
+      "Your assistant can send Didro short reports about tool problems.\n" +
+        `They hold no records, credentials or chat text. Turn them off with: ${cli(io)} feedback off`,
+    );
   p.outro(failed.length ? "Finished, with apps to add by hand." : done.length ? "Cloud ALM is ready." : "The key is saved.");
   return failed.length ? 1 : 0;
 }
@@ -575,6 +587,7 @@ async function setup(io: Io, args: string[]): Promise<number> {
   else if (!savedKey.projectsReadable && !flags.skipCheck)
     io.out("Project access was refused. Use the Cloud ALM tools permitted by your service key.");
   io.out(`Check the setup any time with: ${cli(io)} doctor`);
+  io.out(`Reports about tool problems: ${feedbackLine(io)}`);
   return failures ? 1 : 0;
 }
 
@@ -654,12 +667,32 @@ async function doctor(io: Io): Promise<number> {
       : { name: "Key", status: "ok", detail: source.label },
   );
   checks.push(...(await keyChecks(key, fetchOption(io))));
+  checks.push({ name: "Reports", status: "ok", detail: feedbackLine(io) });
   printChecks(io, checks);
   io.out(failed(checks) ? "\nSetup has problems." : "\nReady.");
   return failed(checks) ? 1 : 0;
 }
 
-export const COMMANDS = ["setup", "init", "doctor", "uninstall", "help", "--help", "-h", "--version", "-v", "version"];
+/** Whether the assistant's reports about tool problems are on, and how to switch them. */
+const feedbackLine = (io: Io) => {
+  const { on, detail } = localFeedback(io.env, configDir(io.env, io.platform ?? process.platform));
+  return `${detail}; turn ${on ? "off" : "on"} with: ${cli(io)} feedback ${on ? "off" : "on"}`;
+};
+
+function feedback(io: Io, args: string[]): number {
+  const [choice, ...more] = args;
+  if (more.length || (choice !== undefined && choice !== "on" && choice !== "off"))
+    throw new UsageError("feedback takes on or off.");
+  const dir = configDir(io.env, io.platform ?? process.platform);
+  if (choice) setLocalFeedback(choice === "on", dir);
+  const state = localFeedback(io.env, dir);
+  io.out(`Reports about tool problems: ${state.detail}.`);
+  if (choice) io.out("Start a new chat (quit and reopen Claude Desktop) for it to take effect.");
+  else io.out(`Turn them ${state.on ? "off" : "on"} with: ${cli(io)} feedback ${state.on ? "off" : "on"}`);
+  return 0;
+}
+
+export const COMMANDS = ["setup", "init", "doctor", "uninstall", "feedback", "help", "--help", "-h", "--version", "-v", "version"];
 
 /** Run a setup command; returns the exit code. Never prints a secret. */
 export async function runCommand(io: Io, argv: string[]): Promise<number> {
@@ -686,6 +719,8 @@ export async function runCommand(io: Io, argv: string[]): Promise<number> {
         return await doctor(io);
       case "uninstall":
         return await uninstall(io, rest);
+      case "feedback":
+        return feedback(io, rest);
       default:
         throw new UsageError(`Unknown command ${command}.`);
     }

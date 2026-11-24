@@ -3,6 +3,7 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/mcp", "destination": "/api/connect" },
+    { "source": "/feedback", "destination": "/api/connect" },
     { "source": "/.well-known/:metadata*", "destination": "/api/connect" },
     { "source": "/oauth/:action", "destination": "/api/connect" }
   ],

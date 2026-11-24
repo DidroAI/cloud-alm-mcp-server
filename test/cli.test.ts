@@ -865,6 +865,29 @@ describe("setup", () => {
   });
 });
 
+describe("feedback", () => {
+  test("says reports are on, switches them off and on, and doctor shows it", async () => {
+    const t = io({ fetch: fakeFetch().fetcher });
+    expect(await runCommand(t.io, ["feedback"])).toBe(0);
+    expect(t.all()).toContain("Reports about tool problems: on, to Didro");
+    expect(t.all()).toContain("npx -y cloud-alm-mcp-server feedback off");
+    expect(await runCommand(t.io, ["feedback", "off"])).toBe(0);
+    expect(t.all()).toContain("Reports about tool problems: off (turned off with `feedback off`).");
+    expect(existsSync(join(dir, "config", "feedback-off"))).toBe(true);
+    await runCommand(t.io, ["init", keyFile()]);
+    t.out.length = 0;
+    expect(await runCommand(t.io, ["doctor"])).toBe(0);
+    expect(t.all()).toContain("✓ Reports off");
+    expect(await runCommand(t.io, ["feedback", "on"])).toBe(0);
+    expect(existsSync(join(dir, "config", "feedback-off"))).toBe(false);
+    expect(existsSync(savedKeyPath(t.io.env))).toBe(true);
+    expect(await runCommand(t.io, ["feedback", "maybe"])).toBe(2);
+    const env = io({ env: { CALM_FEEDBACK: "off" } });
+    await runCommand(env.io, ["feedback"]);
+    expect(env.all()).toContain("off (CALM_FEEDBACK=off)");
+  });
+});
+
 describe("setup safety", () => {
   test("a key of another tenant found in Downloads does not replace the saved one without --force", async () => {
     const home = join(dir, "home2");

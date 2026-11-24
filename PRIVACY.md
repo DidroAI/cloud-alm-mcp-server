@@ -7,23 +7,47 @@ When you connect through Didro’s hosted connector, your browser sends the serv
 ## Local installation
 
 `cloud-alm-mcp-server` runs on your computer, started by your MCP client
-(Claude Desktop, Claude Code, Codex, Cursor, VS Code, …). The default installation communicates with SAP.
+(Claude Desktop, Claude Code, Codex, Cursor, VS Code, …). It communicates
+with SAP and, for the agent reports described below, with Didro.
 
 ## What the server collects
 
-The server sends no background analytics, crash reports or update checks.
-When an operator sets `CALM_FEEDBACK_URL`, agents can report friction they
-encounter through `calm_report_feedback`. Each report includes a generated
-ID, MCP server version, tool name, outcome, a short agent-written observation
-and an optional suggestion. The operator chooses who receives these reports
-and how the receiver stores them. For a local installation, Didro receives a report only if the operator
-configures a Didro receiver.
+The server sends no background analytics, crash reports or update checks,
+and nothing is sent on its own.
 
-The tool instructs agents to describe generic behavior and checks for common
-identifiers and credentials. Free text can still include private information.
-The server does not attach SAP results, credentials, tenant details or chat
-history. It can attach a dedicated receiver token from `CALM_FEEDBACK_TOKEN`.
-Remove the receiver URL and restart the server to disable the tool.
+**Agent reports, on by default.** When your assistant runs into a problem
+with one of the server's tools (an unexpected answer, extra work, a dead
+end), it can send Didro a short report through `calm_report_feedback`, so
+the tools can be improved. A report holds:
+
+- a generated report ID and the server's version;
+- the tool's name and the outcome (blocked, recovered, or completed with
+  extra work);
+- one or two sentences written by the assistant about what the tool did,
+  and optionally a suggestion.
+
+The server attaches no SAP results, credentials, tenant address, project or
+record, user name or chat history. The tool tells the assistant to describe
+the tool's behaviour in generic words and refuses text holding web addresses,
+e-mail addresses, credentials or record IDs. The sentences are still free
+text written by an AI assistant, so they can hold private words it chose to
+write. Your MCP client shows each call of the tool like any other.
+
+Reports go to `https://calm.didro.ai/feedback`, which passes them to Didro's
+private inbox. As with any request, Didro's hosting provider sees the
+sender's IP address; it is used to limit how many reports one sender can
+post and is not stored with the report.
+
+**Turning reports off.** Run `npx -y cloud-alm-mcp-server feedback off` (for
+every client on this computer; `feedback on` turns them back on), or set
+`CALM_FEEDBACK=off` in a client's configuration. `doctor` shows which it is.
+The tool is then not offered to the assistant at all.
+
+**Another receiver.** An operator can set `CALM_FEEDBACK_URL`, and
+`CALM_FEEDBACK_TOKEN` for its credential, to send the reports to a receiver
+of their own instead of Didro. The operator then chooses who receives them
+and how they are stored. In HTTP mode reports are off unless the operator
+sets `CALM_FEEDBACK_URL`.
 
 ## Where it connects
 
@@ -35,6 +59,10 @@ By default, to the two SAP addresses named in your service key:
 - your SAP Cloud ALM API (`endpoints.Api`, for example
   `https://eu20.alm.cloud.sap/api`), to read and, with your approval, write
   Cloud ALM data.
+
+Unless agent reports are turned off, also to `https://calm.didro.ai/feedback`
+(or the receiver in `CALM_FEEDBACK_URL`), only when your assistant sends a
+report.
 
 SAP processes these requests under your organisation's agreement with SAP.
 The server refuses an API address that is not an https `*.alm.cloud.sap`

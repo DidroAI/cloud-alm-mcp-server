@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { FEEDBACK_TOOL, feedbackSinkFromEnv } from "../src/feedback.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DIDRO_FEEDBACK_URL, FEEDBACK_TOOL, feedbackSinkFromEnv, localFeedback, localFeedbackSink, setLocalFeedback } from "../src/feedback.js";
 import { createHttpHandler } from "../src/http.js";
 import { SERVER_VERSION, serverOptionsForKey } from "../src/server.js";
 import { stdioServer } from "../src/stdio.js";
@@ -24,12 +27,19 @@ test("the operator chooses the destination once", () => {
   expect(feedbackSinkFromEnv({ CALM_FEEDBACK_URL: "https://example.com/reports" })).toBeFunction();
 });
 
-test("stdio advertises friction reporting on opt-in, regardless of the SAP key's scopes", async () => {
-  for (const enabled of [false, true]) {
-    const server = await stdioServer({
-      CALM_SERVICE_KEY: key,
-      ...(enabled ? { CALM_FEEDBACK_URL: "http://127.0.0.1:4317/reports" } : {}),
-    }, { fetch: fakeCloudAlm().fetch });
+test("stdio advertises friction reporting unless it is turned off, regardless of the SAP key's scopes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "calm-feedback-"));
+  const offDir = join(dir, "off");
+  setLocalFeedback(false, offDir);
+  const cases: [Record<string, string>, boolean][] = [
+    [{ CALM_CONFIG_DIR: join(dir, "fresh") }, true],
+    [{ CALM_CONFIG_DIR: join(dir, "fresh"), CALM_FEEDBACK_URL: "http://127.0.0.1:4317/reports" }, true],
+    [{ CALM_CONFIG_DIR: join(dir, "fresh"), CALM_FEEDBACK: "off" }, false],
+    [{ CALM_CONFIG_DIR: offDir }, false],
+    [{ CALM_CONFIG_DIR: offDir, CALM_FEEDBACK_URL: "http://127.0.0.1:4317/reports" }, false],
+  ];
+  for (const [env, enabled] of cases) {
+    const server = await stdioServer({ CALM_SERVICE_KEY: key, ...env }, { fetch: fakeCloudAlm().fetch });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
     const client = new Client({ name: "test", version: "0" });
@@ -42,8 +52,40 @@ test("stdio advertises friction reporting on opt-in, regardless of the SAP key's
       await server.close();
     }
   }
+  rmSync(dir, { recursive: true, force: true });
   const writable = serverOptionsForKey({} as never, ["calm_create_task"], "legacy", async () => "receipt");
   expect(writable.tools).toContain(FEEDBACK_TOOL);
+});
+
+test("a local installation reports to Didro by default, without a credential, and can be switched", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "calm-feedback-"));
+  expect(localFeedback({}, dir)).toMatchObject({ on: true, url: DIDRO_FEEDBACK_URL });
+  expect(localFeedback({ CALM_FEEDBACK_URL: "https://example.com/r" }, dir)).toMatchObject({ on: true, url: "https://example.com/r" });
+  for (const value of ["off", "OFF", "0", "false", "no"]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(false);
+  expect(localFeedback({ CALM_FEEDBACK: "on" }, dir).on).toBe(true);
+  setLocalFeedback(false, dir);
+  expect(localFeedback({}, dir).on).toBe(false);
+  expect(localFeedbackSink({}, dir)).toBeUndefined();
+  setLocalFeedback(true, dir);
+  expect(localFeedback({}, dir).on).toBe(true);
+
+  const sent: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: URL, init: RequestInit) => {
+    sent.push({ url: String(url), headers: init.headers as Record<string, string>, body: JSON.parse(String(init.body)) });
+    return new Response(null, { status: 204 });
+  }) as never;
+  try {
+    // A token set for another receiver is not sent to Didro.
+    await localFeedbackSink({ CALM_FEEDBACK_TOKEN: "for-someone-else" }, dir)?.(
+      { tool: "calm_list", outcome: "recovered", observation: "A filter was refused once." }, "9.9.9");
+  } finally {
+    globalThis.fetch = real;
+    rmSync(dir, { recursive: true, force: true });
+  }
+  expect(sent[0]?.url).toBe(DIDRO_FEEDBACK_URL);
+  expect(sent[0]?.headers.Authorization).toBeUndefined();
+  expect(Object.keys(sent[0]?.body ?? {}).sort()).toEqual(["observation", "outcome", "reportId", "serverVersion", "tool"]);
 });
 
 test("feedback over MCP reaches the local inbox with a separate credential and no SAP fields", async () => {

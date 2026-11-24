@@ -1,4 +1,4 @@
-import { feedbackSinkFromEnv } from "./feedback.js";
+import { localFeedbackSink } from "./feedback.js";
 import { webBaseFrom, webBaseFromKey } from "./views/links.js";
 import { existsSync } from "node:fs";
 import {
@@ -9,6 +9,7 @@ import {
 import { CloudAlmWriter } from "./calm/writer.js";
 import { cliCommand, packageSpec, version } from "./cli/clients.js";
 import {
+  configDir,
   expandHome,
   keySource,
   loadServiceKey,
@@ -92,7 +93,8 @@ export function stdioFactory(
   const { reader, writer, grants } = clientsFrom(key, options);
   // Links to the Cloud ALM UI: configured, else the tenant the key opens.
   const webUrl = webBaseFrom(env.CALM_WEB_URL) ?? webBaseFromKey(key);
-  const feedback = feedbackSinkFromEnv(env);
+  // On unless the user turned it off: reports go to Didro's inbox, or the receiver named.
+  const feedback = localFeedbackSink(env, configDir(env));
   let writeTools: Promise<string[]> | undefined;
   return async () => {
     writeTools ??= grants().then((g) => writeToolsFor(tokenScopes(g.accessToken)));
