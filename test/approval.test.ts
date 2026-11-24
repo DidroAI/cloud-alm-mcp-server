@@ -312,6 +312,20 @@ describe("pending store", () => {
   });
 
 
+  test("a proposal names items by kind and title: no ids, no tenant, no parameter names", async () => {
+    const tenant = fakeWritableTenant();
+    const { call } = await connect("ui", { approval: "prefer", webUrl: "https://acme.eu10.alm.cloud.sap" }, { fetcher: tenant.fetcher, posts: [] });
+    const r = await call("calm_delete", { ids: [US2] });
+    const approval = r.structured?.approval as { title: string; preview: string; change: { tenant?: string; items: { id: string; note?: string }[]; warnings?: string[] } };
+    expect(approval.title).toBe("Delete user story");
+    const forPeople = [r.text.split("\n\n").slice(1).join("\n"), approval.preview, approval.change.items[0]?.note, ...(approval.change.warnings ?? [])].join("\n");
+    expect(forPeople).toContain("delete user story");
+    expect(forPeople).not.toMatch(/\b3-\d+\b|soft: true|alm\.cloud\.sap/);
+    expect(approval.change.tenant).toBeUndefined();
+    // The card's own data still knows which item it is.
+    expect(approval.change.items[0]?.id).toMatch(/^3-\d+$/);
+  });
+
   test("the card renders text, never HTML from the preview", () => {
     const html = cardHtml();
     expect(html).toContain('$("p").textContent = text');

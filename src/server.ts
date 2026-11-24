@@ -67,7 +67,7 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.2.1";
 
 /**
  * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
@@ -228,37 +228,37 @@ export function createServer(
     let fingerprint: string | undefined;
     const preview = await answer(() => run({ ...args, dryRun: true }, plan => { fingerprint = planFingerprint(plan); }));
     if (preview.isError) return preview;
-    const text = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
+    const raw = previewText(String((preview.content[0] as { text?: string })?.text ?? ""));
     // The same plan as data, for the card's field-by-field view.
     const change = (preview.structuredContent as { change?: Record<string, unknown> } | undefined)?.change;
-    const changeWithTenant = change && options.webUrl ? { ...change, tenant: new URL(options.webUrl).hostname } : change;
-    // One item: name it ("Change 3-14", "Delete 3-41").
-    const only = (change?.items as { id?: string | null }[] | undefined)?.length === 1 ? (change?.items as { id?: string | null }[])[0]?.id : null;
-    if (only && (change?.kind === "update" || change?.kind === "delete") && name !== "calm_comment")
-      title = `${name === "calm_delete" ? (args.soft === true ? "Mark obsolete:" : "Delete") : "Change"} ${only}`;
-    // The card names the kind of item, not its id: "Change user story".
-    const onlyType = (change?.items as { type?: string }[] | undefined)?.[0]?.type;
-    const cardTitle = title.endsWith(` ${only}`) ? `${title.slice(0, -String(only).length - 1).replace(/:$/, "")} ${onlyType ?? "item"}` : title;
+    const items = ((change?.items ?? []) as { id?: string | null; type?: string; note?: string }[]);
+    // For people: an item is named by its kind and title, not its id ("3-14 user story" → "user story").
+    const plain = (s: string) => items.reduce((t, i) => (i.id && i.type ? t.split(`${i.id} ${i.type} `).join(`${i.type} `) : t), s);
+    const shown = change ? { ...change, items: items.map(i => (typeof i.note === "string" ? { ...i, note: plain(i.note) } : i)) } : change;
+    // One item: name its kind ("Change user story", "Delete defect").
+    if (items.length === 1 && items[0]?.id && (change?.kind === "update" || change?.kind === "delete") && name !== "calm_comment")
+      title = `${name === "calm_delete" ? (args.soft === true ? "Mark obsolete:" : "Delete") : "Change"} ${items[0].type ?? "item"}`;
     // Nothing would change: say so, and ask nobody to approve it.
+    const text = plain(raw);
     if (text.startsWith(NOTHING_TO_DO)) return { content: [{ type: "text", text }], structuredContent: { nothingToDo: true, text } };
     // Always a proposal: a host may draw the card without declaring MCP Apps,
     // so every answer carries what the card needs, and the text a fallback.
     if (!fingerprint) return { isError: true, content: [{ type: "text", text: "Could not prepare this change for approval." }] };
     const p = propose({ tool: name, args, fingerprint, subject, allowChat: approval === "prefer" });
-    return proposalAnswer(name, title, text, p, changeWithTenant, cardTitle);
+    return proposalAnswer(name, title, text, p, shown);
   };
-  const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>, cardTitle = title): CallToolResult => {
+  const proposalAnswer = (name: string, title: string, text: string, p: { id: string; nonce: string; expiresAt: number }, change?: Record<string, unknown>): CallToolResult => {
     const ttl = `until ${new Date(p.expiresAt).toISOString().slice(11, 16)} UTC`;
     const ask =
       approval === "prefer"
-        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" and tool "${name}" (valid ${ttl}). Do not call ${name} again for this change.`
+        ? `Approval needed; nothing is written yet. The user approves in the approval card if their app shows one, or by saying yes in the chat: show them this change in plain words (items by title and kind; no ids, tool names or field keys) and ask. Only after their yes to this exact change, call calm_confirm with id "${p.id}" and tool "${name}" (valid ${ttl}). Do not call ${name} again for this change.`
         : `Approval needed; nothing is written yet. The user approves in the approval card (id "${p.id}", valid ${ttl}); this server does not accept approval in the chat. Do not call ${name} again for this change.`;
     return {
       content: [{ type: "text", text: `${ask}\n\n${title}:\n${text}` }],
       // Some hosts show the model only structuredContent, so it repeats the
       // ask; the nonce stays in _meta.
-      structuredContent: { approval: { id: p.id, tool: name, title: cardTitle, preview: text, ...(change ? { change } : {}), expiresAt: new Date(p.expiresAt).toISOString(), chat: approval === "prefer", next: ask } },
-      _meta: { [META_KEY]: { ...p, title: cardTitle, tool: name, preview: text, ...(change ? { change } : {}), chat: approval === "prefer" } },
+      structuredContent: { approval: { id: p.id, tool: name, title, preview: text, ...(change ? { change } : {}), expiresAt: new Date(p.expiresAt).toISOString(), chat: approval === "prefer", next: ask } },
+      _meta: { [META_KEY]: { ...p, title, tool: name, preview: text, ...(change ? { change } : {}), chat: approval === "prefer" } },
     };
   };
 
