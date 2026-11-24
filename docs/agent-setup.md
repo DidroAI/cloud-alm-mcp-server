@@ -26,7 +26,7 @@ their package manager), then continue.
 npx -y cloud-alm-mcp-server setup
 ```
 
-`setup` looks for the newest service key JSON in `~/Downloads` (downloaded
+Run by an agent, `setup` asks nothing. It looks for the newest service key JSON in `~/Downloads` (downloaded
 in the last 7 days), checks it against SAP, saves it readable only by the
 user, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
 whichever are installed. It prints one line per check and per client, never
@@ -37,6 +37,7 @@ Read the output:
 | Output | What to do |
 | --- | --- |
 | `✓` lines and `Key saved at …` | Go to step 3. |
+| A question with choices (`Which Cloud ALM service key do you want to use?`) | Setup took you for a person. Stop it (Ctrl-C) and run `npx -y cloud-alm-mcp-server setup --no-input`. |
 | `No service key found in ~/Downloads` | Ask the user where the key JSON is, then run `npx -y cloud-alm-mcp-server setup "<path>"`. If they have no key yet, go to "No key yet" below. |
 | `A key for another tenant … is saved` | Ask the user whether to switch tenants. Only on their yes, run `setup "<path>"` with the file they name, or add `--force`. |
 | `✗ Token …` | The key was refused or SAP did not answer. Report the Token message and retry setup with the same key after resolving the issue. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |

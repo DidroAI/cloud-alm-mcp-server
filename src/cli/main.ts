@@ -11,7 +11,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { ServiceKey } from "../calm/index.js";
 import { type Check, keyChecks, MIN_NODE, nodeCheck } from "./checks.js";
 import { cliCommand, clientSnippets, PACKAGE_NAME, packageSpec, version } from "./clients.js";
@@ -26,6 +26,7 @@ import {
   SERVICE_KEY_ENV,
   savedKeyPath,
 } from "./key.js";
+import { type Choice, type Prompts, runByAgent } from "./prompts.js";
 import {
   CLIENTS,
   type Client,
@@ -53,6 +54,8 @@ export type Io = {
   scriptPath?: string;
   /** setup: where clients live and how to run their CLIs. */
   setup?: Partial<SetupEnv>;
+  /** setup: the questions to ask, when a person is at the terminal. */
+  prompts?: () => Promise<Prompts>;
 };
 
 export { version };
@@ -65,11 +68,13 @@ export const HELP = `${PACKAGE_NAME}: an MCP server for SAP Cloud ALM
 Usage:
   ${PACKAGE_NAME} [stdio]          Start the MCP server on stdio (default)
   ${PACKAGE_NAME} http             Start the streamable HTTP server (bearer per request)
-  ${PACKAGE_NAME} setup [file|-]   Find, check and save the service key, then add
-                                   the server to Claude Code, Codex, Claude
-                                   Desktop and Cursor (the ones installed)
+  ${PACKAGE_NAME} setup [file|-]   Check and save the service key, then add the
+                                   server to Claude Code, Codex, Claude Desktop
+                                   and Cursor (the ones installed). In a
+                                   terminal it asks which key and which apps
       --client <list>              Only these: claude-code,codex,claude-desktop,
                                    cursor, all or none
+      --no-input                   Ask nothing (agents and scripts)
   ${PACKAGE_NAME} init [file|-]    Check a service key, save it, print client config
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
@@ -83,8 +88,10 @@ Usage:
 Not installed globally? Put npx in front, as in:
   npx -y ${packageSpec(version())} setup
 
-setup without a file takes the newest service key JSON downloaded to
-~/Downloads in the last week, then reuses a previously saved key. init reads the
+setup asks for the key: a file, pasted text, a key downloaded to ~/Downloads
+in the last week, or the one saved before. Run by an agent or a script (or
+with --no-input) it asks nothing: it takes the newest key in ~/Downloads from
+the last week, then the one saved before. init reads the
 file given, or stdin ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
 by you, at:
   ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
@@ -142,16 +149,17 @@ export function writeSecretFile(path: string, text: string) {
   renameSync(tmp, path);
 }
 
-type Flags = { positional: string[]; force: boolean; skipCheck: boolean; key: boolean; clients?: Client[] };
+type Flags = { positional: string[]; force: boolean; skipCheck: boolean; key: boolean; noInput: boolean; clients?: Client[] };
 
 function parseFlags(args: string[], command = "init"): Flags {
-  const flags: Flags = { positional: [], force: false, skipCheck: false, key: false };
+  const flags: Flags = { positional: [], force: false, skipCheck: false, key: false, noInput: false };
   const takesClients = command === "setup" || command === "uninstall";
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] as string;
     if (command === "uninstall" && arg === "--key") flags.key = true;
     else if (command !== "uninstall" && arg === "--force") flags.force = true;
     else if (command !== "uninstall" && arg === "--skip-check") flags.skipCheck = true;
+    else if (command === "setup" && arg === "--no-input") flags.noInput = true;
     else if (takesClients && (arg === "--client" || arg.startsWith("--client="))) {
       const value = arg.includes("=") ? arg.slice(9) : args[++i];
       if (!value) throw new UsageError("--client needs a value.");
@@ -251,6 +259,221 @@ async function init(io: Io, args: string[]): Promise<number> {
   return 0;
 }
 
+type KeyInput = { text: string; origin: string; file?: string };
+
+/** A tenant's short name, for a choice: the first label of its token host. */
+const tenantName = (key: ServiceKey) => new URL(key.uaa.url).hostname.split(".")[0] ?? "";
+
+/** A path as typed or dragged into a terminal: quotes and shell escapes taken off. */
+export function typedPath(value: string, platform: NodeJS.Platform = process.platform): string {
+  const t = value.trim();
+  const plain = /^(['"]).*\1$/.test(t) ? t.slice(1, -1) : platform === "win32" ? t : t.replace(/\\(.)/g, "$1");
+  return resolve(expandHome(plain));
+}
+
+const KEY_DOCS = "https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/docs/service-key.md";
+
+/** Ask which key to use until one reads as a service key; undefined when cancelled. */
+async function askForKey(io: Io, e: SetupEnv, p: Prompts): Promise<KeyInput | undefined> {
+  const saved = savedKeyPath(io.env);
+  for (;;) {
+    // Looked up again each time round: the user may just have downloaded it.
+    const { key: found } = findDownloadedKey([join(e.home, "Downloads")]);
+    let savedText: string | undefined;
+    let savedTenant: string | undefined;
+    try {
+      savedText = readFileSync(saved, "utf8");
+      savedTenant = tenantName(parseServiceKeyText(savedText, saved));
+    } catch {}
+    const options: Choice<"found" | "saved" | "file" | "paste" | "none">[] = [];
+    if (found) {
+      const text = readFileSync(found.path, "utf8");
+      if (text.trim() !== savedText?.trim())
+        options.push({
+          value: "found",
+          label: `Use ${basename(found.path)} from Downloads`,
+          hint: tenantName(parseServiceKeyText(text, found.path)),
+        });
+    }
+    if (savedTenant) options.push({ value: "saved", label: "Keep the key saved before", hint: savedTenant });
+    options.push(
+      { value: "file", label: "Choose a key file" },
+      { value: "paste", label: "Paste the key", hint: "it is not shown" },
+      { value: "none", label: "I don't have a key yet" },
+    );
+    const source = await p.select("Which Cloud ALM service key do you want to use?", options);
+    if (source === undefined) return undefined;
+    if (source === "found" && found)
+      return { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
+    if (source === "saved" && savedText) return { text: savedText, origin: `The file ${saved}`, file: saved };
+    if (source === "file") {
+      const read = (value: string) => readFileSync(typedPath(value, e.platform), "utf8");
+      const path = await p.text("Where is the key file?", {
+        placeholder: "Type its path, or drag the file into this window",
+        validate: (value) => {
+          if (!value.trim()) return "Type the path of the key file.";
+          let text: string;
+          try {
+            text = read(value);
+          } catch {
+            return `Cannot read ${typedPath(value, e.platform)}.`;
+          }
+          try {
+            parseServiceKeyText(text, "That file");
+          } catch (error) {
+            return (error as Error).message;
+          }
+          return undefined;
+        },
+      });
+      if (path === undefined) return undefined;
+      const file = typedPath(path, e.platform);
+      return { text: read(path), origin: `The file ${file}`, file };
+    }
+    if (source === "paste") {
+      const text = await p.secret("Paste the key's JSON. It is not shown; press Enter if setup does not continue.");
+      if (text === undefined) return undefined;
+      if (!text) {
+        p.warn("Nothing was pasted.");
+        continue;
+      }
+      try {
+        parseServiceKeyText(text, "The pasted text");
+      } catch (error) {
+        p.error((error as Error).message);
+        continue;
+      }
+      return { text, origin: "The pasted text" };
+    }
+    p.note(
+      [
+        "The key is a JSON file from SAP BTP: a binding of the SAP Cloud ALM API",
+        "service, in the subaccount of your Cloud ALM tenant. Creating it needs",
+        "admin rights there.",
+        "",
+        "Step by step, with a video and an e-mail to send to your BTP admin:",
+        KEY_DOCS,
+        "",
+        "When you have the file, choose it below or run this command again.",
+      ].join("\n"),
+      "Getting a service key",
+    );
+  }
+}
+
+/** What to do in each app before the server shows up. */
+const RESTART: Record<Client, string> = {
+  "claude-desktop": "Quit Claude Desktop fully and open it again.",
+  "claude-code": "Start a new Claude Code session.",
+  codex: "Start a new Codex session.",
+  cursor: "Reload the Cursor window.",
+};
+
+/**
+ * setup for a person at a terminal: which key, a check against SAP, which
+ * apps, then what to do next. Nothing is picked without being shown.
+ */
+async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<number> {
+  const saved = savedKeyPath(io.env);
+  p.intro("SAP Cloud ALM for your AI apps");
+
+  let input: KeyInput;
+  let savedKey: { path: string; projectsReadable: boolean } | undefined;
+  for (;;) {
+    const chosen = await askForKey(io, e, p);
+    if (!chosen) {
+      p.cancel("Setup cancelled. Nothing was changed.");
+      return 1;
+    }
+    const key = parseServiceKeyText(chosen.text, chosen.origin);
+    const host = new URL(key.uaa.url).hostname;
+    if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(host))
+      p.warn(`The key's token address ${host} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
+    if (!flags.force && chosen.file !== saved && existsSync(saved)) {
+      let before: string | undefined;
+      try {
+        before = tenantName(parseServiceKeyText(readFileSync(saved, "utf8"), saved));
+      } catch {}
+      if (before && before !== tenantName(key)) {
+        const replace = await p.select(`A key for another tenant (${before}) is saved. Replace it with the key for ${tenantName(key)}?`, [
+          { value: true, label: "Replace it" },
+          { value: false, label: "Choose another key" },
+        ]);
+        if (replace === undefined) {
+          p.cancel("Setup cancelled. Nothing was changed.");
+          return 1;
+        }
+        if (!replace) continue;
+      }
+    }
+    const lines: string[] = [];
+    const problems: string[] = [];
+    const quiet: Io = { ...io, out: (line) => lines.push(line), err: (line) => problems.push(line) };
+    savedKey = await p.spin(
+      flags.skipCheck ? "Saving the key" : "Checking the key with SAP",
+      () => checkAndSave(quiet, chosen, { replace: true, skipCheck: flags.skipCheck }),
+      (result) => (result ? `The key for ${tenantName(key)} ${flags.skipCheck ? "is saved" : "works"}` : "This key cannot be used"),
+    );
+    if (lines.length) p.info(lines.join("\n").trim());
+    if (problems.length) p.error(problems.join("\n"));
+    if (savedKey) {
+      input = chosen;
+      break;
+    }
+  }
+  const target = savedKey.path;
+
+  const spec = packageSpec(version());
+  const detected = flags.clients ?? (await detectClients(e));
+  let clients = detected;
+  if (!flags.clients && detected.length) {
+    const picked = await p.multiselect(
+      "Add Cloud ALM to which apps?",
+      detected.map((client) => ({ value: client, label: LABEL[client] })),
+      detected,
+    );
+    if (picked === undefined) {
+      p.cancel("Setup cancelled. The key is saved; no app was changed.");
+      return 1;
+    }
+    clients = picked;
+  }
+
+  const snippets = clientSnippets(target, e.platform, spec);
+  const byHand = (wanted: string[]) =>
+    snippets
+      .filter((s) => wanted.includes(s.client))
+      .map((s) => `${s.client}: ${s.where}\n${s.text.replace(/^/gm, "  ")}`)
+      .join("\n\n");
+  const done: Client[] = [];
+  const failed: Client[] = [];
+  if (clients.length) {
+    const results: string[] = [];
+    for (const client of clients) {
+      const r = await configureClient(client, e, target, spec, writeConfigFile);
+      results.push(`${r.ok ? MARK.ok : MARK.fail} ${r.label.padEnd(14)} ${r.detail}`);
+      (r.ok ? done : failed).push(client);
+    }
+    const missing = CLIENTS.filter((c) => !detected.includes(c)).map((c) => LABEL[c]);
+    if (missing.length && !flags.clients) results.push(`Not found on this computer: ${missing.join(", ")}.`);
+    p.info(results.join("\n"));
+    if (failed.length) p.note(byHand(failed.map((c) => LABEL[c])), "Add these by hand");
+  } else if (!detected.length && !flags.clients) {
+    p.warn("No AI app was found on this computer.");
+    p.note(byHand(snippets.map((s) => s.client)), "Add the server to your app by hand");
+  } else p.info("No app was changed.");
+
+  const next = done.map((client) => RESTART[client]);
+  if (savedKey.projectsReadable) {
+    if (done.length) next.push('Then ask: "Which Cloud ALM projects can I access?"');
+  } else if (!flags.skipCheck) next.push("Project access was refused. Use the Cloud ALM tools permitted by your service key.");
+  if (input.file && resolve(input.file) !== resolve(target))
+    next.push(`You can now delete ${input.file}: the key is saved, readable only by you.`);
+  next.push(`Check the setup any time with: ${cli(io)} doctor`);
+  p.note(next.join("\n"), "Next");
+  p.outro(failed.length ? "Finished, with apps to add by hand." : done.length ? "Cloud ALM is ready." : "The key is saved.");
+  return failed.length ? 1 : 0;
+}
 
 async function setup(io: Io, args: string[]): Promise<number> {
   const flags = parseFlags(args, "setup");
@@ -264,9 +487,10 @@ async function setup(io: Io, args: string[]): Promise<number> {
   }
   const e: SetupEnv = { ...defaultSetupEnv(io.env), platform: io.platform ?? process.platform, ...io.setup };
 
-  let input: { text: string; origin: string; file?: string };
+  let input: KeyInput;
   const arg = flags.positional[0];
   const saved = savedKeyPath(io.env);
+  if (!arg && !flags.noInput && io.prompts) return wizard(io, flags, e, await io.prompts());
   if (arg) input = await readKeyInput(io, arg);
   else {
     // Downloads only: a key planted in a cloned repository is never picked up.
@@ -285,7 +509,8 @@ async function setup(io: Io, args: string[]): Promise<number> {
               ? " Allow your terminal app under System Settings → Privacy & Security → Files and Folders → Downloads, or name the file."
               : " Name the file instead."),
         );
-      if (!io.stdinIsTTY) {
+      // Nobody to paste a key: say what is missing instead of waiting.
+      if (!io.stdinIsTTY || flags.noInput || runByAgent(io.env)) {
         io.err(
           (unreadable.length ? "No service key found. " : "No service key found in ~/Downloads from the last week. ") +
             `Download the key's JSON from SAP BTP, or run: ${byFile}`,

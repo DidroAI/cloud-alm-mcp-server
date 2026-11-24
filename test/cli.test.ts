@@ -20,7 +20,8 @@ import {
   redact,
   savedKeyPath,
 } from "../src/cli/key.js";
-import { type Io, runCommand, version } from "../src/cli/main.js";
+import { type Io, runCommand, typedPath, version } from "../src/cli/main.js";
+import { canAsk, type Choice, pasteReader, type Prompts } from "../src/cli/prompts.js";
 import { coverage, TOOL_SCOPES, tokenScopes } from "../src/cli/scopes.js";
 import { TOOL_NAMES, WRITE_TOOL_NAMES } from "../src/server.js";
 import { stdioServer } from "../src/stdio.js";
@@ -572,6 +573,179 @@ describe("setup", () => {
     expect(after.theme).toBe("dark");
     expect(after.mcpServers.other).toEqual({ command: "x" });
     expect(after.mcpServers["cloud-alm"].args).toEqual(["-y", packageSpec(version())]);
+  });
+
+  /** Scripted answers: each question takes the next one. A function picks from the choices. */
+  function asked(answers: unknown[]) {
+    const seen: { message: string; labels?: string[] }[] = [];
+    const said: string[] = [];
+    const next = (message: string, options?: Choice<unknown>[]) => {
+      seen.push({ message, ...(options ? { labels: options.map((o) => o.label) } : {}) });
+      if (!answers.length) throw new Error(`No answer left for: ${message}`);
+      const a = answers.shift();
+      return typeof a === "function" ? a(options) : a;
+    };
+    const say = (text: string) => void said.push(text);
+    const prompts: Prompts = {
+      intro: say, outro: say, cancel: say, info: say, success: say, warn: say, error: say,
+      note: (text, title) => say(`${title ?? ""}\n${text}`),
+      select: async (message, options) => next(message, options),
+      multiselect: async (message, options) => next(message, options),
+      text: async (message, options) => {
+        const value = next(message) as string | undefined;
+        const refused = value === undefined ? undefined : options?.validate?.(value);
+        if (refused) throw new Error(`refused: ${refused}`);
+        return value;
+      },
+      secret: async (message) => next(message),
+      spin: async (message, work, done) => {
+        const result = await work();
+        say(done(result));
+        return result;
+      },
+    };
+    return { prompts, seen, said, all: () => said.join("\n") };
+  }
+
+  test("at a terminal, offers the key in Downloads instead of taking it, and the apps found", async () => {
+    const m = machine({ claude: true, cursor: true });
+    const keyPath = join(m.home, "Downloads", "calm-demo-key.json");
+    writeFileSync(keyPath, KEY_TEXT);
+    const t = io({ fetch: fakeFetch().fetcher });
+    const q = asked(["found", ["cursor"]]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => q.prompts;
+    expect(await runCommand(t.io, ["setup"])).toBe(0);
+    expect(q.seen[0]?.labels).toEqual([
+      "Use calm-demo-key.json from Downloads", "Choose a key file", "Paste the key", "I don't have a key yet",
+    ]);
+    expect(q.seen[1]?.labels).toEqual(["Claude Code", "Cursor"]);
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
+    expect(m.calls.some((c) => c.startsWith("claude mcp add"))).toBe(false);
+    expect(q.all()).toContain("✓ Cursor");
+    expect(q.all()).toContain("Reload the Cursor window.");
+    expect(q.all()).toContain(`You can now delete ${keyPath}`);
+    expect(q.all()).toContain("Cloud ALM is ready.");
+    expect(t.all()).toBe("");
+    expect(q.all()).not.toContain(SECRET);
+    expect(q.all()).not.toContain(CLIENT_ID);
+  });
+
+  test("at a terminal, takes a pasted key, and asks again after text that is no key", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch().fetcher });
+    const q = asked(["paste", '{"a":1}', "paste", "", "paste", KEY_TEXT, []]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => q.prompts;
+    expect(await runCommand(t.io, ["setup"])).toBe(0);
+    expect(q.all()).toContain("The pasted text is not a Cloud ALM API service key");
+    expect(q.all()).toContain("Nothing was pasted.");
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(false);
+    expect(q.all()).toContain("No app was changed.");
+    expect(q.all()).not.toContain(SECRET);
+  });
+
+  test("at a terminal, takes a file by its path, explains how to get a key, and stops on cancel", async () => {
+    const m = machine();
+    const spaced = join(dir, "my key.json");
+    writeFileSync(spaced, KEY_TEXT);
+    const t = io({ fetch: fakeFetch().fetcher });
+    const q = asked(["none", "file", `'${spaced}'`]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => q.prompts;
+    expect(await runCommand(t.io, ["setup"])).toBe(0);
+    expect(q.all()).toContain("Getting a service key");
+    expect(q.all()).toContain("docs/service-key.md");
+    expect(q.all()).toContain("No AI app was found on this computer.");
+    expect(existsSync(savedKeyPath(t.io.env))).toBe(true);
+
+    const again = io();
+    const c = asked([undefined]);
+    again.io.env.CALM_CONFIG_DIR = join(dir, "other");
+    again.io.setup = m.setup;
+    again.io.prompts = async () => c.prompts;
+    expect(await runCommand(again.io, ["setup"])).toBe(1);
+    expect(c.all()).toContain("Setup cancelled. Nothing was changed.");
+    expect(existsSync(savedKeyPath(again.io.env))).toBe(false);
+  });
+
+  test("at a terminal, a refused key is not saved and the question comes again; a saved key is kept by choice", async () => {
+    const m = machine({ cursor: true });
+    const bad = io({ fetch: fakeFetch({ tokenStatus: 401 }).fetcher });
+    const q = asked(["paste", KEY_TEXT, undefined]);
+    bad.io.setup = m.setup;
+    bad.io.prompts = async () => q.prompts;
+    expect(await runCommand(bad.io, ["setup"])).toBe(1);
+    expect(q.all()).toContain("This key cannot be used");
+    expect(q.all()).toContain("✗ Token");
+    expect(existsSync(savedKeyPath(bad.io.env))).toBe(false);
+
+    const first = io({ fetch: fakeFetch().fetcher });
+    first.io.setup = m.setup;
+    expect(await runCommand(first.io, ["setup", keyFile(), "--client", "none"])).toBe(0);
+    const other = JSON.stringify({ ...KEY, uaa: { ...KEY.uaa, url: "https://other.authentication.eu20.hana.ondemand.com" } });
+    const t = io({ fetch: fakeFetch().fetcher });
+    const k = asked(["paste", other, false, "saved", ["cursor"]]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => k.prompts;
+    expect(await runCommand(t.io, ["setup"])).toBe(0);
+    expect(k.seen[0]?.labels?.[0]).toBe("Keep the key saved before");
+    expect(k.seen[2]?.message).toContain("A key for another tenant (example) is saved. Replace it with the key for other?");
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
+  });
+
+  test("--no-input and a named file ask nothing, even at a terminal", async () => {
+    const m = machine();
+    const t = io();
+    t.io.setup = m.setup;
+    t.io.prompts = async () => { throw new Error("asked"); };
+    expect(await runCommand(t.io, ["setup", "--no-input"])).toBe(1);
+    expect(t.all()).toContain("No service key found in ~/Downloads");
+    const agent = io({ env: { CLAUDECODE: "1" } });
+    agent.io.setup = m.setup;
+    agent.io.stdinIsTTY = true;
+    agent.io.readStdin = async () => { throw new Error("waited for a paste"); };
+    expect(await runCommand(agent.io, ["setup"])).toBe(1);
+    expect(agent.all()).toContain("No service key found in ~/Downloads");
+    const f = io({ fetch: fakeFetch().fetcher });
+    f.io.setup = m.setup;
+    f.io.prompts = async () => { throw new Error("asked"); };
+    expect(await runCommand(f.io, ["setup", keyFile(), "--client", "none"])).toBe(0);
+  });
+
+  test("questions are for people: not for agents, CI or pipes", () => {
+    expect(canAsk({}, true, true)).toBe(true);
+    expect(canAsk({}, false, true)).toBe(false);
+    expect(canAsk({}, true, false)).toBe(false);
+    for (const name of ["CLAUDECODE", "CODEX_SANDBOX", "CURSOR_AGENT", "AI_AGENT", "CI"])
+      expect(canAsk({ [name]: "1" }, true, true)).toBe(false);
+    expect(canAsk({ TERM: "dumb" }, true, true)).toBe(false);
+  });
+
+  test("a hidden paste takes a key of several lines, in pieces, with or without paste marks", () => {
+    const whole = pasteReader();
+    expect(whole.feed(KEY_TEXT.replace(/\n/g, "\r"))).toBe(true);
+    expect(JSON.parse(whole.text())).toEqual(KEY);
+    const pieces = pasteReader();
+    expect(pieces.feed(KEY_TEXT.slice(0, 40).replace(/\n/g, "\r"))).toBeUndefined();
+    expect(pieces.feed(KEY_TEXT.slice(40).replace(/\n/g, "\r"))).toBe(true);
+    expect(JSON.parse(pieces.text())).toEqual(KEY);
+    const marked = pasteReader();
+    expect(marked.feed(`\x1b[200~not a key\rat all\x1b[201~`)).toBe(true);
+    expect(marked.text()).toBe("not a key\nat all");
+    const typed = pasteReader();
+    expect(typed.feed("half")).toBeUndefined();
+    expect(typed.feed("\r")).toBe(true);
+    expect(pasteReader().feed("\x03")).toBe(false);
+    expect(pasteReader().feed("\x1b")).toBe(false);
+  });
+
+  test("a path dragged into the terminal loses its quotes and escapes", () => {
+    expect(typedPath("'/tmp/my key.json' ", "darwin")).toBe("/tmp/my key.json");
+    expect(typedPath("/tmp/my\\ key.json", "darwin")).toBe("/tmp/my key.json");
+    expect(typedPath('"/tmp/k.json"', "linux")).toBe("/tmp/k.json");
   });
 
   test("without a key in Downloads and no terminal, says where to get one", async () => {
