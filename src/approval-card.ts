@@ -278,7 +278,7 @@ function renderChange(change) {
       fields += item.fields.length;
       block.append(fieldTable(item.fields, op));
     }
-    if (filled(item.note)) block.append(el("div", "note", str(item.note)));
+    if (filled(item.note)) block.append(el("div", "note", cap(item.note)));
     box.append(block);
   }
   const kind = OPS[change.kind] ?? "update";
@@ -301,16 +301,15 @@ function renderChange(change) {
     if (kind === "delete") $("ok").textContent = "Delete permanently";
   }
   const notes = [...(Array.isArray(change.warnings) ? change.warnings : []), ...(Array.isArray(change.notes) ? change.notes : [])];
-  $("notes").replaceChildren(...notes.map((n) => el("li", "", str(n))));
+  $("notes").replaceChildren(...notes.map((n) => el("li", "", cap(n))));
   $("notes").hidden = !notes.length;
   return true;
 }
 
-/** Where: project and tenant. Nothing a consultant would not say aloud (no tool name, no request id). */
+/** Where: the project. Nothing a consultant would not say aloud (no tool name, no request id). */
 function renderFacts(a) {
   const rows = [
     ["Project", a.change?.project?.name],
-    ["Tenant", a.change?.tenant],
   ].filter(([, v]) => filled(v));
   $("facts").replaceChildren(...rows.map(([k, v]) => {
     const row = el("div");

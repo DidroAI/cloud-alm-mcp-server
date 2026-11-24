@@ -603,7 +603,7 @@ export async function remove(
     const links = await snap.defects().catch(() => null);
     const fromTests = hardTasks.filter((i) => links?.byDefect.has(i.task.id.toLowerCase())).length;
     if (fromTests) warnings.push(`${fromTests} of them record a failed test (their test case loses its defect)`);
-    warnings.push(`soft: true marks ${hardTasks.length === 1 ? "it" : "them"} obsolete instead, which can be undone (SAP recommends it)`);
+    warnings.push(`marking ${hardTasks.length === 1 ? "it" : "them"} obsolete instead can be undone (SAP recommends it)`);
   }
   o.reviewPlan?.({ project: snap.project.id, warnings,
     items: plans.map(p => ({ item: p.item, state: p.state, operation: p.line })) });
