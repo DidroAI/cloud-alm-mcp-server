@@ -11,6 +11,7 @@ import { createServer as createHttpServer } from "node:http";
 import { text } from "node:stream/consumers";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { COMMANDS, runCommand } from "./cli/main.js";
+import { canAsk, terminalPrompts } from "./cli/prompts.js";
 import { feedbackSinkFromEnv } from "./feedback.js";
 import { createHttpHandler } from "./http.js";
 import { toNodeListener } from "./node-http.js";
@@ -26,6 +27,10 @@ if (COMMANDS.includes(mode)) {
       err: (line) => process.stderr.write(`${line}\n`),
       readStdin: () => text(process.stdin),
       stdinIsTTY: Boolean(process.stdin.isTTY),
+      // Questions only for a person: an agent or a script gets none.
+      ...(canAsk(process.env, Boolean(process.stdin.isTTY), Boolean(process.stdout.isTTY))
+        ? { prompts: () => terminalPrompts() }
+        : {}),
     },
     process.argv.slice(2),
   );

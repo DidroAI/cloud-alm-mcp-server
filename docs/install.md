@@ -16,10 +16,23 @@ in SAP BTP, downloaded as a JSON file.
 npx -y cloud-alm-mcp-server setup
 ```
 
-Finds the key in `~/Downloads`, checks it against SAP, saves it readable only
-by you, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
-whichever are installed. If the downloaded file is gone, setup reuses the saved
-key. Needs [Node.js 22 or later](https://nodejs.org).
+In a terminal, setup asks two questions:
+
+1. **Which service key?** Choose the key file (type its path or drag it into
+   the window), paste the key (it is not shown), use a key found in
+   `~/Downloads` from the last week, or keep the one saved before. "I don't
+   have a key yet" says how to get one.
+2. **Which apps?** Claude Code, Codex, Claude Desktop and Cursor, the ones
+   installed, all ticked.
+
+Between the two it checks the key against SAP and saves it readable only by
+you; at the end it says what to restart. Needs
+[Node.js 22 or later](https://nodejs.org).
+
+Run by an AI agent, in CI, through a pipe or with `--no-input`, setup asks
+nothing: it takes the newest key in `~/Downloads` from the last week, then the
+key saved before, and adds the server to every app installed. `setup <file>`
+and `--client <list>` answer the two questions up front.
 
 ```sh
 npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API

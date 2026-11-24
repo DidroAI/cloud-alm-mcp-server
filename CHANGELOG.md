@@ -6,6 +6,11 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
+- `setup` in a terminal is a short wizard: it asks which service key to use (a file by its path, a pasted key that is not shown, a key found in `~/Downloads`, or the one saved before) and which apps to add the server to, and ends with what to restart. A key in `~/Downloads` is offered, no longer taken unasked.
+- Run by an AI agent, in CI, through a pipe or with the new `--no-input`, `setup` asks nothing and works as before.
+
 ## [0.2.1] - 2026-11-24
 
 - The approval card shows the whole change on the page instead of a scroll box inside the card. Lists of more than nine items fold behind "Show all"; a delete stays locked until its full list is shown.

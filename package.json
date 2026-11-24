@@ -1,6 +1,6 @@
 {
   "name": "cloud-alm-mcp-server",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "mcpName": "io.github.DidroAI/cloud-alm-mcp-server",
   "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics; writes wait for the user's approval",
   "license": "MIT",
@@ -80,6 +80,7 @@
     "provenance": true
   },
   "dependencies": {
+    "@clack/prompts": "1.9.0",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/core": "2.4.0",
     "@modelcontextprotocol/ext-apps": "2.1.0",
