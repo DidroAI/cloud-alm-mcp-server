@@ -35,7 +35,8 @@ export function feedbackSinkFromEnv(env: Record<string, string | undefined>): Fe
     const response = await fetch(receiver, {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(3000),
+      // Long enough for the receiver to wake from idle.
+      signal: AbortSignal.timeout(10_000),
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ reportId, serverVersion: version, ...feedback }),
     });
