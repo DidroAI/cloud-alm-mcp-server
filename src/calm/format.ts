@@ -28,7 +28,7 @@ import type {
   TestPlanDetail,
 } from "./model.js";
 
-const join = (parts: (string | null | undefined | false)[], sep = " · ") =>
+const join = (parts: (string | null | undefined | false)[], sep = ", ") =>
   parts.filter(Boolean).join(sep);
 
 function pageFooter(page: Page<unknown>, noun: string): string {

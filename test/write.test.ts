@@ -501,7 +501,7 @@ test("calm_update adds a comment with the change, in one call", async () => {
 test("deleting defects raised from tests warns, and points to soft", async () => {
   const { call } = await connect();
   const all = await call("calm_list", { types: ["defect"], limit: 100 });
-  const ids = [...all.text.matchAll(/- (3-\d+) · defect/g)].map((m) => m[1]);
+  const ids = [...all.text.matchAll(/- (3-\d+) defect/g)].map((m) => m[1]);
   const r = await call("calm_delete", { ids, dryRun: true });
   expect(r.text).toContain("record a failed test");
   expect(r.text).toContain("obsolete instead can be undone");

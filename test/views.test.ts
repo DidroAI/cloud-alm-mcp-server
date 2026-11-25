@@ -112,10 +112,10 @@ describe("calm_list", () => {
     const { call } = await connect();
     const features = await call("calm_list", { tag: "Wave 1", types: ["feature"] });
     expect(features.text).toStartWith("1 match");
-    expect(features.text).toContain("6-1 · feature");
+    expect(features.text).toContain("6-1 feature");
     const tests = await call("calm_list", { tag: "wave 1", types: ["test_case"] });
     expect(tests.text).toStartWith("1 match");
-    expect(tests.text).toContain("8-1-2 · manual test case");
+    expect(tests.text).toContain("8-1-2 manual test case");
     expect(tests.text).not.toContain("tasks only");
   });
 
@@ -123,7 +123,7 @@ describe("calm_list", () => {
     const { call } = await connect();
     const failed = await call("calm_list", { status: "failed", types: ["test_case"] });
     expect(failed.text).toStartWith("1 match");
-    expect(failed.text).toContain("8-1-1 · manual test case · prepared · failed, 1 of 2 steps passed");
+    expect(failed.text).toContain("8-1-1 manual test case, prepared, result: failed, 1 of 2 steps passed");
     const anyType = await call("calm_list", { status: "passed" });
     expect(anyType.text).toStartWith("1 match");
     expect(anyType.text).toContain("8-1-2");
@@ -131,16 +131,16 @@ describe("calm_list", () => {
 
   test("defect status words: new, and open still includes new", async () => {
     const { call } = await connect();
-    expect((await call("calm_list", { status: "new" })).text).toContain("3-4 · defect · open (new)");
+    expect((await call("calm_list", { status: "new" })).text).toContain("3-4 defect, open (new)");
     expect((await call("calm_list", { types: ["defect"], status: "open" })).text).toStartWith("1 match");
   });
 
   test("without types: no list of every solution process, unless asked or searched", async () => {
     const { call } = await connect();
     const all = await call("calm_list");
-    expect(all.text).not.toContain("solution process ·");
+    expect(all.text).not.toContain("solution process,");
     expect(all.text).toContain('Solution processes are listed with types ["process"]');
-    expect((await call("calm_list", { types: ["process"] })).text).toContain("solution process · in scope");
+    expect((await call("calm_list", { types: ["process"] })).text).toContain("solution process, in scope");
     expect((await call("calm_list", { query: "lead to cash" })).text).toContain("solution process");
   });
 });
@@ -149,7 +149,7 @@ describe("calm_get and calm_trace", () => {
   test("priorities in words, sub-status in words", async () => {
     const { call } = await connect();
     const { text } = await call("calm_get", { ids: ["3-4"] });
-    expect(text).toStartWith('3-4 defect · open (new) · priority very high · "Credit block not set for export orders"');
+    expect(text).toStartWith('3-4 defect, open (new), priority very high, "Credit block not set for export orders"');
   });
 
   test("a defect names the test case it was raised from (analytics Defects)", async () => {
@@ -181,14 +181,14 @@ describe("calm_get and calm_trace", () => {
     const at = (s: string) => text.indexOf(s);
     expect(at("- 8-1-1")).toBeLessThan(at("- 8-1-2"));
     expect(at("- 8-1-2")).toBeLessThan(at("- 8-1-3"));
-    expect(text).toContain('- 8-1-1 "Order blocked by credit limit" · failed, 1 of 2 steps passed · defect 3-4');
-    expect(text).toContain('- 8-1-2 "Release from the worklist" · passed, 1 of 1 steps passed');
+    expect(text).toContain('- 8-1-1 "Order blocked by credit limit": failed, 1 of 2 steps passed; defect 3-4');
+    expect(text).toContain('- 8-1-2 "Release from the worklist": passed, 1 of 1 steps passed');
   });
 
   test("an automated test case shows its state, priority, links and result", async () => {
     const { call } = await connect();
     const { text } = await call("calm_get", { ids: ["8-2-1"] });
-    expect(text).toContain('8-2-1 automated test case · not prepared · priority low · "Order release smoke run"');
+    expect(text).toContain('8-2-1 automated test case, not prepared, priority low, "Order release smoke run"');
     expect(text).toContain("Covers: no task (linked to nothing)");
     expect(text).toContain("Latest result: none recorded");
   });
@@ -294,7 +294,7 @@ describe("calm_analytics", () => {
     const { call } = await connect();
     const grouped = await call("calm_analytics", { dataset: "Defects", groupBy: ["status", "priority"] });
     expect(grouped.text).toContain("Defects by statusText, priority, as of 2026-11-13");
-    expect(grouped.text).toContain("- new · very high: counter 1");
+    expect(grouped.text).toContain("- new, very high: counter 1");
     const filtered = await call("calm_analytics", { dataset: "Defects", filters: { status: "new" } });
     expect(filtered.text).toStartWith("Defects: 1 rows, as of 2026-11-13");
     const none = await call("calm_analytics", { dataset: "Defects", filters: { status: "closed" } });
@@ -320,7 +320,7 @@ describe("calm_analytics", () => {
   test("the dataset list names the columns to group by", async () => {
     const { call } = await connect();
     const { text } = await call("calm_analytics");
-    expect(text).toContain("- Defects: defects, with the test case and test plan they came from · group by: statusText, priority");
+    expect(text).toContain("- Defects: defects, with the test case and test plan they came from; group by: statusText, priority");
   });
 
   test("an SAP 500 with a Java message is not passed through", async () => {
@@ -362,7 +362,7 @@ describe("calm_api", () => {
   test("without a path: the APIs; a foreign path is refused; answers are trimmed JSON", async () => {
     const { call } = await connect();
     const catalog = await call("calm_api");
-    expect(catalog.text).toContain("calm-features/v1/Features · OData v4");
+    expect(catalog.text).toContain("calm-features/v1/Features (OData v4)");
     expect(catalog.data?.catalog.length).toBeGreaterThan(5);
     const bad = await call("calm_api", { path: "https://evil.example/steal" });
     expect(bad.text).toContain("not a Cloud ALM API path");

@@ -41,14 +41,14 @@ describe("formatters", () => {
   test("a task list line carries ids an agent can reuse", async () => {
     const text = formatTasks(await calm.listTasks({ projectId: PROJECT_ID }));
     expect(text).toBe(
-      `- 3-12 Credit memo uses the wrong tax code [${TASK_ID}] defect · CIPDFCTOPEN · priority 20 · assignee Alex Example · tags uat\ntasks: 1–1.`,
+      `- 3-12 Credit memo uses the wrong tax code [${TASK_ID}] defect, CIPDFCTOPEN, priority 20, assignee Alex Example, tags uat\ntasks: 1–1.`,
     );
   });
 
   test("a task shows its description and references", async () => {
     const text = formatTask(await calm.getTask(TASK_ID));
     expect(text).toContain(
-      "defect · status CIPDFCTOPEN / DFC_NEW · priority 20 · scope Order to Cash · timebox Explore",
+      "defect, status CIPDFCTOPEN / DFC_NEW, priority 20, scope Order to Cash, timebox Explore",
     );
     expect(text).toContain("- Create a return");
     expect(text).toContain("References:\n- Ticket https://example.com/t/1");
@@ -130,7 +130,7 @@ describe("formatters", () => {
 
   test("landscape and empty results", async () => {
     expect(formatLandscape(await calm.listLandscapeObjects())).toContain(
-      "CloudService · SAP S/4HANA Cloud Public Edition",
+      "CloudService, SAP S/4HANA Cloud Public Edition",
     );
     expect(
       formatTasks({
