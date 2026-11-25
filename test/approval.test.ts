@@ -356,7 +356,8 @@ test("a proposal carries the change field by field for the card", async () => {
   const change = (r.structured?.approval as { change?: { kind: string; items: { title?: string; fields?: { field: string; after?: string }[] }[] } })?.change;
   expect(change?.kind).toBe("create");
   expect(change?.items[0]?.title).toBe("Credit check skipped");
-  expect(change?.items[0]?.fields?.find((f) => f.field === "Priority")?.after).toBe("high");
+  // A label stands alone in its cell on the card, so it starts with a capital.
+  expect(change?.items[0]?.fields?.find((f) => f.field === "Priority")?.after).toBe("High");
   expect((r.meta?.[META_KEY] as { change?: unknown }).change).toEqual(change);
 });
 
@@ -399,26 +400,38 @@ test("link, tag, test case, feature and document carry their change for the card
   expect(JSON.stringify(feature)).not.toContain("3-1");
   const document = await proposed("calm_create_document", { title: "Workshop minutes", content: "Decisions of the day.", tasks: ["3-1"] });
   expect(document?.items[0]?.fields?.map((f) => f.field)).toEqual(["Type", "Status", "Priority", "Linked to", "Content"]);
+  // Cloud ALM's own labels start with a capital on the card; what someone typed is shown as typed.
+  const shown = (change: Shown | undefined, field: string) => change?.items[0]?.fields?.find((f) => f.field === field);
+  expect(shown(document, "Status")?.after).toBe("In progress");
+  expect(shown(document, "Priority")?.after).toBe("Medium");
+  expect(shown(document, "Linked to")?.after).toMatch(/^Requirement "/);
+  expect(shown(document, "Content")?.after).toBe("Decisions of the day.");
+  expect(shown(feature, "Status")?.after).toBe("In specification");
+  const update = await proposed("calm_update", { ids: ["3-3"], priority: 10, title: "credit exposure, lower case on purpose" });
+  expect(shown(update, "Priority")).toMatchObject({ before: "High", after: "Very high" });
+  expect(shown(update, "Title")?.after).toBe("credit exposure, lower case on purpose");
 
   const dry = (await call("calm_tag", { tasks: ["3-1"], add: ["Review"], dryRun: true })) as unknown as { structured?: { change?: Shown }; meta?: Record<string, unknown> };
   expect(dry.structured?.change?.items[0]?.fields?.[0]?.field).toBe("Tags");
   expect(dry.meta?.[META_KEY]).toBeUndefined();
   const dryDelete = (await call("calm_delete", { ids: ["3-3"], dryRun: true })) as unknown as { structured?: { change?: Shown } };
   expect(dryDelete.structured?.change?.items[0]?.note ?? "").not.toMatch(/\b3-3\b/);
+  const soft = (await call("calm_delete", { ids: ["3-3"], soft: true, dryRun: true })) as unknown as { structured?: { change?: Shown } };
+  expect(soft.structured?.change?.items[0]?.fields?.[0]).toEqual({ field: "Obsolete", before: "No", after: "Yes" });
 });
 
 test("the card draws a dry run as a preview, field by field", () => {
   const html = cardHtml();
   expect(html).toContain("A preview only. Nothing was sent to Cloud ALM.");
   expect(html).toContain("Nothing sent");
-  expect(CARD_URI).toBe("ui://cloud-alm/approve-v4.html");
+  expect(CARD_URI).toBe("ui://cloud-alm/approve-v5.html");
 });
 
 test("calm_overview carries the overview card", async () => {
   const { client } = await connect("ui", { approval: "prefer" });
   const tool = (await client.listTools()).tools.find((t) => t.name === "calm_overview");
   const uri = (tool?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri;
-  expect(uri).toBe("ui://cloud-alm/overview-v2.html");
+  expect(uri).toBe("ui://cloud-alm/overview-v3.html");
   const r = await client.readResource({ uri: uri as string });
   const html = (r.contents[0] as { text: string }).text;
   expect(html).not.toContain("__APP_BUNDLE__");

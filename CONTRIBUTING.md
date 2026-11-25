@@ -18,8 +18,9 @@ Thanks for helping. Issues and pull requests are welcome.
 4. CI must pass (typecheck, tests, build on Node 22 and 24). For a pull
    request from a fork, a maintainer approves the CI run first.
 5. A maintainer reviews it. Only maintainers can merge; `main` accepts
-   changes through reviewed pull requests only, and pull requests are
-   squash-merged.
+   changes through pull requests with passing checks only, and pull
+   requests are squash-merged. A maintainer's own pull request needs the
+   checks too, not a second person's approval.
 
 Looking for a place to start? See the issues labelled
 [good first issue](https://github.com/DidroAI/cloud-alm-mcp-server/labels/good%20first%20issue)

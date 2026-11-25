@@ -69,7 +69,7 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.3.5";
+export const SERVER_VERSION = "0.3.6";
 
 const projectId = z.string().min(1).max(200).optional().describe("Project id or name (calm_projects lists them); omit when the tenant has one project or a default is set");
 
@@ -195,7 +195,7 @@ export function createServer(
     {
       name: SERVER_NAME,
       version: SERVER_VERSION,
-      title: "SAP Cloud ALM",
+      title: "Cloud ALM by Didro",
       websiteUrl: "https://github.com/DidroAI/cloud-alm-mcp-server",
       icons: [{ src: `data:image/png;base64,${icon}`, mimeType: "image/png", sizes: ["512x512"] }],
     },

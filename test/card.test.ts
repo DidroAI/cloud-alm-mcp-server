@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { createHash } from "node:crypto";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
-import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, cardHtml, overviewHtml } from "../src/approval.js";
+import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, appBundle, cardHtml, overviewHtml } from "../src/approval.js";
 import { CONTENT_URI, CONTENT_URIS_BEFORE, contentHtml } from "../src/content-app.js";
 
 type Call = { name: string; arguments: Record<string, unknown> };
@@ -160,12 +160,20 @@ test("a card that changes gets a new address", () => {
     [OVERVIEW_URI]: fingerprint(overviewHtml()),
     [CONTENT_URI]: fingerprint(contentHtml(false)),
   }).toEqual({
-    "ui://cloud-alm/approve-v4.html": "c8e736278c554663",
-    "ui://cloud-alm/overview-v2.html": "4cf2383aee02527b",
-    "ui://cloud-alm/content-v2.html": "e7bdbda5712f585d",
+    "ui://cloud-alm/approve-v5.html": "0a3b7d3cd6c575e9",
+    "ui://cloud-alm/overview-v3.html": "c037ff94a43df9a9",
+    "ui://cloud-alm/content-v3.html": "24af212ef374de37",
   });
   // The address before stays answerable, and no address is listed twice.
   const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];
   expect(new Set(all).size).toBe(all.length);
-  expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(3);
+  expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(6);
+});
+
+test("the cards use no middle dots or bullets as separators, and Reject stands left of Approve", () => {
+  // The app library is not ours and not text anyone reads: only the cards' own markup and script are checked.
+  for (const html of [cardHtml(), overviewHtml(), contentHtml(false), contentHtml(true)])
+    expect(html.replace(appBundle(), "")).not.toMatch(/[·•∙⋅‧]|&middot;|&bull;/);
+  const buttons = [...CARD_TEMPLATE.matchAll(/<button id="(ok|no)"/g)].map((m) => m[1]);
+  expect(buttons).toEqual(["no", "ok"]);
 });

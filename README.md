@@ -27,7 +27,7 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
 
 <p>
 <img src="docs/images/overview-light.png" alt="Project overview card: findings, project status and expandable breakdowns" width="49%">
-<img src="docs/images/update-light.png" alt="Approval card: a user story's priority from high to very high and a new comment, with Approve and Reject" width="49%">
+<img src="docs/images/update-light.png" alt="Approval card: a user story's priority from high to very high and a new comment, with Reject and Approve" width="49%">
 </p>
 
 > MIT licence. An independent open-source project, not
@@ -68,7 +68,7 @@ Your assistant can report missing fields, unexpected results or extra tool calls
 
 ## Setup in 2 minutes (video)
 
-https://github.com/user-attachments/assets/aacac950-e66e-4121-917b-c7a88c85df6f
+https://github.com/user-attachments/assets/302faf0d-5347-4bf3-ae41-ce079fe7469c
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
 coding agent. With narration, 2 minutes. No player here?
@@ -234,7 +234,7 @@ More: [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md).
 - [Running it as a shared HTTP endpoint](docs/hosting.md)
 - [Using it as a library](docs/library.md)
 - [Cloud ALM API notes, errors and limits](docs/cloud-alm-api.md)
-- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+- [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Licence
 

@@ -32,7 +32,7 @@ import {
   changeItem,
 } from "./items.js";
 import type { Snapshot } from "./snapshot.js";
-import { clipped, documentType, featureStatus, short, statusLabel, typeLabel } from "./text.js";
+import { capital, clipped, documentType, featureStatus, short, statusLabel, typeLabel } from "./text.js";
 
 type Step = { title: string; description: string; expected: string; evidence?: boolean };
 
@@ -532,7 +532,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
             ...todo.map((part) => {
               // The card shows long text whole; the lines for the assistant shorten it.
               // A whole value is shown as it is: a title "None" is a title, not an empty field.
-              const show = (row: Row) => (part.full ? part.full(row) : cardValue(part.show(row)));
+              const show = (row: Row) => (part.full ? part.full(row) : cardValue(part.show(row), LABEL_FIELDS.has(part.field)));
               const before = show(p.before);
               return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: show(planned) };
             }),
@@ -560,12 +560,21 @@ const FIELD_NAMES: Record<string, string> = {
   obsolete: "Obsolete",
   prepared: "Prepared",
 };
-/** A value for the card: no priority codes ("10 very high" → "very high"), nothing for none. */
-const cardValue = (v: string) => (/^(none|empty|—|-)$/i.test(v.trim()) ? "" : v.replace(/^\d{2} (very high|high|medium|low)$/, "$1"));
+/** Fields whose value is one of Cloud ALM's own labels, not text someone typed. */
+const LABEL_FIELDS = new Set(["status", "priority", "obsolete", "prepared"]);
+/**
+ * A value for the card: no priority codes ("10 very high" → "Very high"), nothing for none. A label stands alone
+ * in its cell, so it starts with a capital; a name or a date someone entered is shown as it is.
+ */
+const cardValue = (v: string, label = false) => {
+  if (/^(none|empty|—|-)$/i.test(v.trim())) return "";
+  const shown = v.replace(/^\d{2} (very high|high|medium|low)$/, "$1");
+  return label || shown === "nobody" ? capital(shown) : shown;
+};
 /** The step after the fields (a comment, a new activity) as one added value. */
 function extraField(extra: { line: string; detail?: string }): { field: string; after: string } {
   if (extra.line.startsWith("comment: ")) return { field: "New comment", after: extra.detail ?? extra.line };
-  return { field: "Then", after: extra.detail ? `${extra.line}\n${extra.detail}` : extra.line };
+  return { field: "Then", after: capital(extra.detail ? `${extra.line}\n${extra.detail}` : extra.line) };
 }
 
 // ---- calm_delete -----------------------------------------------------------
@@ -627,7 +636,7 @@ export async function remove(
       items: plans.map((p) => ({
         ...changeItem(p.item),
         op: soft ? ("update" as const) : ("delete" as const),
-        ...(soft ? { fields: [{ field: "obsolete", before: "no", after: "yes" }] } : {}),
+        ...(soft ? { fields: [{ field: "Obsolete", before: "No", after: "Yes" }] } : {}),
         note: p.line,
       })),
       ...(warnings.length ? { warnings } : {}),
@@ -814,9 +823,9 @@ export async function createFeature(
       items: [{
         type: "feature", title, op: "create",
         fields: [
-          { field: "Status", after: featureStatus(statusCode) },
-          { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
-          ...(tasks.length ? [{ field: "Delivers", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
+          { field: "Status", after: capital(featureStatus(statusCode)) },
+          { field: "Priority", after: capital(priorityText(body.priorityCode).replace(/^\d+ /, "")) },
+          ...(tasks.length ? [{ field: "Delivers", after: tasks.map((t) => capital(`${typeLabel(t.type)} "${short(t.title, 70)}"`)).join("\n") }] : []),
           ...(description ? [{ field: "Description", after: description }] : []),
         ],
       }],
@@ -922,10 +931,10 @@ export async function createDocument(
       items: [{
         type: "document", title, op: "create",
         fields: [
-          { field: "Type", after: typeCode ? (DOCUMENT_TYPES[typeCode] ?? typeCode) : "Default type" },
-          { field: "Status", after: DOCUMENT_STATUS_NAME[status] ?? String(status) },
-          { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
-          ...(tasks.length ? [{ field: "Linked to", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
+          { field: "Type", after: typeCode ? capital(DOCUMENT_TYPES[typeCode] ?? typeCode) : "Default type" },
+          { field: "Status", after: capital(DOCUMENT_STATUS_NAME[status] ?? String(status)) },
+          { field: "Priority", after: capital(priorityText(body.priorityCode).replace(/^\d+ /, "")) },
+          ...(tasks.length ? [{ field: "Linked to", after: tasks.map((t) => capital(`${typeLabel(t.type)} "${short(t.title, 70)}"`)).join("\n") }] : []),
           { field: "Content", after: text },
         ],
       }],

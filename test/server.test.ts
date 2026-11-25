@@ -55,7 +55,7 @@ describe("tools", () => {
 
   test("content cards follow the selected presentation and read allow list", async () => {
     const { client } = await connect();
-    const uri = "ui://cloud-alm/content-v2.html";
+    const uri = "ui://cloud-alm/content-v3.html";
     for (const tool of (await client.listTools()).tools.filter(t => ["calm_projects", "calm_list", "calm_get"].includes(t.name)))
       expect(tool._meta?.ui).toMatchObject({ resourceUri: uri });
     const resource = await client.readResource({ uri });

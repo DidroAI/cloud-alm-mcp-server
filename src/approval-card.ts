@@ -164,7 +164,7 @@ button:disabled{opacity:.45;cursor:default}
 <p class="strip" id="m" role="status" aria-live="polite" hidden></p>
 <footer class="ft">
   <span class="x"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.500V8l2.3 1.5"/></svg><span id="x">Nothing is written until you approve.</span></span>
-  <div class="acts"><button id="ok" class="ok" disabled>Approve</button><button id="no" disabled>Reject</button></div>
+  <div class="acts"><button id="no" disabled>Reject</button><button id="ok" class="ok" disabled>Approve</button></div>
 </footer>
 </main>
 <script type="module">
@@ -183,7 +183,7 @@ const el = (tag, cls, text) => {
 const str = (v) => (v === null || v === undefined ? "" : String(v));
 const cap = (v) => { const t = str(v); return t.charAt(0).toUpperCase() + t.slice(1); };
 const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
-const STATUS = { preparing: "Preparing", waiting: "Approval needed", working: "Writing", approved: "Approved", rejected: "Rejected", expired: "Expired", blocked: "Cannot approve here", chat: "Approve in chat", info: "No approval pending", failed: "Not proposed", unknown: "Outcome unknown", closed: "Closed" };
+const STATUS = { preparing: "Preparing", waiting: "Approval needed", working: "Writing", approved: "Approved", rejected: "Rejected", expired: "Expired", blocked: "Cannot approve here", chat: "Approve in the chat", info: "No approval pending", failed: "Not proposed", unknown: "Outcome unknown", closed: "Closed" };
 const state = (name, label) => { card.dataset.state = name; $("st").textContent = label ?? STATUS[name]; };
 const say = (text, cls = "") => {
   const m = $("m");
@@ -369,7 +369,7 @@ app.ontoolresult = (result) => {
       return;
     }
     $("t").textContent = result?.isError ? "Not proposed" : chat ? "Approve in the chat" : "Nothing waits for approval here.";
-    state(result?.isError ? "failed" : "info", chat ? "Approve in chat" : undefined);
+    state(result?.isError ? "failed" : "info", chat ? "Approve in the chat" : undefined);
     plainText(text, true);
     return;
   }
