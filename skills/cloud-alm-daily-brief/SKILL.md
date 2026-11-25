@@ -55,7 +55,7 @@ Realize) and state that you inferred it.
 | Realize, build sprints | User stories and tasks due in the sprint; anything `blocked`; approved requirements with no user story moving; features in testing | `calm_list` `status: "blocked"`; `calm_list` `types: ["feature"]`, `status: "in testing"`; `calm_gaps` `checks: ["features", "no_feature"]` |
 | Realize, test cycles | Failed tests without a defect; very-high defects; defects in retest; test cases not prepared for the next cycle | `calm_gaps` `checks: ["unprepared_tests", "untested"]` |
 | Deploy | Cutover and readiness tasks due today and overdue; every open very-high or high defect; features not yet approved for deployment; SAP maintenance windows near go-live | `calm_list` `types: ["feature"]`, `status: "open"` (not yet tested); the same with `status: "tested"` |
-| Run (hypercare) | New defects since yesterday by priority; ageing open ones; SAP service events | none |
+| Hypercare (Deploy), Run | New defects since yesterday by priority; ageing open ones; SAP service events | none |
 
 How to read the objects in Activate terms:
 

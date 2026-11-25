@@ -6,6 +6,25 @@ export const json = (value, status = 200, headers = {}) =>
 export const fail = (error = "invalid_request", status = 400) => {
   throw json({ error }, status);
 };
+/** Who sent a request, as the platform reports it. */
+export const senderOf = (req) =>
+  req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+/**
+ * At most `max` requests per sender in `windowMs`, per running instance: a
+ * first line against someone using the sign-in to try keys in bulk.
+ */
+export function createLimiter({ max, windowMs, now = Date.now }) {
+  const seen = new Map();
+  return (sender) => {
+    const at = now();
+    const times = (seen.get(sender) ?? []).filter((t) => at - t < windowMs);
+    if (times.length >= max) return false;
+    times.push(at);
+    seen.set(sender, times);
+    if (seen.size > 5000) for (const [key, list] of seen) if (!list.some((t) => at - t < windowMs)) seen.delete(key);
+    return true;
+  };
+}
 export async function limited(request, limit) {
   const reader = request.body?.getReader();
   if (!reader) fail();

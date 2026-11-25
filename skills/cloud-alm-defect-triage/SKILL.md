@@ -17,8 +17,7 @@ say so when you use one.
 
 ## 1. How defects work in Cloud ALM
 
-- A defect is a task found in testing, raised from a test case or on
-  its own.
+- A defect is a task for an issue found in a test or in use.
 - Fields: title, description, one **priority** (very high, high, medium,
   low), status, assignee, due date, tags. There is **no severity field
   and no root-cause field**. If the project records severity or root
@@ -89,7 +88,7 @@ Priority is business impact × urgency. The test lead sets it with the
 business; the tester's value is a proposal. Severity is the technical
 effect; Cloud ALM has no separate severity field, so the one priority
 field decides the order of fixing. Where the project has no definitions
-(the scale follows the logic of SAP's support case priorities):
+(the four levels are those of SAP's support case priorities):
 
 | Priority | In SIT / UAT |
 | --- | --- |
@@ -128,8 +127,8 @@ until the owner confirms.
 | SAP standard error | Standard app, no custom code involved, reproducible with standard configuration | Functional consultant | Search SAP Notes and knowledge base by message class and number and app; if none, the customer opens an SAP support case with business impact and go-live date. Keep the defect open, put the note or case number in a comment |
 | Change request | See below | Process owner and project lead | Out of the defect list |
 
-Authorization and master data failures routinely look like
-configuration errors: rule them out first.
+Rule out authorization and master data causes before calling it
+configuration.
 
 ### Defect or change request?
 
@@ -139,8 +138,7 @@ does what was agreed and the tester wants something else or more
 ("should also", "would be better", a new field, report or approval
 step). `calm_trace` to the requirement and read it with `calm_get`:
 no requirement covers the expectation, or the requirement says
-otherwise, means a change. UAT produces many of these because key users
-see the solution for the first time.
+otherwise, means a change.
 
 Do not downgrade it to a low defect or let it be fixed quietly: both
 hide scope and cost. Propose: close the defect as `done` with a comment

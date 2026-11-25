@@ -4,11 +4,11 @@
  * agent can run it for the user. Never prints the key's contents.
  */
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { isServiceKey, stripBom } from "./key.js";
 import { SERVER_KEY } from "./clients.js";
 
@@ -362,16 +362,37 @@ export function skillsDirs(clients: Client[], e: Pick<SetupEnv, "home" | "env">)
   return dirs;
 }
 
-/** Copy the skills into a client's folder, replacing copies from an earlier version. */
+/** Left in each skill folder setup writes, so only those are replaced or removed later. */
+export const SKILL_MARKER = ".cloud-alm-mcp-server";
+
+/**
+ * Whether a skill folder is one this package installed: it holds the
+ * marker, or (installed before the marker existed) a SKILL.md of that name
+ * that uses this server's tools. A folder someone made themselves is not.
+ */
+export function ownSkill(target: string): boolean {
+  if (existsSync(join(target, SKILL_MARKER))) return true;
+  try {
+    const text = readFileSync(join(target, "SKILL.md"), "utf8");
+    return new RegExp(`^name: ${basename(target)}$`, "m").test(text) && /\bcalm_(overview|list|get|gaps)\b/.test(text);
+  } catch {
+    return false;
+  }
+}
+
+/** Copy the skills into a client's folder, replacing copies from an earlier version; a folder of the same name that is not ours stays. */
 export function installSkills(dir: string, source: string = SKILLS_SOURCE): number {
-  const names = skillNames(source);
-  for (const name of names) {
+  let installed = 0;
+  for (const name of skillNames(source)) {
     const target = join(dir, name);
+    if (existsSync(target) && !ownSkill(target)) continue;
     rmSync(target, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     cpSync(join(source, name), target, { recursive: true });
+    writeFileSync(join(target, SKILL_MARKER), "Installed by cloud-alm-mcp-server setup; replaced on the next setup and removed by uninstall.\n");
+    installed++;
   }
-  return names.length;
+  return installed;
 }
 
 /** Take this package's skills out of a folder; other skills there are left alone. */
@@ -379,7 +400,7 @@ export function removeSkills(dir: string, source: string = SKILLS_SOURCE): numbe
   let removed = 0;
   for (const name of skillNames(source)) {
     const target = join(dir, name);
-    if (!existsSync(join(target, "SKILL.md"))) continue;
+    if (!existsSync(target) || !ownSkill(target)) continue;
     rmSync(target, { recursive: true, force: true });
     removed++;
   }

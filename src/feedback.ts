@@ -62,7 +62,9 @@ type Env = Record<string, string | undefined>;
 /** Where a local installation's reports go, and why. */
 export function localFeedback(env: Env, configDir: string): { on: boolean; detail: string; url?: string } {
   // Anything but a plain yes turns reports off: a typo must not leave them on.
-  const wanted = env[FEEDBACK_ENV]?.trim() ?? "";
+  // A placeholder the app left unfilled ("${user_config.send_reports}") counts as not set.
+  const given = env[FEEDBACK_ENV]?.trim() ?? "";
+  const wanted = given.startsWith("${") ? "" : given;
   if (wanted && !/^(on|1|true|yes)$/i.test(wanted))
     return { on: false, detail: `off (${FEEDBACK_ENV}=${wanted.slice(0, 20)})` };
   if (existsSync(join(configDir, FEEDBACK_OFF_FILE))) return { on: false, detail: "off (turned off with `feedback off`)" };

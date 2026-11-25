@@ -27,7 +27,7 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
 
 <p>
 <img src="docs/images/overview-light.png" alt="Project overview card: findings, project status and expandable breakdowns" width="49%">
-<img src="docs/images/update-light.png" alt="Approval card: priority high → very high, new comment, Approve / Reject" width="49%">
+<img src="docs/images/update-light.png" alt="Approval card: a user story's priority from high to very high and a new comment, with Approve and Reject" width="49%">
 </p>
 
 > MIT licence. An independent open-source project, not
@@ -68,12 +68,10 @@ Your assistant can report missing fields, unexpected results or extra tool calls
 
 ## Setup in 2 minutes (video)
 
-https://github.com/user-attachments/assets/747194c4-332f-4be5-8da9-47faf746ee4c
+[![Setup video: get a service key in SAP BTP, then run setup](docs/images/setup-video.png)](docs/media/setup-tutorial.mp4)
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
-coding agent. With narration, 2 minutes. The video was recorded before
-`setup` asked its questions in a terminal: that part looks different now
-(see [Install](#2-install)).
+coding agent. With narration, 2 minutes. Click the picture to play it.
 
 ## 1. Get a service key
 

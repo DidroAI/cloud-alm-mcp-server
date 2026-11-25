@@ -96,7 +96,7 @@ stays the fit/gap classification of a requirement.
 | Result *not in a test plan* | The test case exists but nobody planned to run it in this cycle: a hole in the test scope, not a pending test. |
 | Result *not run* | Planned, not executed. Counts against execution rate. |
 | *blocked* | Could not be tested (data, role, environment, upstream defect). Report with failed, never with "remaining". |
-| Solution process | Has no direct link to a test case: process coverage is read through its requirements. Standard processes with no requirement can be in scope and have no test at all. |
+| Solution process | The tools do not read a test case's process: process coverage is read through its requirements. Standard processes with no requirement can be in scope and have no test at all. |
 | Defect priority (very high, high, medium, low) | Business impact × urgency, set by the test lead with the business; Cloud ALM has no separate severity field. Check the values against the project's definitions before counting. |
 | Defect status: open (new), in progress, blocked, in progress (retest required), done | A fix is proven only by the re-run. Closing a defect does not change the test result. |
 | Feature status: in specification, in realization, in testing, tested, approved for deployment, deployed | Where the build is. Transports are listed by id only (`calm_get` a feature): which system a transport has reached and whether it is released is not in Cloud ALM's API; the user checks it in Cloud ALM. So "fixed" does not say "imported". |

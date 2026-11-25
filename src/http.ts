@@ -25,6 +25,14 @@ export type HttpOptions = {
   reader?: CloudAlmOptions;
   /** Receiver used by the default server factory. */
   feedbackSink?: FeedbackSink;
+  /**
+   * Host names (with port) this server answers to, e.g. `["127.0.0.1:3333",
+   * "localhost:3333"]`. Set for a server on the loopback address: a web
+   * page that points its own name at 127.0.0.1 (DNS rebinding) is refused,
+   * as is any request a browser sends from another site (an Origin header).
+   * Default: no check, for servers behind a proxy that names them.
+   */
+  allowedHosts?: readonly string[];
   /** Largest accepted request body. Default 256 KB. */
   maxBodyBytes?: number;
   /** Tool options for tests and embedding. Default: from each caller's token, as the key decides. */
@@ -106,7 +114,13 @@ export function createHttpHandler(options: HttpOptions = {}) {
       await server.close().catch(() => undefined);
     }
   };
+  const hosts = options.allowedHosts ? new Set(options.allowedHosts.map((h) => h.toLowerCase())) : undefined;
   return async (request: Request): Promise<Response> => {
+    if (hosts) {
+      if (!hosts.has((request.headers.get("host") ?? "").toLowerCase())) return refuse(403, "This server does not answer to that host name.");
+      const origin = request.headers.get("origin");
+      if (origin && !(URL.canParse(origin) && hosts.has(new URL(origin).host.toLowerCase()))) return refuse(403, "Requests from web pages are not accepted.");
+    }
     if (request.method !== "POST")
       return refuse(
         405,

@@ -47,6 +47,21 @@ The latest release gets fixes.
   a few fixed fields, but their free text is the agent's wording. Turn them
   off with `cloud-alm-mcp-server feedback off` where that is not acceptable.
 
+## Updates and pinning
+
+`setup` writes `npx -y cloud-alm-mcp-server` into each app, without a
+version: the app starts the newest release, so fixes arrive without a
+reinstall. The price is trust in each new release at the moment it is
+published. Releases are published from GitHub Actions with npm provenance,
+which `npm audit signatures` checks. To decide yourself when to update, put
+a version in the app's entry (`cloud-alm-mcp-server@0.3.3`); `setup` run
+again writes the entry without it.
+
+Started with `cloud-alm-mcp-server http` on the loopback address, the server
+answers only to `127.0.0.1`, `localhost` and `[::1]` with its port, and
+refuses requests that carry another site's `Origin`, so a web page cannot
+reach it through the browser.
+
 ## How the server handles secrets
 
 - The service key stays on the user's machine: `setup` and `init` save it
