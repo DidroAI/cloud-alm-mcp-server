@@ -68,10 +68,11 @@ Your assistant can report missing fields, unexpected results or extra tool calls
 
 ## Setup in 2 minutes (video)
 
-[![Setup video: get a service key in SAP BTP, then run setup](docs/images/setup-video.png)](docs/media/setup-tutorial.mp4)
+https://github.com/user-attachments/assets/aacac950-e66e-4121-917b-c7a88c85df6f
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
-coding agent. With narration, 2 minutes. Click the picture to play it.
+coding agent. With narration, 2 minutes. No player here?
+[Open the video file](docs/media/setup-tutorial.mp4).
 
 ## 1. Get a service key
 
