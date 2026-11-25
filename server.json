@@ -3,7 +3,7 @@
   "name": "io.github.DidroAI/cloud-alm-mcp-server",
   "title": "SAP Cloud ALM",
   "description": "SAP Cloud ALM: requirements, features, tests, defects, landscape; writes wait for your approval.",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "icons": [
     {
       "src": "https://raw.githubusercontent.com/DidroAI/cloud-alm-mcp-server/main/assets/icon.png",
@@ -23,7 +23,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "cloud-alm-mcp-server",
-      "version": "0.3.4",
+      "version": "0.3.5",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -38,7 +38,7 @@
         },
         {
           "name": "CALM_FEEDBACK",
-          "description": "Set to `off` to send Didro no reports about tool problems (short, written by the assistant; no records, credentials or chat text).",
+          "description": "Set to `off` to send Didro no reports about tool problems (short, written by the assistant; the server attaches no records, credentials or chat text).",
           "isRequired": false,
           "isSecret": false,
           "default": "on",

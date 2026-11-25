@@ -3,7 +3,8 @@ import { appBundle } from "./approval.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
 import { sapLogo } from "./sap-logo.js";
 
-export const CONTENT_URI = "ui://cloud-alm/content-v1.html";
+export const CONTENT_URI = "ui://cloud-alm/content-v2.html";
+export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v1.html"];
 export const CONTENT_TOOLS = new Set([
   "calm_projects",
   "calm_overview",
@@ -318,7 +319,7 @@ function sourceAction(item) {
   if (!hash) label = "Open launchpad";
   else if (hash.startsWith("#testPlan-display")) label = "Open Test Plans";
   else if (hash.startsWith("#ProcessScopingList")) label = "Open process list";
-  else if (hash.startsWith("#test-display") && !hash.includes("&/manual/")) label = "Open test case list";
+  else if (hash.startsWith("#test-display") && !hash.includes("&/manual/") && !hash.includes("&/automated/")) label = "Open test case list";
   return recordLink(label, url);
 }
 function table(headers, rows, title) {

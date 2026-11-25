@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { createMcpHandler } from "@modelcontextprotocol/server";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
 import { approvalFromEnv, CARD_URI, cardHtml, CHAT_HOLD_MS, clearPending, META_KEY, propose, settle, statusOf, take } from "../src/approval.js";
 import { CloudAlm } from "../src/calm/index.js";
@@ -412,14 +411,14 @@ test("the card draws a dry run as a preview, field by field", () => {
   const html = cardHtml();
   expect(html).toContain("A preview only. Nothing was sent to Cloud ALM.");
   expect(html).toContain("Nothing sent");
-  expect(CARD_URI).toBe("ui://cloud-alm/approve-v3.html");
+  expect(CARD_URI).toBe("ui://cloud-alm/approve-v4.html");
 });
 
 test("calm_overview carries the overview card", async () => {
   const { client } = await connect("ui", { approval: "prefer" });
   const tool = (await client.listTools()).tools.find((t) => t.name === "calm_overview");
   const uri = (tool?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri;
-  expect(uri).toBe("ui://cloud-alm/overview-v1.html");
+  expect(uri).toBe("ui://cloud-alm/overview-v2.html");
   const r = await client.readResource({ uri: uri as string });
   const html = (r.contents[0] as { text: string }).text;
   expect(html).not.toContain("__APP_BUNDLE__");

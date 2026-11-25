@@ -68,8 +68,6 @@ console.log(`mode: ${mode}`);
 const { tools } = await client.listTools();
 console.log(`tools: ${tools.length}`);
 
-const GUID =
-  /\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/i;
 let failures = 0;
 const called = new Set<string>();
 

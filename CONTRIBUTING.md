@@ -74,7 +74,8 @@ By contributing you agree that your contribution is licensed under the
 Maintainers release; only they can push `v*` tags.
 
 1. If the release needs something new from the hosted connector (an
-   endpoint, as `/feedback` was), deploy `hosted/` first.
+   endpoint, as `/feedback` was), deploy the hosted connector with it first
+   (step 7 says how).
 2. Set the new version in five places: `package.json`, `server.json` (twice:
    the server's `version` and its npm package's), `manifest.json`,
    `.claude-plugin/plugin.json`, and `SERVER_VERSION` in `src/server.ts`.
@@ -90,9 +91,20 @@ Maintainers release; only they can push `v*` tags.
    version in the MCP Registry from `server.json`, and attaches the Claude
    Desktop extension (`.mcpb`) to a GitHub Release. If the registry step
    fails, the npm release stands; run the *MCP Registry* workflow by hand.
-6. Point the hosted connector at the release: set the exact version of
-   `cloud-alm-mcp-server` in `hosted/package.json`, update
-   `hosted/package-lock.json` (`npm install` in `hosted/`), merge, and
-   deploy the hosted connector.
+6. After a release (not a prerelease, which is published under `beta`
+   already), move the `beta` tag to it, so that installs from the beta,
+   whose app entries name `cloud-alm-mcp-server@beta`, follow:
+   `npm dist-tag add cloud-alm-mcp-server@<version> beta`. This needs a
+   maintainer's npm login: the workflow's trusted publisher may publish but
+   cannot move tags.
+7. Point the hosted connector at the release. The connector at
+   docs.didro.ai/cloud-alm/connect is built by the docs site's project from
+   a commit of this repository pinned in its `package.json`: pin the release
+   commit there and push its `main`, which deploys it.
+
+`hosted/package.json` names the version of `cloud-alm-mcp-server` that a
+deployment of `hosted/` on its own serves; it needs no pull request per
+release. CI does not use it: it runs the hosted tests against the working
+tree's own build.
 
 To build the extension locally: `bun run build && scripts/build-mcpb.sh`.

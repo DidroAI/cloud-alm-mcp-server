@@ -1,7 +1,7 @@
 /* Brand masthead, paper palette, Sora headings and primary action from Didro Docs. */
 @font-face {
   font-family: Sora;
-  src: url("/assets/sora-400.ttf") format("truetype");
+  src: url("assets/sora-400.ttf") format("truetype");
   font-display: swap;
 }
 :root { --paper:#fdfcfb; --ink:#101114; --muted:#555258; --line:#d4cdcd; --red:#a31329; }
@@ -41,3 +41,4 @@ code { overflow-wrap:anywhere; }
 #key-upload label { font-weight:400; overflow-wrap:anywhere; }
 #key-upload label > span:first-child { border-style:solid; }
 .button:disabled { opacity:.5; cursor:default; }
+.about { margin-top:28px; }

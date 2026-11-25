@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { FEEDBACK_TOOL, feedbackSchema, type FeedbackSink } from "./feedback.js";
-import { CONTENT_TOOLS, CONTENT_URI, contentHtml } from "./content-app.js";
+import { CONTENT_TOOLS, CONTENT_URI, CONTENT_URIS_BEFORE, contentHtml } from "./content-app.js";
 import { registerSkillPrompts } from "./prompts.js";
 import {
   ANALYTICS_DATASETS,
@@ -18,9 +18,11 @@ import {
   ApprovalError,
   type ApprovalMode,
   CARD_URI,
+  CARD_URIS_BEFORE,
   cardHtml,
   META_KEY,
   OVERVIEW_URI,
+  OVERVIEW_URIS_BEFORE,
   overviewHtml,
   planFingerprint,
   propose,
@@ -67,19 +69,8 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.3.4";
+export const SERVER_VERSION = "0.3.5";
 
-/**
- * Any 8-4-4-4-12 hex id. Not `z.uuid()`: Cloud ALM ids need not be RFC 4122
- * (some tenants use project ids like `11111111-1111-1111-1111-111111111111`).
- */
-const GUID =
-  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const guid = (what: string) =>
-  z
-    .string()
-    .regex(GUID, "must be a GUID")
-    .describe(`${what} (a GUID, as shown in [brackets] by list tools)`);
 const projectId = z.string().min(1).max(200).optional().describe("Project id or name (calm_projects lists them); omit when the tenant has one project or a default is set");
 
 /** Drop undefined keys: the library's options use exact optional types. */
@@ -259,7 +250,7 @@ export function createServer(
     title: string,
     args: Record<string, unknown>,
     run: WriteCall,
-    ctx: Extra,
+    _ctx: Extra,
   ): Promise<CallToolResult> => {
     // "Create a defect" rather than the tool's generic "Create a task".
     if (name === "calm_create_task" && typeof args.type === "string") title = `Create a ${args.type.replace(/_/g, " ")}`;
@@ -679,6 +670,13 @@ export function createServer(
       }
     });
   }
+  /** A card under its address, and under the addresses it had before, for apps that still ask for those. */
+  function card(name: string, description: string, uri: string, before: readonly string[], html: () => string) {
+    for (const [earlier, address] of [uri, ...before].entries())
+      registerAppResource(server, earlier ? `${name} (earlier address ${earlier})` : name, address,
+        { description, _meta: UI_META },
+        async () => ({ contents: [{ uri: address, mimeType: RESOURCE_MIME_TYPE, text: html(), _meta: UI_META }] }));
+  }
   if (show) {
     registerAppTool(server, "calm_show", {
       title: "Show Cloud ALM",
@@ -699,30 +697,15 @@ export function createServer(
     });
   }
   if (show || (options.cards !== false && !explicit && [...contentSchemas.keys()].some(name => name !== "calm_overview")))
-    registerAppResource(server, "Cloud ALM content", CONTENT_URI,
-      { description: "Projects and items from SAP Cloud ALM", _meta: UI_META },
-      async () => ({ contents: [{ uri: CONTENT_URI, mimeType: RESOURCE_MIME_TYPE, text: contentHtml(options.synthetic), _meta: UI_META }] }),
-    );
+    card("Cloud ALM content", "Projects and items from SAP Cloud ALM", CONTENT_URI, CONTENT_URIS_BEFORE, () => contentHtml(options.synthetic));
   if (!explicit && options.cards !== false && (!allowed || allowed.has("calm_overview")))
-    registerAppResource(
-      server,
-      "Cloud ALM project overview",
-      OVERVIEW_URI,
-      { description: "A Cloud ALM project at a glance", _meta: UI_META },
-      async () => ({ contents: [{ uri: OVERVIEW_URI, mimeType: RESOURCE_MIME_TYPE, text: overviewHtml(), _meta: UI_META }] }),
-    );
+    card("Cloud ALM project overview", "A Cloud ALM project at a glance", OVERVIEW_URI, OVERVIEW_URIS_BEFORE, overviewHtml);
   if (options.prompts !== false) registerSkillPrompts(server);
   return server;
 
   /** The card resource and the tools that carry the user's decision. */
   function registerApproval() {
-    registerAppResource(
-      server,
-      "Cloud ALM approval",
-      CARD_URI,
-      { description: "Approve or reject a change to SAP Cloud ALM", _meta: UI_META },
-      async () => ({ contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: cardHtml(), _meta: UI_META }] }),
-    );
+    card("Cloud ALM approval", "Approve or reject a change to SAP Cloud ALM", CARD_URI, CARD_URIS_BEFORE, cardHtml);
     const decide = async (id: string, nonce: string | undefined, approve: boolean, tool?: string): Promise<CallToolResult> => {
       try {
         // A rejection writes nothing: it is never held.

@@ -82,8 +82,8 @@ this key"); the rest still answers. Errors are short text with a code
 
 ### Links, words and cards
 
-- **Links.** Items carry `url`, the page in the Cloud ALM UI (its list app
-  for documents and test plans). The UI root comes from the service key's
+- **Links.** Items carry `url`, the page in the Cloud ALM UI (the list app
+  for test plans and processes). The UI root comes from the service key's
   token host (`<tenant>.authentication.<region>…` → `https://<tenant>.<region>.alm.cloud.sap`);
   set `CALM_WEB_URL` (or, over HTTP, the `X-Calm-Web-Url` header) when it
   differs. A pasted Cloud ALM link works wherever an id does.
@@ -141,6 +141,10 @@ says it supports, and the user approves it in one of these ways:
 | --- | --- | --- |
 | the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, the Codex app, VS Code, Goose |
 | the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name | clients without the card, or with a card without buttons (terminals, the Claude Code tab) |
+
+Claude on the web and ChatGPT reach the write tools only through an HTTP
+endpoint of your own ([hosting.md](hosting.md)): Didro's hosted connector is
+read-only.
 
 The card comes first. Once a card with working buttons is on the user's
 screen it takes the change for itself, and `calm_confirm` is refused for

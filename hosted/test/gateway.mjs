@@ -110,6 +110,13 @@ for (const base of ["", "/cloud-alm/connect"])
       assert.ok(html.includes(`"${base}${asset}"`), asset);
     assert.ok(html.includes(`action="${base}/oauth/authorize"`));
     assert.match(html, /counts sign-ins and tool calls/);
+    assert.match(html, /can send Didro short reports/, "the notice follows the report tool, not a setting");
+    assert.match(html, /not affiliated with or endorsed by SAP/);
+    assert.equal(consent.headers.get("cache-control"), "no-store");
+    // A state that is not plain text is refused: encoded, it could outgrow the cookie.
+    const odd = new URLSearchParams(query);
+    odd.set("state", "caf\u00e9");
+    assert.equal((await req(base + "/oauth/authorize?" + odd)).status, 400);
     const cookie = consent.headers.get("set-cookie").split(";")[0];
     assert.match(consent.headers.get("set-cookie"), /^__Host-calm-flow=.*; Path=\/; Secure; HttpOnly; SameSite=Lax/);
     const csrf = /name="csrf" value="([^"]+)"/.exec(html)[1];
@@ -143,8 +150,36 @@ for (const base of ["", "/cloud-alm/connect"])
     assert.ok(!JSON.stringify(rows).includes(token.access_token), "the connector token is stored as a digest");
 
     const auth = { authorization: "Bearer " + token.access_token };
-    const called = await (await rpc({ method: "tools/call", params: { name: "calm_projects", arguments: {} } }, auth)).json();
+    const answer = await rpc({ method: "tools/call", params: { name: "calm_projects", arguments: {} } }, auth);
+    // Counted by the time the answer is handed back, and never to be stored on the way.
+    assert.ok(events.some((e) => e.kind === "tool_call" && e.tool === "calm_projects" && e.outcome === "ok"));
+    assert.equal(answer.headers.get("cache-control"), "no-store");
+    const called = await answer.json();
     assert.match(JSON.stringify(called), /Synthetic tenant project/);
+    // One message per request; anything else is a bad request, not a failure of the server.
+    for (const body of ["null", "[]", "[{}]", '"text"']) {
+      const bad = await req(base + "/mcp", { method: "POST", headers: { "content-type": "application/json", ...auth }, body });
+      assert.equal(bad.status, 400, body);
+    }
+    // A session sealed with a key this deployment no longer has reads as expired: the app signs in again.
+    const sealedWith = process.env.CONNECT_KEY;
+    process.env.CONNECT_KEY = randomBytes(32).toString("hex");
+    const rotated = await rpc({ method: "tools/list" }, auth);
+    assert.equal(rotated.status, 401);
+    assert.match(rotated.headers.get("www-authenticate"), /error="invalid_token"/);
+    const unknown = await req(base + "/oauth/token", { method: "POST", body: new URLSearchParams({ grant_type: "authorization_code", code: "x", code_verifier: verifier, client_id: client.client_id, redirect_uri: redirect }) });
+    assert.equal(unknown.status, 401);
+    assert.equal((await unknown.json()).error, "invalid_client");
+    process.env.CONNECT_KEY = sealedWith;
+    // One session sends ten reports an hour at most, whatever its assistant is told.
+    const tell = () => rpc({ method: "tools/call", params: { name: "calm_report_feedback", arguments: { tool: "calm_list", outcome: "recovered", observation: "A filter was refused once and then worked." } } }, auth).then((r) => r.json());
+    for (let i = 0; i < 10; i++) assert.notEqual((await tell()).result.isError, true, "report " + (i + 1));
+    assert.equal(stored.length, 10);
+    const eleventh = await tell();
+    assert.equal(eleventh.result.isError, true);
+    assert.match(eleventh.result.content[0].text, /Enough reports/);
+    assert.equal(stored.length, 10);
+    stored.length = 0;
     await rpc({ method: "tools/call", params: { name: "calm_made_up_name", arguments: {} } }, auth);
     // Credentials that do not decode are a refusal, not a server error.
     const garbled = await req(base + "/oauth/token", { method: "POST", headers: { authorization: "Basic " + Buffer.from("%zz:%zz").toString("base64") }, body: "grant_type=authorization_code" });
@@ -173,6 +208,7 @@ for (const base of ["", "/cloud-alm/connect"])
       assert.doesNotMatch(JSON.stringify(event), /synthetic|eu20|docs\.test|made_up/);
     }
     assert.ok(!seen.some((e) => e.startsWith("server_error")), seen.join(" "));
+    assert.ok(seen.includes("rate_limited/feedback//"), seen.join(" "));
     // The sign-in page is for people: one sender cannot open it without end.
     let last;
     for (let i = 0; i < 31; i++) last = await req(base + "/oauth/authorize?" + query, { headers: { "x-real-ip": "203.0.113.9" } });
@@ -188,5 +224,23 @@ test("a failing counter never fails a request", async () => {
   }));
   assert.equal(res.status, 201);
   const rejecting = createGateway({ origin: "https://docs.test", sql, record: () => Promise.reject(new Error("down")) });
-  assert.equal((await rejecting(new Request("https://docs.test/oauth/token", { method: "POST", body: "grant_type=x" }))).status, 400);
+  assert.equal((await rejecting(new Request("https://docs.test/oauth/token", { method: "POST", body: "grant_type=x" }))).status, 401);
+});
+
+test("without a place to keep reports there is no report tool, no inbox and no notice", async () => {
+  const origin = "https://connector.test";
+  const { sql } = sessions();
+  const handle = createGateway({ origin, sql });
+  const list = await (await handle(new Request(origin + "/mcp", {
+    method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  }))).json();
+  assert.ok(list.result.tools.length > 5 && !list.result.tools.some((tool) => tool.name === "calm_report_feedback"));
+  assert.equal((await handle(new Request(origin + "/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }))).status, 404);
+  const redirect = "https://claude.ai/api/mcp/auth_callback";
+  const client = await (await handle(new Request(origin + "/oauth/register", { method: "POST", body: JSON.stringify({ redirect_uris: [redirect], token_endpoint_auth_method: "none" }) }))).json();
+  const query = new URLSearchParams({ client_id: client.client_id, redirect_uri: redirect, response_type: "code", code_challenge: s256("v".repeat(43)), code_challenge_method: "S256" });
+  const html = await (await handle(new Request(origin + "/oauth/authorize?" + query))).text();
+  assert.doesNotMatch(html, /short reports/);
+  assert.doesNotMatch(html, /counts sign-ins/);
 });

@@ -56,6 +56,7 @@ export function metadata(origin, path, base = "") {
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       token_endpoint_auth_methods_supported: methods,
+      revocation_endpoint_auth_methods_supported: methods,
       scopes_supported: [scope],
       code_challenge_methods_supported: ["S256"],
       authorization_response_iss_parameter_supported: true,
@@ -100,13 +101,15 @@ async function register(req, note) {
     201,
   );
 }
-function authorize({ origin, base, note }, params) {
+function authorize({ origin, base, note, reportsOn }, params) {
   const id = params.get("client_id"),
     redirect = params.get("redirect_uri"),
     challenge = params.get("code_challenge");
   const client = unpack("client", id);
   if (
     !client.redirects.includes(redirect) ||
+    // Checked again, so narrowing the list of apps later also closes client ids issued before.
+    !platform(redirect) ||
     params.get("response_type") !== "code" ||
     params.get("code_challenge_method") !== "S256" ||
     !/^[-_a-zA-Z0-9]{43}$/.test(challenge ?? "") ||
@@ -115,7 +118,8 @@ function authorize({ origin, base, note }, params) {
   )
     fail();
   const state = params.get("state") ?? "";
-  if (state.length > 1024) fail();
+  // Printable ASCII only: anything else can grow past what a cookie may hold once it is encoded.
+  if (state.length > 1024 || !/^[\x20-\x7e]*$/.test(state)) fail();
   const csrf = nonce();
   const flow = seal("flow", {
     origin,
@@ -140,7 +144,7 @@ function authorize({ origin, base, note }, params) {
       <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
       <p class="hint">Anyone using this connection can read the records your key allows. Continue only if you started this from ${platform(redirect)} yourself a moment ago, not from a link someone sent you.</p>
       ${note ? '<p class="hint">Didro counts sign-ins and tool calls by tool name, to see what is used. The counts carry no tenant, no address and no content.</p>' : ""}
-      ${process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
+      ${reportsOn ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
       <button class="button" type="submit">Connect to ${platform(redirect)}</button>
     </form>
     <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The app discards the file and encrypts the temporary SAP token in the session database. ${platform(redirect)} receives a separate connector token.</p></details>`,
@@ -254,7 +258,12 @@ function authenticate(req, p) {
     if (id && id !== basicId) fail("invalid_client", 401);
     id = basicId;
   }
-  const { method } = unpack("client", id);
+  let method;
+  try {
+    ({ method } = open("client", id));
+  } catch {
+    fail("invalid_client", 401);
+  }
   const used = basic
     ? "client_secret_basic"
     : secret

@@ -43,7 +43,9 @@ export function seal(purpose, value) {
 }
 export function open(purpose, text) {
   const bytes = Buffer.from(text, "base64url");
-  const cipher = createDecipheriv("aes-256-gcm", keyFor(useOf(purpose)), bytes.subarray(0, 12));
+  // 12 bytes of nonce, a whole 16-byte tag, and at least one byte of data.
+  if (bytes.length < 29) throw new Error("Not a sealed value");
+  const cipher = createDecipheriv("aes-256-gcm", keyFor(useOf(purpose)), bytes.subarray(0, 12), { authTagLength: 16 });
   cipher.setAAD(Buffer.from(purpose));
   cipher.setAuthTag(bytes.subarray(12, 28));
   return JSON.parse(

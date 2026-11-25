@@ -1,6 +1,6 @@
 {
   "name": "cloud-alm-mcp-server",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "mcpName": "io.github.DidroAI/cloud-alm-mcp-server",
   "description": "MCP server for SAP Cloud ALM: projects, requirements, features, test cases, processes, landscape and analytics; writes wait for the user's approval",
   "license": "MIT",
@@ -70,7 +70,7 @@
     "build": "bun run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "bun test test",
-    "test:hosted": "node --test hosted/test/feedback.mjs hosted/test/gateway.mjs",
+    "test:hosted": "node scripts/link-hosted.mjs && node --test hosted/test/feedback.mjs hosted/test/gateway.mjs",
     "start": "node dist/cli.js",
     "start:http": "node dist/cli.js http",
     "check:live": "bun scripts/live-check.ts",
@@ -85,7 +85,6 @@
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/core": "2.4.0",
     "@modelcontextprotocol/ext-apps": "2.1.0",
-    "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
     "zod": "4.6.7"
   },

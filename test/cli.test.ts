@@ -599,7 +599,7 @@ describe("setup", () => {
         return value;
       },
       secret: async (message) => next(message),
-      spin: async (message, work, done) => {
+      spin: async (_message, work, done) => {
         const result = await work();
         say(done(result));
         return result;

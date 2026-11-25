@@ -6,13 +6,31 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-25
+
+Fixes from a review of the code, the hosted connector and the documentation.
+
+- A card that changed could still be shown in its old form, because apps keep a card by its address: the three cards have new addresses, the earlier ones keep answering, and a test now fails when a card changes without a new address.
+- The card labels the link of an automated test case "Open record", not "Open test case list".
+- Reports about tool problems: text with control characters or marks that reverse its direction is refused, like links and e-mail addresses. The wording everywhere now says what is true: the server attaches no records, credentials or chat text, and the one or two sentences are the assistant's.
+- Documentation corrected against the code: the reports switch of the Claude Desktop extension and the Claude Code plugin (PRIVACY.md said there was none), what `CALM_APPROVAL=chat` does, what `doctor` and `feedback` can see, where links open, the loopback host check for people who put a gateway in front of `http`, that `npx` asks the npm registry at each start, and how the hosted connector handles the key.
+- The extension is smaller (an unused dependency is gone, only the icon is packed), and its description says where the reports switch is. Published files no longer point at source maps that are not shipped.
+- Hosted connector:
+  - a tool call is counted before its answer is returned, so counts are not lost; only one message per request is accepted;
+  - a session or client id sealed with a key the deployment no longer has is answered with "sign in again" (401) instead of a server error;
+  - oversized posts to the report inbox no longer use up everyone's hourly allowance, the table of senders has a ceiling, and one signed-in session can send at most ten reports an hour;
+  - reports are stored by the deployment itself (`reports.save`); the forwarding to another receiver and `DIDRO_HOSTED_FEEDBACK_TOKEN` are gone, and the sign-in page's notice about reports follows the report tool, not a setting;
+  - every answer carries `Cache-Control: no-store`; the sign-in page says the project is not affiliated with SAP;
+  - its tests run against this repository's own build, as it is deployed.
+- Housekeeping: Dependabot now reads the Bun lockfile, CI builds the extension, unused code is flagged by the type check, the local agent folder is ignored by git.
+
 ## [0.3.4] - 2026-11-25
 
 - The link of an automated test case opens that test case in Cloud ALM, not the list of test cases.
-- New icon of our own (a cloud with a linked check) for the server, the Claude Desktop extension and the registry entry, in place of SAP's logo.
+- New icon of our own (a cloud with a linked check) for the server, the Claude Desktop extension and the registry entry, in place of SAP's logo there; the cards still show SAP's logo.
 - Where views are shown with `calm_show` (the hosted connector in ChatGPT and Claude), the assistant is told more plainly to use it: the instructions and the tool's description say when, and each read ends with a reminder and the exact call. Before, a request such as "show the tests" could be answered with a text table.
 - Reports about tool problems go to `https://docs.didro.ai/cloud-alm/feedback`. Earlier versions keep posting to `https://calm.didro.ai/feedback`, which still takes them.
-- Didro's hosted connector is now at `https://docs.didro.ai/cloud-alm/connect/mcp`. A connection made at the former address, `https://calm.didro.ai/mcp`, will have to be added again once that address is retired. It now counts sign-ins and tool calls per hour (tool name, outcome, app, version; no tenant, address or content), and says so on the sign-in page and in PRIVACY.md.
+- Didro's hosted connector is now at `https://docs.didro.ai/cloud-alm/connect/mcp`. A connection made at the former address, `https://calm.didro.ai/mcp`, has to be added again: that address now answers "moved". It now counts sign-ins and tool calls per hour (tool name, outcome, app, version; no tenant, address or content), and says so on the sign-in page and in PRIVACY.md.
 - The hosted connector can be mounted under a path of an existing site and can store reports in its own deployment.
 - Hosted connector hardening after a review: a separate derived key for client ids, sign-in flows, stored grants and client secrets (existing registrations must be made again); only tools the server has are counted by name; the per-sender limit covers the sign-in page and key upload, not the registration and code exchange that the apps' shared servers perform; credentials that do not decode are refused instead of failing; the sign-in page warns against continuing from a link someone else sent.
 

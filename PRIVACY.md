@@ -1,8 +1,14 @@
 # Privacy
 
-## Hosted browser connection
+## Hosted connector
 
-When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector reads SAP data. Agent feedback is enabled by default on Didro’s hosted service. When the assistant encounters tool friction it can send a short observation to Didro’s private inbox. Reports contain the fields described below. The connector does not automatically attach SAP results or conversation transcripts. The hosted connector also counts, per hour, how often its sign-in steps and each tool were used, with the outcome (worked or failed), the app (ChatGPT or Claude) and the server version. These counts hold no tenant, no IP address, no user and no content.
+When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection.
+
+The hosted connector only reads SAP data. The records you read pass through Didro’s server in memory, on their way to the app you connected, and are not stored.
+
+Agent feedback is enabled by default on Didro’s hosted connector. When the assistant encounters tool friction it can send a short observation to Didro’s private inbox. Reports contain the fields described below. The connector does not automatically attach SAP results or conversation transcripts.
+
+The hosted connector also counts, per hour, how often its sign-in steps and each tool were used, with the outcome (worked or failed), the app (ChatGPT or Claude) and the server version, and how many reports arrived or were refused. These counts hold no tenant, no IP address, no user and no content. Reports and counts are kept until Didro deletes them.
 
 ## Local installation
 
@@ -28,24 +34,32 @@ the tools can be improved. A report holds:
 
 The server attaches no SAP results, credentials, tenant address, project or
 record, user name or chat history. The tool tells the assistant to describe
-the tool's behaviour in generic words and refuses text holding web addresses,
-e-mail addresses, credentials or record IDs. The sentences are still free
-text written by an AI assistant, so they can hold private words it chose to
-write. Your MCP client shows each call of the tool like any other.
+the tool's behaviour in generic words and refuses text that looks like a web
+address, an e-mail address, a bearer token or a GUID, and control
+characters. The one or two sentences are still free text written by an AI
+assistant, so they can hold private words it chose to write (a short item
+id or a name, for instance). Your MCP client shows each call of the tool
+like any other.
 
 Reports go to `https://docs.didro.ai/cloud-alm/feedback` (versions before
 0.3.4: `https://calm.didro.ai/feedback`), which stores them in Didro's
 private inbox. As with any request, Didro's hosting provider sees the
 sender's IP address; it is used to limit how many reports one sender can
-post and is not stored with the report.
+post and is not stored with the report. Reports are kept until Didro deletes
+them.
 
 **Turning reports off.** Run `npx -y cloud-alm-mcp-server feedback off` (for
 every client on this computer; `feedback on` turns them back on), or set
-`CALM_FEEDBACK=off` in a client's configuration. `doctor` shows which it is.
-The tool is then not offered to the assistant at all. The command also
-covers the Claude Desktop extension and the Claude Code plugin, which have
-no setting of their own for it; per install channel:
+`CALM_FEEDBACK=off` in a client's configuration. The tool is then not
+offered to the assistant at all. The Claude Desktop extension and the Claude
+Code plugin also have a switch of their own in their settings ("Send Didro
+short reports about tool problems"); `feedback off` covers them too. Per
+install channel:
 [docs/install.md](docs/install.md#reports-about-tool-problems).
+
+`doctor` and `feedback` show the computer-wide setting (and `CALM_FEEDBACK`
+only when it is set in the shell they run in); a switch set inside one app
+is not visible to them.
 
 **Another receiver.** An operator can set `CALM_FEEDBACK_URL`, and
 `CALM_FEEDBACK_TOKEN` for its credential, to send the reports to a receiver
@@ -68,6 +82,11 @@ Unless agent reports are turned off, also to
 `https://docs.didro.ai/cloud-alm/feedback`
 (or the receiver in `CALM_FEEDBACK_URL`), only when your assistant sends a
 report.
+
+Started through `npx` (every channel except the Claude Desktop extension),
+npm asks registry.npmjs.org for the current version at each start, which is
+how updates arrive. That request comes from npm, not from the server, and
+carries no Cloud ALM data.
 
 SAP processes these requests under your organisation's agreement with SAP.
 The server refuses an API address that is not an https `*.alm.cloud.sap`

@@ -16,24 +16,27 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `npx cloud-alm-mcp-server --version`
+      description: Output of `npx -y cloud-alm-mcp-server --version`. For the hosted connector, write "hosted".
     validations:
       required: true
   - type: dropdown
     id: client
     attributes:
       label: Client
-      options: [Claude Desktop, Claude Code, Codex, Cursor, VS Code, ChatGPT, Other]
+      options: [Claude Desktop, Claude Code, Claude (web), Codex, Cursor, VS Code, ChatGPT, Other]
     validations:
       required: true
   - type: dropdown
     id: mode
     attributes:
       label: Mode
-      options: [stdio (service key), HTTP (bearer token)]
+      options:
+        - stdio (service key)
+        - HTTP (bearer token)
+        - Hosted connector (ChatGPT or Claude in the browser)
   - type: textarea
     id: doctor
     attributes:
       label: Output of `cloud-alm-mcp-server doctor`
-      description: It prints no secrets.
+      description: It prints no secrets. Leave empty for the hosted connector.
       render: text

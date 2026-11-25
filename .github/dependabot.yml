@@ -1,12 +1,18 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  # The package is locked with bun.lock.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
     groups:
       mcp-sdk:
         patterns: ["@modelcontextprotocol/*"]
+  # The hosted connector's own folder is locked with npm.
+  - package-ecosystem: npm
+    directory: /hosted
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

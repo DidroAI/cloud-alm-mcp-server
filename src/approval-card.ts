@@ -6,7 +6,7 @@
  * A plain template, not String.raw: Bun writes non-ASCII characters of a
  * template as \u escapes, which a raw template would show as typed.
  */
-export const CARD_TEMPLATE = `<!doctype html>
+export const CARD_TEMPLATE: string = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cloud ALM approval</title>
 <style>
