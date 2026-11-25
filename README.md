@@ -15,7 +15,7 @@ For a browser-only connection to your own tenant, try the [hosted ChatGPT and Cl
 
 [Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting) or [connect your own SAP tenant](https://docs.didro.ai/cloud-alm/#install).
 
-For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` with Node.js 22 or later. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.
+For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` in a terminal with Node.js 22 or later; it asks which key and which apps. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.
 
 - *"Where does the project stand, and what changed since Friday?"*
 - *"What blocks UAT exit? List failed tests with their defects and the
@@ -64,14 +64,16 @@ opens. For a text answer or an export, the assistant can skip that last call.
 
 ### Agent feedback
 
-Your assistant can report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. A report is the tool's name, the outcome and one or two generic sentences: no records, credentials or chat text ([PRIVACY.md](PRIVACY.md)). It is on by default; turn it off with `npx -y cloud-alm-mcp-server feedback off` or `CALM_FEEDBACK=off`. Operators can send the reports to a receiver of their own with `CALM_FEEDBACK_URL`. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
+Your assistant can report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. A report is the tool's name, the outcome, one or two generic sentences, the server's version and a random report ID: no records, credentials or chat text ([PRIVACY.md](PRIVACY.md)). It is on by default in a local install, whichever way you installed; turn it off with `npx -y cloud-alm-mcp-server feedback off` (every app on this computer) or `CALM_FEEDBACK=off` (one app's configuration). How to do that for the Claude Desktop extension, the Claude Code plugin and a registry install: [docs/install.md#reports-about-tool-problems](docs/install.md#reports-about-tool-problems). Operators can send the reports to a receiver of their own with `CALM_FEEDBACK_URL`. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
 
 ## Setup in 2 minutes (video)
 
 https://github.com/user-attachments/assets/747194c4-332f-4be5-8da9-47faf746ee4c
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
-coding agent. With narration, 2 minutes.
+coding agent. With narration, 2 minutes. The video was recorded before
+`setup` asked its questions in a terminal: that part looks different now
+(see [Install](#2-install)).
 
 ## 1. Get a service key
 
@@ -91,18 +93,34 @@ its JSON. Step by step, with an e-mail you can send to your BTP admin:
 npx -y cloud-alm-mcp-server setup
 ```
 
-It finds the key you downloaded in `~/Downloads`, checks it against SAP,
-saves it readable only by you, and adds the server to Claude Code, Codex,
-Claude Desktop and Cursor, whichever are installed. Then open a new chat
-(quit and reopen Claude Desktop) and ask: *"Where does my Cloud ALM project
-stand?"*
+In a terminal, `setup` asks its way through:
+
+1. **Which service key?** Type the path of the key file (or drag the file
+   into the window), or paste the key; a pasted key is not shown. A key
+   found in `~/Downloads` from the last week and the key saved before are
+   offered too.
+2. It checks the key against SAP (a token, its scopes, one read) and saves
+   it readable only by you.
+3. **Which apps?** Claude Code, Codex, Claude Desktop and Cursor, the ones
+   installed, all ticked; untick what you do not want.
+4. **The skills too?** Yes or no ([Skills](#skills-whole-workflows)).
+5. It prints what was done per app and what to do next: what to restart,
+   and a first question to ask.
+
+`setup <file>` names the key up front and skips the first question. Run by
+an AI agent, in CI or through a pipe, or with `--no-input`, setup asks
+nothing: it takes the file named, else the newest key in `~/Downloads` from
+the last week, else the key saved before, adds the server to every app
+installed and installs the skills. `--client <list>` chooses the apps and
+`--no-skills` leaves the skills out, with or without questions. All options:
+[docs/install.md](docs/install.md#1-local-clients-the-setup-command-recommended).
 
 Or pick your client:
 
 | Client | How |
 | --- | --- |
 | Claude Desktop | [![Install in Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Install_extension-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) Download, double-click, choose your key file. No terminal, no Node.js. |
-| Claude Code | `/plugin install cloud-alm --marketplace DidroAI/cloud-alm-mcp-server` (server and skills) |
+| Claude Code | `/plugin install cloud-alm --marketplace DidroAI/cloud-alm-mcp-server` (server and skills). Instead of `setup` for Claude Code, not as well: [one or the other](docs/install.md#3-claude-code-plugin-server-and-skills) |
 | Cursor | [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=cloud-alm&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImNsb3VkLWFsbS1tY3Atc2VydmVyIl19) after `setup` saved the key |
 | VS Code (Copilot) | [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522cloud-alm%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522cloud-alm-mcp-server%2522%255D%257D) after `setup` saved the key |
 | Codex | `setup` adds it; by hand: `codex mcp add cloud-alm -- npx -y cloud-alm-mcp-server` |
@@ -154,9 +172,12 @@ prompt or slash-command menu):
 | `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
 | `cloud-alm-test-design` | test cases for what is untested |
 
-`setup` installs them for Claude Code, Codex and Cursor (skip with
-`--no-skills`); in other apps, use the prompts or point the agent to the
-SKILL.md.
+`setup` copies them to where Claude Code (`~/.claude/skills`, or
+`$CLAUDE_CONFIG_DIR/skills`), Codex (`~/.agents/skills`) and Cursor read
+skills; Cursor reads one of those two folders, and gets `~/.cursor/skills`
+only when neither was written. The wizard asks first; `--no-skills` skips
+them. Claude Desktop reads no skills from disk: there, and in other apps,
+use the prompts, or point the agent to the SKILL.md.
 
 ## Approving changes
 
@@ -170,10 +191,14 @@ server checks the change still matches what you saw. Details and limits:
 ## Update, rotate, uninstall
 
 ```sh
-npx -y cloud-alm-mcp-server doctor      # check key, token, scopes, API, Node
+npx -y cloud-alm-mcp-server doctor      # check Node, key, token, scopes, API; say whether reports are on
 npx -y cloud-alm-mcp-server setup       # again after rotating the key
-npx -y cloud-alm-mcp-server uninstall   # remove it from your apps (--key: also the saved key)
+npx -y cloud-alm-mcp-server feedback    # are reports about tool problems on? (feedback off / feedback on)
+npx -y cloud-alm-mcp-server uninstall   # remove it and its skills from your apps (--key: also the saved key)
 ```
+
+Settings are environment variables in the app's server entry:
+[docs/install.md#environment-variables](docs/install.md#environment-variables).
 
 Client configs run `cloud-alm-mcp-server`, so you get updates on the
 next start.
@@ -184,7 +209,8 @@ next start.
   choose the key file in the extension or plugin settings.
 - **Token or API errors**: run `doctor`; it names the failing step. A
   corporate proxy or TLS inspection can block `npx` or SAP: set
-  `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS` as your IT advises.
+  `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS` as your IT advises. Node follows
+  `HTTPS_PROXY` only when `NODE_USE_ENV_PROXY=1` is set as well (Node 24).
 - **"not readable with this key"**: the key lacks a scope; ask for the
   scope named in the answer ([docs/service-key.md](docs/service-key.md)).
 - **Claude Desktop does not show the server**: quit it fully (also from the

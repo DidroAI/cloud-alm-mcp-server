@@ -7,14 +7,14 @@ Try the [hosted preview with synthetic data](hosted-preview.md) to test the card
 ### stdio, with your own key (default)
 
 The server finds the key in `CALM_SERVICE_KEY`, either a file path or the
-JSON itself, else in the file `init` saved
+JSON itself, else in the file `setup` or `init` saved
 (`$XDG_CONFIG_HOME/cloud-alm-mcp-server/service-key.json`, by default under
 `~/.config`; `%APPDATA%\cloud-alm-mcp-server\` on Windows;
 `CALM_CONFIG_DIR` overrides the directory). It gets tokens by client
 credentials and keeps them in memory only.
 
 ```sh
-npx -y cloud-alm-mcp-server                                    # the key saved by init
+npx -y cloud-alm-mcp-server                                    # the saved key
 CALM_SERVICE_KEY=~/keys/calm-read.json npx -y cloud-alm-mcp-server
 CALM_SERVICE_KEY="$SECRET_FROM_YOUR_VAULT" npx -y cloud-alm-mcp-server   # the JSON itself
 ```
@@ -35,3 +35,7 @@ PORT=3333 CALM_API_URL=https://eu20.alm.cloud.sap/api npx -y cloud-alm-mcp-serve
 Stateless: one server per POST, JSON answers, no session. Requests without
 a bearer get 401; other methods 405. Put it behind TLS and your own
 authentication of callers: the bearer authorizes Cloud ALM, not the caller.
+
+Over HTTP the server sends no reports about tool problems unless you set
+`CALM_FEEDBACK_URL` to a receiver of your own. Every variable of both
+modes: [install.md#environment-variables](install.md#environment-variables).

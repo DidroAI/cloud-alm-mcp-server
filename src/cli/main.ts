@@ -83,10 +83,14 @@ Usage:
       --no-input                   Ask nothing (agents and scripts)
       --no-skills                  Do not install the skills (fit-gap, status
                                    report…) for Claude Code, Codex and Cursor
+      --force                      Replace a saved key of another tenant
+                                   without asking
+      --skip-check                 Save without contacting SAP
   ${PACKAGE_NAME} init [file|-]    Check a service key, save it, print client config
       --force                      Replace a key saved before
       --skip-check                 Save without contacting SAP
-  ${PACKAGE_NAME} doctor           Check the setup: key, token, scopes, API, Node
+  ${PACKAGE_NAME} doctor           Check the setup: Node, key, token, scopes, API;
+                                   say whether reports are on
   ${PACKAGE_NAME} feedback [on|off]  Short reports from your assistant to Didro about
                                    tool problems (no records, no chat text):
                                    say whether they are on, or switch them
@@ -100,18 +104,31 @@ Not installed globally? Put npx in front, as in:
   npx -y ${packageSpec(version())} setup
 
 setup asks for the key: a file, pasted text, a key downloaded to ~/Downloads
-in the last week, or the one saved before. Run by an agent or a script (or
-with --no-input) it asks nothing: it takes the newest key in ~/Downloads from
-the last week, then the one saved before. init reads the
-file given, or stdin ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only
-by you, at:
+in the last week, or the one saved before; with a file named it starts from
+that file. Run by an agent or a script, or with --no-input, it asks nothing:
+it takes the file named ("-": stdin), else the newest key in ~/Downloads from
+the last week, else the one saved before. init reads the file given, or stdin
+("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only by
+you, at:
   ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
   (%APPDATA%\\${PACKAGE_NAME}\\service-key.json on Windows)
 
 Environment:
   ${SERVICE_KEY_ENV}   the service key: a file path or the JSON itself
-                     (default: the key saved by init)
+                     (default: the key saved by setup or init)
+  CALM_WEB_URL       the Cloud ALM UI address for links to items,
+                     https://<tenant>.<region>.alm.cloud.sap
+                     (default in stdio mode: derived from the key)
+  CALM_CONTENT_PRESENTATION=explicit
+                     read tools open no card; the assistant shows its
+                     final selection with calm_show
+  CALM_APPROVAL=card changes are approved in the approval card only,
+                     never by a yes in the chat (default: the card where
+                     the app shows one with working buttons, else the chat)
   ${FEEDBACK_ENV}=off  no reports about tool problems from this client
+  CALM_FEEDBACK_URL  send the reports to this https receiver instead of
+                     Didro (http mode: reports exist only when it is set)
+  CALM_FEEDBACK_TOKEN  bearer token for the receiver in CALM_FEEDBACK_URL
   PORT, HOST         http mode: where to listen (default 127.0.0.1:3333)
   CALM_API_URL       http mode: API address when no X-Calm-Api-Url header
 
@@ -274,6 +291,11 @@ async function init(io: Io, args: string[]): Promise<number> {
 
 type KeyInput = { text: string; origin: string; file?: string };
 
+/** Whether both of the key's addresses are SAP's: where it gets its token, and the API it then reads. */
+const SAP_HOST = /\.(hana\.ondemand\.com|cloud\.sap)$/;
+const notSap = (key: ServiceKey) =>
+  [new URL(key.uaa.url).hostname, new URL(key.endpoints.Api).hostname].find((host) => !SAP_HOST.test(host));
+
 /** A tenant's short name, for a choice: the first label of its token host. */
 const tenantName = (key: ServiceKey) => new URL(key.uaa.url).hostname.split(".")[0] ?? "";
 
@@ -379,7 +401,15 @@ async function askForKey(io: Io, e: SetupEnv, p: Prompts): Promise<KeyInput | un
  * folder for the report. Nothing when no such app was set up.
  */
 function addSkills(clients: Client[], e: SetupEnv): string[] {
-  return skillsDirs(clients, e).map(({ dir, clients: readers }) => {
+  const dirs = skillsDirs(clients, e);
+  // Cursor reads another app's folder now: take out the copy it had of its own, or it would go stale.
+  const cursorOwn = join(e.home, ".cursor", "skills");
+  if (clients.includes("cursor") && !dirs.some((d) => d.dir === cursorOwn)) {
+    try {
+      removeSkills(cursorOwn);
+    } catch {}
+  }
+  return dirs.map(({ dir, clients: readers }) => {
     const who = readers.map((c) => LABEL[c]).join(", ");
     try {
       return `${MARK.ok} ${"Skills".padEnd(14)} ${installSkills(dir)} installed in ${dir} (${who})`;
@@ -401,29 +431,41 @@ const RESTART: Record<Client, string> = {
  * setup for a person at a terminal: which key, a check against SAP, which
  * apps, then what to do next. Nothing is picked without being shown.
  */
-async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts): Promise<number> {
+async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts, named?: KeyInput): Promise<number> {
   const saved = savedKeyPath(io.env);
   p.intro("SAP Cloud ALM for your AI apps");
 
   let input: KeyInput;
   let savedKey: { path: string; projectsReadable: boolean } | undefined;
   for (;;) {
-    const chosen = await askForKey(io, e, p);
+    // The file named on the command line is the first answer; when it cannot be used, ask.
+    const chosen = named ?? (await askForKey(io, e, p));
+    named = undefined;
     if (!chosen) {
       p.cancel("Setup cancelled. Nothing was changed.");
       return 1;
     }
     const key = parseServiceKeyText(chosen.text, chosen.origin);
-    const host = new URL(key.uaa.url).hostname;
-    if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(host))
-      p.warn(`The key's token address ${host} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
+    const foreign = notSap(key);
+    if (foreign) {
+      const go = await p.select(`This key points to ${foreign}, which is not an SAP address. Use only keys you downloaded from SAP BTP. Use it anyway?`, [
+        { value: false, label: "Choose another key" },
+        { value: true, label: "Use it" },
+      ]);
+      if (go === undefined) {
+        p.cancel("Setup cancelled. Nothing was changed.");
+        return 1;
+      }
+      if (!go) continue;
+    }
     if (!flags.force && chosen.file !== saved && existsSync(saved)) {
-      let before: string | undefined;
+      let before: ServiceKey | undefined;
       try {
-        before = tenantName(parseServiceKeyText(readFileSync(saved, "utf8"), saved));
+        before = parseServiceKeyText(readFileSync(saved, "utf8"), saved);
       } catch {}
-      if (before && before !== tenantName(key)) {
-        const replace = await p.select(`A key for another tenant (${before}) is saved. Replace it with the key for ${tenantName(key)}?`, [
+      // Compared by both addresses: two keys can share a tenant name and still open different systems.
+      if (before && tenantOf(before) !== tenantOf(key)) {
+        const replace = await p.select(`A key for another tenant (${tenantName(before) === tenantName(key) ? tenantOf(before) : tenantName(before)}) is saved. Replace it with the key for ${tenantName(before) === tenantName(key) ? tenantOf(key) : tenantName(key)}?`, [
           { value: true, label: "Replace it" },
           { value: false, label: "Choose another key" },
         ]);
@@ -537,7 +579,15 @@ async function setup(io: Io, args: string[]): Promise<number> {
   let input: KeyInput;
   const arg = flags.positional[0];
   const saved = savedKeyPath(io.env);
-  if (!arg && !flags.noInput && io.prompts) return wizard(io, flags, e, await io.prompts());
+  // A person at a terminal gets the questions, with or without a file named ("-" reads the key from a pipe).
+  if (!flags.noInput && io.prompts && arg !== "-") {
+    let named: KeyInput | undefined;
+    if (arg) {
+      named = await readKeyInput(io, arg);
+      parseServiceKeyText(named.text, named.origin);
+    }
+    return wizard(io, flags, e, await io.prompts(), named);
+  }
   if (arg) input = await readKeyInput(io, arg);
   else {
     // Downloads only: a key planted in a cloned repository is never picked up.
@@ -545,6 +595,12 @@ async function setup(io: Io, args: string[]): Promise<number> {
     if (found) {
       io.out(`Service key: ${found.path}${found.others ? ` (the newest of ${found.others + 1})` : ""}`);
       input = { text: readFileSync(found.path, "utf8"), origin: `The file ${found.path}`, file: found.path };
+      // A file nobody named is used only when it is plainly SAP's: anyone can drop a file into Downloads.
+      const foreign = notSap(parseServiceKeyText(input.text, input.origin));
+      if (foreign) {
+        io.err(`${found.path} points to ${foreign}, which is not an SAP address, so it was not used. To use it anyway, name it: ${cli(io)} setup <file>`);
+        return 1;
+      }
     } else if (existsSync(saved)) {
       input = await readKeyInput(io, saved);
     } else {
@@ -576,8 +632,8 @@ async function setup(io: Io, args: string[]): Promise<number> {
   const key = parseServiceKeyText(input.text, input.origin);
   const tenant = tenantOf(key);
   io.out(`Tenant: ${tenant}`);
-  if (!/\.(hana\.ondemand\.com|cloud\.sap)$/.test(new URL(key.uaa.url).hostname))
-    io.err(`! The key's token address ${new URL(key.uaa.url).hostname} is not an SAP host. Use only keys you downloaded from SAP BTP.`);
+  const foreign = notSap(key);
+  if (foreign) io.err(`! The key points to ${foreign}, which is not an SAP address. Use only keys you downloaded from SAP BTP.`);
   if (!arg && !flags.force && existsSync(saved)) {
     let before: string | undefined;
     try {

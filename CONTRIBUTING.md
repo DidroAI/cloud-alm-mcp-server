@@ -71,9 +71,28 @@ By contributing you agree that your contribution is licensed under the
 
 ## Releases
 
-Maintainers release; only they can push `v*` tags. A release changes the version in `package.json`, `server.json` (the server
-and its npm package), `manifest.json` and `.claude-plugin/plugin.json`;
-`test/distribution.test.ts` fails when they differ. Pushing the tag `v<version>`
-on main publishes to npm and the MCP Registry and attaches the Claude Desktop
-extension to a GitHub Release. To build the extension locally:
-`bun run build && scripts/build-mcpb.sh`.
+Maintainers release; only they can push `v*` tags.
+
+1. If the release needs something new from the hosted connector (an
+   endpoint, as `/feedback` was), deploy `hosted/` first.
+2. Set the new version in five places: `package.json`, `server.json` (twice:
+   the server's `version` and its npm package's), `manifest.json`,
+   `.claude-plugin/plugin.json`, and `SERVER_VERSION` in `src/server.ts`.
+   `test/distribution.test.ts` fails when the four files differ and
+   `test/server.test.ts` when `SERVER_VERSION` does; that constant is the
+   version the server reports to clients and puts in agent reports.
+3. In `CHANGELOG.md`, turn *Unreleased* into the version with its date.
+4. Open a pull request and merge it.
+5. On `main`, tag the merge commit `v<version>` and push the tag. The
+   release workflow (`.github/workflows/release.yml`) runs the checks,
+   refuses a tag that is not on `main` or does not match `package.json`,
+   publishes to npm (a prerelease under `beta`, else `latest`), lists the
+   version in the MCP Registry from `server.json`, and attaches the Claude
+   Desktop extension (`.mcpb`) to a GitHub Release. If the registry step
+   fails, the npm release stands; run the *MCP Registry* workflow by hand.
+6. Point the hosted connector at the release: set the exact version of
+   `cloud-alm-mcp-server` in `hosted/package.json`, update
+   `hosted/package-lock.json` (`npm install` in `hosted/`), merge, and
+   deploy the hosted connector.
+
+To build the extension locally: `bun run build && scripts/build-mcpb.sh`.

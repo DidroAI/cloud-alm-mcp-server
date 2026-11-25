@@ -349,7 +349,8 @@ describe("mode (a): stdio with the developer's service key", () => {
   });
 
   test("a missing key path is a clear startup error", () => {
-    expect(() => stdioServer({})).toThrow("CALM_SERVICE_KEY");
+    // An empty config directory of the test's own: the machine may hold a saved key.
+    expect(() => stdioServer({ CALM_CONFIG_DIR: mkdtempSync(join(tmpdir(), "calm-none-")) })).toThrow("CALM_SERVICE_KEY");
     expect(() => readerFromKeyFile("/nonexistent/key.json")).toThrow(
       "Cannot read the service key file",
     );

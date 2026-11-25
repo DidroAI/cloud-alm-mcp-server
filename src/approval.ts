@@ -9,8 +9,14 @@
  * - in the card: an MCP Apps view (Claude, ChatGPT, VS Code…) whose buttons
  *   call the app-only `calm_approve` tool, with a nonce the model never sees
  *   (it travels in the result's `_meta` only);
- * - in the chat (mode `prefer` only, as it trusts the agent to ask): the
- *   user says yes and the agent calls `calm_confirm`;
+ * - in the chat (not in mode `required`, as it trusts the agent to ask):
+ *   the user says yes and the agent calls `calm_confirm`. A card that can
+ *   approve takes the change for itself (`cardShown`), and the chat is
+ *   refused for the first seconds so that such a card gets there first.
+ *
+ * What this cannot do: tell a user's yes from an agent that claims one. In
+ * an app without a working card the last guard is the app's own permission
+ * prompt for `calm_confirm`; mode `required` closes that path altogether.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -20,9 +26,18 @@ import { metricsCss, metricsScript } from "./project-metrics.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 
-/** off: write at once; prefer: approve in the card or the chat; required: in the card (or an opted-in dialog) only. */
+/** off: write at once; prefer: approve in the card, or in the chat where no card can; required: in the card only. */
 export type ApprovalMode = "off" | "prefer" | "required";
 export const APPROVAL_MODES: ApprovalMode[] = ["off", "prefer", "required"];
+
+/** `CALM_APPROVAL`: `card` accepts the card only; `chat` (or unset) also the chat where no card can approve. */
+export const APPROVAL_ENV = "CALM_APPROVAL";
+export function approvalFromEnv(env: Record<string, string | undefined>): Exclude<ApprovalMode, "off"> {
+  const value = env[APPROVAL_ENV]?.trim().toLowerCase();
+  if (!value || value === "chat") return "prefer";
+  if (value === "card") return "required";
+  throw new Error(`${APPROVAL_ENV} must be "card" or "chat"`);
+}
 
 /** Hosts keep a card by its address: give it a new one whenever the card changes. */
 export const CARD_URI = "ui://cloud-alm/approve-v3.html";
@@ -32,6 +47,12 @@ export const TTL_MS = 60 * 60_000;
 const MAX_PENDING = 1000;
 /** Per approver, so one HTTP caller cannot push out everyone else's. */
 const MAX_PER_SUBJECT = 50;
+/**
+ * A yes in the chat is not taken this soon after the proposal: a card
+ * that can approve claims the change within a second or two of being
+ * drawn, and a person needs longer than this to read and answer.
+ */
+export const CHAT_HOLD_MS = 10_000;
 
 /** A write waiting for the user. Holds the tool name and its arguments, not a client. */
 type Pending = {
@@ -42,6 +63,7 @@ type Pending = {
   fingerprint: string;
   subject: string;
   nonce: Buffer;
+  createdAt: number;
   expiresAt: number;
 };
 
@@ -79,7 +101,7 @@ export function planFingerprint(plan: unknown): string {
 export type Proposal = { id: string; nonce: string; expiresAt: number };
 
 export function propose(
-  entry: Omit<Pending, "nonce" | "expiresAt">,
+  entry: Omit<Pending, "nonce" | "createdAt" | "expiresAt">,
   now = Date.now(),
 ): Proposal {
   for (const [id, p] of pending) if (p.expiresAt <= now) pending.delete(id);
@@ -93,7 +115,7 @@ export function propose(
   const id = randomBytes(6).toString("hex");
   const nonce = randomBytes(16);
   const expiresAt = now + TTL_MS;
-  pending.set(id, { ...entry, nonce, expiresAt });
+  pending.set(id, { ...entry, nonce, createdAt: now, expiresAt });
   return { id, nonce: nonce.toString("base64url"), expiresAt };
 }
 
@@ -101,7 +123,8 @@ export class ApprovalError extends Error {}
 
 /**
  * Take a pending write out (single use). With `nonce`, it must match: the
- * card path. Without, only entries that allow the chat (mode prefer) may.
+ * card path. Without, only entries that allow the chat (mode prefer) may,
+ * and not within `hold` of the proposal.
  */
 export function take(
   id: string,
@@ -109,6 +132,7 @@ export function take(
   nonce: string | undefined,
   now = Date.now(),
   tool?: string,
+  hold = CHAT_HOLD_MS,
 ): Pending {
   const p = pending.get(id);
   const d = decided.get(id);
@@ -129,6 +153,8 @@ export function take(
     throw new ApprovalError(`This approval is for ${p.tool}, not ${tool}; nothing was written.`);
   if (nonce === undefined && !p.allowChat)
     throw new ApprovalError("This change can only be approved in the approval card; nothing was written. The card is on the user's screen: they approve or reject it there. Do not confirm it for them.");
+  if (nonce === undefined && now - p.createdAt < hold)
+    throw new ApprovalError("Too early; nothing was written. This change waits for the user: they approve it in the approval card, or answer in the chat. Confirm only after their own message says yes to this exact change; if it already has, confirm again in a few seconds.");
   if (nonce !== undefined) {
     const given = Buffer.from(nonce, "base64url");
     if (given.length !== p.nonce.length || !timingSafeEqual(given, p.nonce))

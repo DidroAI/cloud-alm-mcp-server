@@ -3,7 +3,7 @@ import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@model
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIDRO_FEEDBACK_URL, FEEDBACK_TOOL, feedbackSinkFromEnv, localFeedback, localFeedbackSink, setLocalFeedback } from "../src/feedback.js";
+import { DIDRO_FEEDBACK_URL, FEEDBACK_TOOL, MAX_REPORTS, feedbackSinkFromEnv, localFeedback, localFeedbackSink, setLocalFeedback } from "../src/feedback.js";
 import { createHttpHandler } from "../src/http.js";
 import { SERVER_VERSION, serverOptionsForKey } from "../src/server.js";
 import { stdioServer } from "../src/stdio.js";
@@ -61,8 +61,9 @@ test("a local installation reports to Didro by default, without a credential, an
   const dir = mkdtempSync(join(tmpdir(), "calm-feedback-"));
   expect(localFeedback({}, dir)).toMatchObject({ on: true, url: DIDRO_FEEDBACK_URL });
   expect(localFeedback({ CALM_FEEDBACK_URL: "https://example.com/r" }, dir)).toMatchObject({ on: true, url: "https://example.com/r" });
-  for (const value of ["off", "OFF", "0", "false", "no"]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(false);
-  expect(localFeedback({ CALM_FEEDBACK: "on" }, dir).on).toBe(true);
+  // Anything but a plain yes is off: a typo does not leave reports on.
+  for (const value of ["off", "OFF", "0", "false", "no", "of", "disabled", "none"]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(false);
+  for (const value of ["on", "1", "true", "YES", " "]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(true);
   setLocalFeedback(false, dir);
   expect(localFeedback({}, dir).on).toBe(false);
   expect(localFeedbackSink({}, dir)).toBeUndefined();
@@ -86,6 +87,23 @@ test("a local installation reports to Didro by default, without a credential, an
   expect(sent[0]?.url).toBe(DIDRO_FEEDBACK_URL);
   expect(sent[0]?.headers.Authorization).toBeUndefined();
   expect(Object.keys(sent[0]?.body ?? {}).sort()).toEqual(["observation", "outcome", "reportId", "serverVersion", "tool"]);
+});
+
+test("one running local server sends a handful of reports, then stops", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "calm-feedback-"));
+  let posts = 0;
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => (posts++, new Response(null, { status: 204 }))) as never;
+  try {
+    const sink = localFeedbackSink({}, dir)!;
+    const one = { tool: "calm_list", outcome: "recovered", observation: "A filter was refused once." } as const;
+    for (let i = 0; i < MAX_REPORTS; i++) await sink(one, "9.9.9");
+    await expect(sink(one, "9.9.9")).rejects.toThrow("Enough reports");
+    expect(posts).toBe(MAX_REPORTS);
+  } finally {
+    globalThis.fetch = real;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("feedback over MCP reaches the local inbox with a separate credential and no SAP fields", async () => {

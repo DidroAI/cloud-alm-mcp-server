@@ -3,7 +3,7 @@ import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
-import { CARD_URI, cardHtml, clearPending, META_KEY, propose, settle, statusOf, take } from "../src/approval.js";
+import { approvalFromEnv, CARD_URI, cardHtml, CHAT_HOLD_MS, clearPending, META_KEY, propose, settle, statusOf, take } from "../src/approval.js";
 import { CloudAlm } from "../src/calm/index.js";
 import { CloudAlmWriter } from "../src/calm/writer.js";
 import { createHttpHandler } from "../src/http.js";
@@ -33,7 +33,7 @@ async function connect(kind: ClientKind, options: ServerOptions, fake = fakeTena
   const calm = new CloudAlm(grant, { fetch: fake.fetcher });
   const writer = new CloudAlmWriter(grant, { fetch: fake.fetcher });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await createServer(calm, { writer, writeMode: "on", ...options }).connect(serverSide);
+  await createServer(calm, { writer, writeMode: "on", chatHoldMs: 0, ...options }).connect(serverSide);
   const capabilities =
     kind === "ui"
       ? { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [RESOURCE_MIME_TYPE] } } }
@@ -424,4 +424,57 @@ test("calm_overview carries the overview card", async () => {
   const html = (r.contents[0] as { text: string }).text;
   expect(html).not.toContain("__APP_BUNDLE__");
   expect(html).not.toContain("innerHTML");
+});
+
+test("a yes in the chat is not taken right after the proposal, so a card gets there first", async () => {
+  // The default hold, as shipped.
+  const { call, posts } = await connect("plain", { approval: "prefer", chatHoldMs: CHAT_HOLD_MS });
+  const r = await call("calm_create_task", NEW_DEFECT);
+  const id = (r.structured?.approval as { id: string }).id;
+  expect(r.text).toContain("End your turn now");
+  const early = await call("calm_confirm", { id, tool: "calm_create_task" });
+  expect(early.error).toBe(true);
+  expect(early.text).toContain("Too early; nothing was written");
+  // A card without its nonce is the chat by another name: held too.
+  expect((await call("calm_approve", { id, decision: "approve" })).text).toContain("Too early");
+  expect(posts).toEqual([]);
+  // The refusal used nothing up.
+  expect(statusOf(id, "local").status).toBe("pending");
+
+  const now = Date.now();
+  const p = propose({ tool: "calm_update", args: {}, fingerprint: "f", subject: "s", allowChat: true }, now);
+  expect(() => take(p.id, "s", undefined, now + CHAT_HOLD_MS - 1, "calm_update")).toThrow("Too early");
+  // The card is never held.
+  const q = propose({ tool: "calm_update", args: {}, fingerprint: "f", subject: "s", allowChat: true }, now);
+  expect(take(q.id, "s", q.nonce, now, "calm_update").tool).toBe("calm_update");
+  expect(take(p.id, "s", undefined, now + CHAT_HOLD_MS, "calm_update").tool).toBe("calm_update");
+});
+
+test("CALM_APPROVAL=card accepts the card only; unset or chat also the chat", () => {
+  expect(approvalFromEnv({})).toBe("prefer");
+  expect(approvalFromEnv({ CALM_APPROVAL: " Chat " })).toBe("prefer");
+  expect(approvalFromEnv({ CALM_APPROVAL: "card" })).toBe("required");
+  expect(() => approvalFromEnv({ CALM_APPROVAL: "off" })).toThrow('CALM_APPROVAL must be "card" or "chat"');
+});
+
+test("the card gets long text whole; the assistant gets its start and how much more there is", async () => {
+  const { call } = await connect("ui", { approval: "prefer" });
+  const description = `${"Credit exposure must include open deliveries. ".repeat(60)}LAST WORDS`;
+  const r = await call("calm_create_task", { ...NEW_DEFECT, description });
+  type Shown = { items: { fields: { field: string; after: string }[] }[] };
+  const inCard = (r.meta?.[META_KEY] as { change: Shown }).change.items[0]?.fields.find((f) => f.field === "Description")?.after;
+  expect(inCard).toBe(description);
+  const forModel = (r.structured?.approval as { change: Shown }).change.items[0]?.fields.find((f) => f.field === "Description")?.after ?? "";
+  expect(forModel.length).toBeLessThan(description.length);
+  expect(forModel).toContain(`(+${description.length - 1500} more characters; the whole text is written)`);
+  // The words for the chat say how much was left out, instead of ending in a bare ellipsis.
+  expect(r.text).toContain(`(+${description.length - 600} more characters; the whole text is written)`);
+  expect(r.text).not.toContain("LAST WORDS");
+});
+
+test("a link or a tag keeps its own title; only an update or a delete is named after its item", async () => {
+  const { call } = await connect("ui", { approval: "prefer" });
+  const title = async (name: string, args: Record<string, unknown>) => ((await call(name, args)).structured?.approval as { title: string }).title;
+  expect(await title("calm_tag", { tasks: ["3-1"], add: ["Review"] })).not.toStartWith("Change ");
+  expect(await title("calm_update", { ids: ["3-3"], dueDate: "2026-12-01" })).toBe("Change user story");
 });

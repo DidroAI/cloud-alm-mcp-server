@@ -26,6 +26,27 @@ The latest release gets fixes.
 - Text stored in Cloud ALM (descriptions, comments, documents) steering the
   agent into actions the user did not ask for.
 
+## What approval does not cover
+
+- **Approval in the chat trusts the agent.** In an app that shows the
+  approval card with working buttons, only the card approves. In an app
+  without one (a terminal, for instance), the agent passes the user's yes on
+  with `calm_confirm`, and the server cannot check that the user said it. An
+  agent misled by text it read could confirm its own proposal there; the
+  app's permission prompt for `calm_confirm` is the guard. Do not "always
+  allow" that tool, or set `CALM_APPROVAL=card` to refuse approval in the
+  chat altogether.
+- **An agent with a shell can read the saved key.** Claude Code, Codex,
+  Cursor and similar agents run commands as the user, and the key file is
+  readable by the user. Such an agent can call the Cloud ALM API directly,
+  without this server and without approval. File permissions cannot prevent
+  that. Where an agent has a shell, use a key without write scopes unless
+  you need it to write, and keep the agent's own command approval on.
+- **Reports about tool problems are written by the agent.** They are
+  checked for links, e-mail addresses, credentials and record ids, and hold
+  a few fixed fields, but their free text is the agent's wording. Turn them
+  off with `cloud-alm-mcp-server feedback off` where that is not acceptable.
+
 ## How the server handles secrets
 
 - The service key stays on the user's machine: `setup` and `init` save it

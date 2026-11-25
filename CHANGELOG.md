@@ -6,6 +6,38 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-25
+
+Fixes from a review of the code, the documentation, the tests and the skills.
+
+### Approval
+- A yes in the chat is not accepted in the first 10 seconds after a proposal, so an approval card with working buttons claims the change before an assistant that confirms in the same turn. A card without its token is held the same way.
+- New setting `CALM_APPROVAL=card`: changes are approved in the card only, never in the chat. Unset, it is as before: the card where the app shows one with working buttons, else the chat.
+- The approval card shows every value whole: a description, a comment, a document's content and test steps were cut after 80 to 4000 characters while the whole text was written. What the assistant reads is still shortened, and now says by how many characters.
+- A link proposed from the user story's side showed the story linked to itself; the card now shows the requirement and the story.
+- A link or a tag keeps its own title instead of "Change user story". A dry-run preview of a delete no longer shows the delete warning, and keeps its "nothing was sent" line.
+- `calm_confirm` no longer takes a description of the change written by the assistant.
+- SECURITY.md says what approval does not cover: approval in the chat trusts the assistant, and an agent with a shell can read the saved key.
+
+### Skills
+- Coverage for an exit or go-live decision is computed over closed requirements too (`includeClosed: true`); the test-readiness skill refuses a "go" on incomplete data.
+- Instructions the server rejects are gone: the status "not relevant" on defects, the document types "Fit-to-Standard" and "Status Report", and feature status words the tools do not print.
+- The nine skills use one definition each of defect priority, the requirement lifecycle and "gap", and no longer promise what the tools cannot see (which system a transport is in, who changed an item, a document's status). An approval is never set from meeting notes. Clean core level B is narrowed to the classic APIs SAP names as stable.
+- Requirement sub-statuses read "to be approved", "in planning", "in realization" instead of losing their first word; a postponed defect reads "postponed".
+
+### Setup
+- A hidden paste no longer ends early when the terminal delivers a line break on its own, which could show the rest of the key; paste marks cut in two and arrow keys pressed before pasting no longer damage it; the line break after the key no longer answers the next question.
+- `setup <file>` at a terminal still asks which apps and whether to install the skills. Ctrl-C while the key is checked says "Cancelled" and exits with an error status.
+- Run without a person, `setup` uses a key found in `~/Downloads` only when both its addresses are SAP's; at a terminal it asks first. Two keys with the same tenant name but different API addresses count as different tenants.
+- `CI=false` and Cursor's built-in terminal count as a person's terminal. A copy of the skills left in Cursor's own folder is removed when Cursor reads another app's folder.
+
+### Reports
+- Any `CALM_FEEDBACK` value other than `on`, `1`, `true` or `yes` turns reports off, so a typo does not leave them on. One running server sends at most ten reports.
+- The public report address refuses text with links, e-mail addresses, credentials or record ids, passes reports on under an id of its own, and counts junk against its sender only.
+
+### Documentation
+- The install guide no longer says the server connects only to SAP, and says how to turn reports off for each way of installing. It gains a table of the environment variables, the `feedback` command, the wizard, and where the skills go. The Codex app is listed among the apps that show cards.
+
 ## [0.3.1] - 2026-11-24
 
 - The nine skills are rewritten to lead with SAP domain knowledge, researched from SAP Activate, SAP Learning, SAP's Cloud ALM pages and practitioner sources: how a senior consultant challenges a gap and rates it against clean core, runs a fit-to-standard workshop, sorts notes into the right Cloud ALM objects, designs and judges tests, routes a defect by root cause, and rates a project red, amber or green. Where practice differs between projects, the skill says so and follows the project's convention.

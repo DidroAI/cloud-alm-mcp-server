@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { json, limited } from "./http.mjs";
 
 const RECEIVER = "https://docs.didro.ai/cloud-alm/feedback";
@@ -6,7 +7,9 @@ const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 const VERSION = /^\d+\.\d+\.\d+[a-z0-9.-]{0,40}$/i;
 const TOOL = /^calm_[a-z_]{1,50}$/;
 const OUTCOMES = new Set(["blocked", "recovered", "completed_with_extra_work"]);
-const text = (value, min, max) => typeof value === "string" && value.trim().length >= min && value.length <= max;
+// The same check the server applies before it sends: links, e-mail addresses, credentials and record ids are refused.
+const PRIVATE = /https?:\/\/|\b[^\s@]+@[^\s@]+\.[^\s@]+|\bBearer\s+\S+|\bclient[_-]?secret\b|\b[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}\b/i;
+const text = (value, min, max) => typeof value === "string" && value.trim().length >= min && value.length <= max && !PRIVATE.test(value);
 
 /** The report's fields, or undefined when it is not one. Nothing else is passed on. */
 export function reportFrom(value) {
@@ -17,14 +20,15 @@ export function reportFrom(value) {
   if (typeof serverVersion !== "string" || !VERSION.test(serverVersion)) return undefined;
   if (typeof tool !== "string" || !TOOL.test(tool) || !OUTCOMES.has(outcome)) return undefined;
   if (!text(observation, 8, 400) || (suggestion !== undefined && !text(suggestion, 3, 240))) return undefined;
-  return { reportId, serverVersion, tool, outcome, observation, ...(suggestion === undefined ? {} : { suggestion }) };
+  // The id passed on is ours: a sender cannot choose which record it writes.
+  return { reportId: randomUUID(), serverVersion, tool, outcome, observation, ...(suggestion === undefined ? {} : { suggestion }) };
 }
 
 /**
  * The public inbox for local installations: `cloud-alm-mcp-server` on a
  * user's computer posts its agent's reports here, without a credential.
  * Only a well-formed report is passed on, with the receiver's token, which
- * never leaves this service. Limits are per running instance: a first line
+ * never leaves this service, and under an id of ours. Limits are per running instance: a first line
  * against a flood, next to the receiver's own bounded insert.
  */
 export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, perSender = 20, perInstance = 300 }) {
@@ -42,8 +46,8 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
     const mine = fresh(senders.get(sender) ?? [], at);
     all = fresh(all, at);
     if (mine.length >= perSender || all.length >= perInstance) return json({ error: "slow_down" }, 429, { "retry-after": "3600" });
+    // Every attempt counts against its sender; only reports passed on count against everyone.
     mine.push(at);
-    all.push(at);
     senders.set(sender, mine);
     if (senders.size > 5000) for (const [key, times] of senders) if (!fresh(times, at).length) senders.delete(key);
     let report;
@@ -53,6 +57,7 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
       if (error instanceof Response) throw error;
     }
     if (!report) return json({ error: "invalid_report" }, 400);
+    all.push(at);
     const response = await deliver(RECEIVER, {
       method: "POST",
       redirect: "error",

@@ -28,7 +28,7 @@ import {
   type Change,
   changeItem,
 } from "./items.js";
-import { short, statusLabel, typeLabel } from "./text.js";
+import { clipped, short, statusLabel, typeLabel } from "./text.js";
 
 export type { WriteOptions } from "./items.js";
 
@@ -134,7 +134,7 @@ export async function createTestCase(
   ];
   o.reviewPlan?.({ body, covered: covered.map(t => t.id), plan, notes });
   if (dry(o, input.dryRun)) {
-    const shown = outline.length > 3000 ? `${outline.slice(0, 3000)} …` : outline;
+    const shown = clipped(outline, 3000);
     const warnings = [
       ...covered.flatMap((t) => (allCases.some((c) => c.taskIds.includes(t.id)) ? [`${named(t)} already has a test case: check this one adds a case they do not cover`] : [])),
       ...(near.length ? ["Test cases with a similar title exist"] : []),
@@ -148,7 +148,7 @@ export async function createTestCase(
           { field: "Scope", after: scopeName },
           { field: "Priority", after: PRIORITY_NAMES[body.priorityCode] ?? String(body.priorityCode) },
           ...(covered.length ? [{ field: "Covers", after: covered.map(named).join("\n") }] : []),
-          { field: "Steps", after: shown },
+          { field: "Steps", after: outline },
         ],
       }],
       ...(warnings.length ? { warnings } : {}),
@@ -202,6 +202,8 @@ type LinkPlan = {
   notes: string[];
   scope: string;
   run: (t: TaskSummary) => Promise<void>;
+  /** The item the links hang on, when it is not the one given as `from` (a requirement named from its user story). */
+  subject?: TaskSummary;
 };
 
 const relationRows = (calm: CloudAlm, taskId: string, what: string) =>
@@ -240,7 +242,7 @@ export async function link(
       kind: "update",
       project: { id: snap.project.id, name: snap.project.name },
       items: [{
-        ...changeItem(source), op: "update",
+        ...(plan.subject ? { id: plan.subject.displayId, type: typeLabel(plan.subject.type), title: plan.subject.title } : changeItem(source)), op: "update",
         fields: [{ field: unlink ? "Remove the link to" : "Link to", after: plan.todo.map(named).join("\n") }],
       }],
       ...(plan.notes.length ? { warnings: plan.notes } : {}),
@@ -402,6 +404,7 @@ async function requirementPlan(
   return {
     name: `requirement ${requirement.displayId}`,
     title: requirement.title,
+    subject: requirement,
     todo,
     skipped,
     notes: [],
@@ -567,7 +570,7 @@ export async function createTask(
     ...(parent ? { parentId: parent.id } : {}),
   };
   const plan = `${input.type.replace("_", " ")} "${title}"${scopeName ? ` in scope "${scopeName}"` : ""}${parent ? ` under ${label(parent)}` : ""}, priority ${PRIORITY_NAMES[input.priority ?? 30]}${input.assignee ? `, assigned to ${input.assignee}` : ""}${input.startDate ? `, start ${input.startDate}` : ""}${input.dueDate ? `, due ${input.dueDate}` : ""}${input.tags?.length ? ` tagged ${input.tags.join(", ")}` : ""}`;
-  const extra = `${description ? `\nDescription: ${description.length > 600 ? `${description.slice(0, 600)} …` : description}` : ""}${warnings.length ? `\nNote: ${warnings.join("; ")}.` : ""}`;
+  const extra = `${description ? `\nDescription: ${clipped(description, 600)}` : ""}${warnings.length ? `\nNote: ${warnings.join("; ")}.` : ""}`;
   o.reviewPlan?.({ body, tags: input.tags, plan, warnings });
   if (dry(o, input.dryRun)) {
     const fields = [
@@ -578,7 +581,7 @@ export async function createTask(
       ["Start", input.startDate],
       ["Due", input.dueDate],
       ["Tags", input.tags?.length ? input.tags.join(", ") : null],
-      ["Description", description ? (description.length > 600 ? `${description.slice(0, 600)} …` : description) : null],
+      ["Description", description || null],
     ]
       .filter(([, v]) => !!v)
       .map(([field, after]) => ({ field: field as string, after: after as string }));

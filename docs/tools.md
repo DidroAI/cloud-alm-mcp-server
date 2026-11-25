@@ -29,7 +29,7 @@ Text people wrote in Cloud ALM (descriptions, comments, documents, API data)
 is fenced as data in the answers, and the server instructions tell the agent
 never to follow it.
 
-With write mode on (below), ten more:
+With a key that has write scopes (below), nine more:
 
 | Tool | Does |
 | --- | --- |
@@ -93,16 +93,26 @@ this key"); the rest still answers. Errors are short text with a code
 - **Requirements** show their fit/gap classification and approval state.
 - **Coverage** (`calm_gaps` with `checks: ["coverage"]`) rolls a
   requirement up with its user stories, worst verdict first.
-- **Cards.** In apps with MCP Apps (Claude, ChatGPT, VS Code…),
-  `calm_overview` shows a project card and every write proposal an approval
-  card with the change field by field. Apps without cards get the same as
-  text.
+- **Cards.** In apps with MCP Apps (Claude, ChatGPT, the Codex app, VS
+  Code…), `calm_overview` shows a project card, lists and item details open
+  as cards, and every write proposal shows an approval card with the change
+  field by field. Apps without cards get the same as text. With
+  `CALM_CONTENT_PRESENTATION=explicit` the read tools open no card; the
+  assistant calls one more tool, `calm_show`, with its final selection
+  (`calm_projects`, `calm_overview`, `calm_list` or `calm_get` and their
+  arguments), and that card loads the records.
+- **Reports.** A local install also offers `calm_report_feedback`: the
+  assistant can send Didro a short report about a tool problem (tool name,
+  outcome, an observation, optionally a suggestion). It writes nothing to
+  Cloud ALM. On by default; `cloud-alm-mcp-server feedback off` or
+  `CALM_FEEDBACK=off` removes the tool
+  ([install.md](install.md#reports-about-tool-problems)).
 - **Prompts.** Each skill of `skills/` is also an MCP prompt.
 
 ### Writes: the key decides
 
-There are no settings. The only one is the key (`CALM_SERVICE_KEY`, or the
-file `init` saved):
+Whether the agent can write is not a setting: the key decides
+(`CALM_SERVICE_KEY`, or the file `setup` or `init` saved):
 
 - a key with read scopes only: the agent reads, and no write tool exists;
 - a key with write scopes: the write tools those scopes cover are offered
@@ -114,6 +124,13 @@ tools a key gets. In HTTP mode each caller's token decides for its own
 requests. A tenant with several projects needs no default: the agent names
 the project (`projectId` takes an id or a name).
 
+What can be set is set with environment variables: where the key is, the
+Cloud ALM UI address for links (`CALM_WEB_URL`), how cards are shown
+(`CALM_CONTENT_PRESENTATION`), where a change may be approved
+(`CALM_APPROVAL`), and the reports about tool problems (`CALM_FEEDBACK`,
+`CALM_FEEDBACK_URL`, `CALM_FEEDBACK_TOKEN`). The table:
+[install.md#environment-variables](install.md#environment-variables).
+
 ### Approving writes
 
 A write tool only proposes the change: it runs as a dry run and answers
@@ -122,8 +139,19 @@ says it supports, and the user approves it in one of these ways:
 
 | Where | How | Clients (Nov 2026) |
 | --- | --- | --- |
-| the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, VS Code, Goose |
-| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name. Refused once a card with working buttons is on the user's screen: then only the card approves | clients without the card, or with a card without buttons |
+| the approval card | an MCP Apps card in the chat with Approve / Reject | Claude (web, Desktop chat), ChatGPT, the Codex app, VS Code, Goose |
+| the chat | the agent shows the preview and asks; on the user's yes it calls `calm_confirm` with the id and the tool's name | clients without the card, or with a card without buttons (terminals, the Claude Code tab) |
+
+The card comes first. Once a card with working buttons is on the user's
+screen it takes the change for itself, and `calm_confirm` is refused for
+it. `calm_confirm` is also refused in the first 10 seconds after a
+proposal, so that such a card gets there before an agent that confirms in
+the same turn. With `CALM_APPROVAL=card` the chat is never accepted: use it
+when every app you work in shows the card.
+
+The card shows every value whole: a description, a comment, a document or
+test steps are not shortened there. What the agent reads is shortened, and
+says by how many characters.
 
 A card drawn again (a reload, another device) asks `calm_approval_status`,
 also visible to the card only, how its change ended, and shows that
@@ -141,10 +169,13 @@ minutes (the card then shows it as expired) and, over HTTP, must come with the s
 request that proposed it. `dryRun: true` previews without asking.
 
 Approving in the chat trusts the agent: the server cannot see the user's
-reply. It names the change in `calm_confirm` (id and tool), which hosts
-show in their permission prompt; keep that prompt on for `calm_confirm`
-(do not "always allow" it) if text in Cloud ALM could come from people you
-do not trust. Before writing, the server runs the change as a dry run again
+reply, so it cannot tell a real yes from an agent that claims one. In an
+app without a working card, an agent misled by text it read (a comment in
+Cloud ALM, a document, a web page) could propose a change and confirm it
+itself after the first seconds. What stands in its way there is the app's
+own permission prompt: `calm_confirm` names the change (id and tool) and is
+marked destructive, so apps ask before running it. Keep that prompt on for
+`calm_confirm` (do not "always allow" it), or set `CALM_APPROVAL=card`. Before writing, the server runs the change as a dry run again
 and refuses if it no longer matches the preview the user saw. Text from
 Cloud ALM reaches the agent fenced as data.
 
