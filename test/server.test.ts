@@ -69,7 +69,15 @@ describe("tools", () => {
     expect((await explicit.call("calm_show", { tool: "calm_get", arguments: {} })).error).toBe(true);
     expect((await explicit.call("calm_show", { tool: "calm_list", arguments: {} })).error).toBe(true);
     expect(explicit.fake.seen).toHaveLength(0);
+    // A read comes with the reminder to show it, and the exact call to make; with cards off there is nothing to show.
+    const read = await explicit.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } });
+    const blocks = (read.content as { text: string }[]).map(block => block.text);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toContain(`call calm_show with ${JSON.stringify(selection)}`);
+    expect(explicit.client.getInstructions()).toContain("call calm_show once");
     const plain = await connect(TENANT, { cards: false, contentPresentation: "explicit" });
+    expect(((await plain.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } })).content as unknown[])).toHaveLength(1);
+    expect(plain.client.getInstructions()).not.toContain("calm_show");
     expect((await plain.client.listTools()).tools.every(tool => !tool._meta?.ui && tool.name !== "calm_show")).toBe(true);
   });
 
