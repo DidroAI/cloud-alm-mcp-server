@@ -234,7 +234,7 @@ More: [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md).
 - [Running it as a shared HTTP endpoint](docs/hosting.md)
 - [Using it as a library](docs/library.md)
 - [Cloud ALM API notes, errors and limits](docs/cloud-alm-api.md)
-- [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+- [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## Licence
 
