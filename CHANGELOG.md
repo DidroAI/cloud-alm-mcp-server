@@ -6,6 +6,7 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+- The link of an automated test case opens that test case in Cloud ALM, not the list of test cases.
 - New icon of our own (a cloud with a linked check) for the server, the Claude Desktop extension and the registry entry, in place of SAP's logo.
 - Where views are shown with `calm_show` (the hosted connector in ChatGPT and Claude), the assistant is told more plainly to use it: the instructions and the tool's description say when, and each read ends with a reminder and the exact call. Before, a request such as "show the tests" could be answered with a text table.
 - Reports about tool problems go to `https://docs.didro.ai/cloud-alm/feedback`. Earlier versions keep posting to `https://calm.didro.ai/feedback`, which still takes them.
