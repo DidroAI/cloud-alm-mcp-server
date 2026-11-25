@@ -6,6 +6,16 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-25
+
+- The link of an automated test case opens that test case in Cloud ALM, not the list of test cases.
+- New icon of our own (a cloud with a linked check) for the server, the Claude Desktop extension and the registry entry, in place of SAP's logo.
+- Where views are shown with `calm_show` (the hosted connector in ChatGPT and Claude), the assistant is told more plainly to use it: the instructions and the tool's description say when, and each read ends with a reminder and the exact call. Before, a request such as "show the tests" could be answered with a text table.
+- Reports about tool problems go to `https://docs.didro.ai/cloud-alm/feedback`. Earlier versions keep posting to `https://calm.didro.ai/feedback`, which still takes them.
+- Didro's hosted connector is now at `https://docs.didro.ai/cloud-alm/connect/mcp`. A connection made at the former address, `https://calm.didro.ai/mcp`, will have to be added again once that address is retired. It now counts sign-ins and tool calls per hour (tool name, outcome, app, version; no tenant, address or content), and says so on the sign-in page and in PRIVACY.md.
+- The hosted connector can be mounted under a path of an existing site and can store reports in its own deployment.
+- Hosted connector hardening after a review: a separate derived key for client ids, sign-in flows, stored grants and client secrets (existing registrations must be made again); only tools the server has are counted by name; the per-sender limit covers the sign-in page and key upload, not the registration and code exchange that the apps' shared servers perform; credentials that do not decode are refused instead of failing; the sign-in page warns against continuing from a link someone else sent.
+
 ## [0.3.3] - 2026-11-25
 
 - The Claude Desktop extension and the Claude Code plugin have a switch for the reports about tool problems, and the MCP Registry entry lists `CALM_FEEDBACK`. `feedback off` still turns them off for every copy on the computer.

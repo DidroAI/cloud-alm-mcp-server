@@ -102,7 +102,7 @@ that its developer information is not verified by Anthropic. It shows this
 for every extension installed from a file rather than from Anthropic's
 directory. The extension runs `dist/cli.js` from this repository on your
 machine. It connects to SAP and, when your assistant sends a report about a
-tool problem, to `https://calm.didro.ai/feedback`
+tool problem, to `https://docs.didro.ai/cloud-alm/feedback`
 ([turning reports off](#reports-about-tool-problems),
 [PRIVACY.md](../PRIVACY.md)). Each release is built by GitHub Actions from a
 tagged commit.
@@ -242,7 +242,7 @@ log):
 Since 0.3.1 a local install offers the assistant one more tool,
 `calm_report_feedback`, on by default in every install channel above. When
 the assistant runs into a problem with a tool it can post a short report to
-`https://calm.didro.ai/feedback`: the tool's name, the outcome (blocked,
+`https://docs.didro.ai/cloud-alm/feedback`: the tool's name, the outcome (blocked,
 recovered, or completed with extra work), an observation, optionally a
 suggestion, the server's version and a random report ID. The assistant
 writes the observation and the suggestion; the server adds no data from
@@ -307,7 +307,7 @@ to anything but `0`, `false`, `no` or `off` (`CLAUDECODE`, `CODEX_SANDBOX`,
 
 A local install connects to your key's SAP token host and to your Cloud ALM
 API (`*.alm.cloud.sap`). Unless you turned reports off, it also posts to
-`https://calm.didro.ai/feedback` when your assistant sends a report about a
+`https://docs.didro.ai/cloud-alm/feedback` when your assistant sends a report about a
 tool problem ([above](#reports-about-tool-problems)). What the tools return
 goes to the AI model your client uses. See [PRIVACY.md](../PRIVACY.md).
 

@@ -2,7 +2,7 @@
 
 ## Hosted browser connection
 
-When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector reads SAP data. Agent feedback is enabled by default on Didro’s hosted service. When the assistant encounters tool friction it can send a short observation to Didro’s private inbox. Reports contain the fields described below. The connector does not automatically attach SAP results or conversation transcripts.
+When you connect through Didro’s hosted connector, your browser sends the service key to the connector’s consent endpoint. The server exchanges it with SAP and discards the uploaded key. It stores the temporary SAP grant encrypted in PostgreSQL and a digest of the connector bearer token. Access expires within one hour. Expired database rows are pruned on the next successful connection. The hosted connector reads SAP data. Agent feedback is enabled by default on Didro’s hosted service. When the assistant encounters tool friction it can send a short observation to Didro’s private inbox. Reports contain the fields described below. The connector does not automatically attach SAP results or conversation transcripts. The hosted connector also counts, per hour, how often its sign-in steps and each tool were used, with the outcome (worked or failed), the app (ChatGPT or Claude) and the server version. These counts hold no tenant, no IP address, no user and no content.
 
 ## Local installation
 
@@ -33,7 +33,8 @@ e-mail addresses, credentials or record IDs. The sentences are still free
 text written by an AI assistant, so they can hold private words it chose to
 write. Your MCP client shows each call of the tool like any other.
 
-Reports go to `https://calm.didro.ai/feedback`, which passes them to Didro's
+Reports go to `https://docs.didro.ai/cloud-alm/feedback` (versions before
+0.3.4: `https://calm.didro.ai/feedback`), which stores them in Didro's
 private inbox. As with any request, Didro's hosting provider sees the
 sender's IP address; it is used to limit how many reports one sender can
 post and is not stored with the report.
@@ -63,7 +64,8 @@ By default, to the two SAP addresses named in your service key:
   `https://eu20.alm.cloud.sap/api`), to read and, with your approval, write
   Cloud ALM data.
 
-Unless agent reports are turned off, also to `https://calm.didro.ai/feedback`
+Unless agent reports are turned off, also to
+`https://docs.didro.ai/cloud-alm/feedback`
 (or the receiver in `CALM_FEEDBACK_URL`), only when your assistant sends a
 report.
 

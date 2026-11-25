@@ -65,7 +65,7 @@ export function webUrl(base: string | undefined, t: LinkTarget): string | undefi
     case "document":
       return t.displayId ? at(`DocumentationObject-manage?displayId=${enc(t.displayId)}`) : at(APP.document);
     case "testCase":
-      return t.manual ? at(APP.testCase, `&/manual/${enc(t.id)}/tab/content`) : at(APP.testCase);
+      return at(APP.testCase, t.manual ? `&/manual/${enc(t.id)}/tab/content` : `&/automated/${enc(t.id)}/tab/general`);
     default:
       return at(APP[t.kind]);
   }

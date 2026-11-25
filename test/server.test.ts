@@ -69,7 +69,15 @@ describe("tools", () => {
     expect((await explicit.call("calm_show", { tool: "calm_get", arguments: {} })).error).toBe(true);
     expect((await explicit.call("calm_show", { tool: "calm_list", arguments: {} })).error).toBe(true);
     expect(explicit.fake.seen).toHaveLength(0);
+    // A read comes with the reminder to show it, and the exact call to make; with cards off there is nothing to show.
+    const read = await explicit.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } });
+    const blocks = (read.content as { text: string }[]).map(block => block.text);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1]).toContain(`call calm_show with ${JSON.stringify(selection)}`);
+    expect(explicit.client.getInstructions()).toContain("call calm_show once");
     const plain = await connect(TENANT, { cards: false, contentPresentation: "explicit" });
+    expect(((await plain.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } })).content as unknown[])).toHaveLength(1);
+    expect(plain.client.getInstructions()).not.toContain("calm_show");
     expect((await plain.client.listTools()).tools.every(tool => !tool._meta?.ui && tool.name !== "calm_show")).toBe(true);
   });
 
@@ -452,6 +460,10 @@ test("items link to the Cloud ALM UI when the tenant's UI root is known", async 
   expect(webUrl("https://a.eu20.alm.cloud.sap", { kind: "task", type: "CALMDEF", displayId: "3-14" })).toBe(
     "https://a.eu20.alm.cloud.sap/launchpad#ptmDefect-management?sap-ui-app-id-hint=com.sap.calm.imp.ptm.defects.ui&/taskDetail/3-14",
   );
+  // Manual and automated test cases each open on their own page.
+  const testCase = "https://a.eu20.alm.cloud.sap/launchpad#test-displayTestCaseList?sap-ui-app-id-hint=com.sap.calm.imp.tm.preparation";
+  expect(webUrl("https://a.eu20.alm.cloud.sap", { kind: "testCase", id: "aaaaaaaa-0000-4000-8000-000000000001", manual: true })).toBe(`${testCase}&/manual/aaaaaaaa-0000-4000-8000-000000000001/tab/content`);
+  expect(webUrl("https://a.eu20.alm.cloud.sap", { kind: "testCase", id: "aaaaaaaa-0000-4000-8000-000000000002", manual: false })).toBe(`${testCase}&/automated/aaaaaaaa-0000-4000-8000-000000000002/tab/general`);
   const base = "https://acme.eu20.alm.cloud.sap";
   const { call } = await connect(TENANT, { webUrl: base });
   const list = (await call("calm_list", { query: "credit" })).structured as { items: { id: string; url?: string }[] };

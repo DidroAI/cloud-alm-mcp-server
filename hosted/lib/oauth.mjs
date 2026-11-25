@@ -15,7 +15,7 @@ const platforms = new Map([
   ["https://claude.ai/api/mcp/auth_callback", "Claude"],
   ["https://chatgpt.com/connector_platform_oauth_redirect", "ChatGPT"],
 ]);
-function platform(uri) {
+export function platform(uri) {
   return (
     platforms.get(uri) ??
     (/^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,160}$/.test(
@@ -32,15 +32,16 @@ function unpack(type, value) {
     fail();
   }
 }
-export function metadata(origin, path) {
+/** The discovery documents. They sit at the root of the origin; `base` is where the connector's own paths start. */
+export function metadata(origin, path, base = "") {
   if (
     [
       "/.well-known/oauth-protected-resource",
-      "/.well-known/oauth-protected-resource/mcp",
+      "/.well-known/oauth-protected-resource" + base + "/mcp",
     ].includes(path)
   )
     return {
-      resource: origin + "/mcp",
+      resource: origin + base + "/mcp",
       authorization_servers: [origin],
       scopes_supported: [scope],
       bearer_methods_supported: ["header"],
@@ -48,10 +49,10 @@ export function metadata(origin, path) {
   if (path === "/.well-known/oauth-authorization-server")
     return {
       issuer: origin,
-      authorization_endpoint: origin + "/oauth/authorize",
-      token_endpoint: origin + "/oauth/token",
-      registration_endpoint: origin + "/oauth/register",
-      revocation_endpoint: origin + "/oauth/revoke",
+      authorization_endpoint: origin + base + "/oauth/authorize",
+      token_endpoint: origin + base + "/oauth/token",
+      registration_endpoint: origin + base + "/oauth/register",
+      revocation_endpoint: origin + base + "/oauth/revoke",
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       token_endpoint_auth_methods_supported: methods,
@@ -60,7 +61,7 @@ export function metadata(origin, path) {
       authorization_response_iss_parameter_supported: true,
     };
 }
-async function register(req) {
+async function register(req, note) {
   let data;
   const raw = await limited(req, 8192);
   try {
@@ -84,6 +85,7 @@ async function register(req) {
     fail("invalid_redirect_uri");
   if (!methods.includes(method)) fail("invalid_client_metadata");
   const id = seal("client", { redirects, method });
+  note?.({ kind: "register", app: platform(redirects[0]) });
   return json(
     {
       client_id: id,
@@ -98,7 +100,7 @@ async function register(req) {
     201,
   );
 }
-function authorize(origin, params) {
+function authorize({ origin, base, note }, params) {
   const id = params.get("client_id"),
     redirect = params.get("redirect_uri"),
     challenge = params.get("code_challenge");
@@ -109,7 +111,7 @@ function authorize(origin, params) {
     params.get("code_challenge_method") !== "S256" ||
     !/^[-_a-zA-Z0-9]{43}$/.test(challenge ?? "") ||
     (params.get("scope") || scope) !== scope ||
-    (params.has("resource") && params.get("resource") !== origin + "/mcp")
+    (params.has("resource") && params.get("resource") !== origin + base + "/mcp")
   )
     fail();
   const state = params.get("state") ?? "";
@@ -124,26 +126,29 @@ function authorize(origin, params) {
     csrf,
     until: Date.now() + 600000,
   });
+  note?.({ kind: "sign_in_page", app: platform(redirect) });
   return page(
     "Connect your tenant",
     `<p class="intro">Give <strong>${platform(redirect)}</strong> read access to your SAP Cloud ALM tenant.</p>
-    <form class="panel" method="post" action="/oauth/authorize" enctype="multipart/form-data">
+    <form class="panel" method="post" action="${base}/oauth/authorize" enctype="multipart/form-data">
       <fieldset class="upload-field"><legend>BTP service key</legend>
       <p class="hint" id="key-hint">Choose the JSON file you downloaded from SAP BTP.</p>
       <div id="key-upload"></div>
       <input aria-label="BTP service key JSON" id="key" type="file" name="key" accept=".json,application/json" aria-describedby="key-hint" required></fieldset>
-      <script type="module" src="/key-upload.js"></script>
+      <script type="module" src="${base}/key-upload.js"></script>
       <input type="hidden" name="csrf" value="${csrf}">
       <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
-      <p class="hint">Anyone using this connection can read the records your key allows.</p>
+      <p class="hint">Anyone using this connection can read the records your key allows. Continue only if you started this from ${platform(redirect)} yourself a moment ago, not from a link someone sent you.</p>
+      ${note ? '<p class="hint">Didro counts sign-ins and tool calls by tool name, to see what is used. The counts carry no tenant, no address and no content.</p>' : ""}
       ${process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
       <button class="button" type="submit">Connect to ${platform(redirect)}</button>
     </form>
     <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The app discards the file and encrypts the temporary SAP token in the session database. ${platform(redirect)} receives a separate connector token.</p></details>`,
     { "set-cookie": cookie + "=" + flow + cookieOptions + "; Max-Age=600" },
+    base,
   );
 }
-async function consent(req, origin, sql, exchange) {
+async function consent(req, { origin, base, sql, exchange, note }) {
   if (req.headers.get("origin") !== origin) fail();
   const cookies = (req.headers.get("cookie") ?? "")
     .split(";")
@@ -193,9 +198,12 @@ async function consent(req, origin, sql, exchange) {
     if (api.pathname === "/") key.endpoints.Api = api.origin + "/api";
     grant = await exchange(key);
   } catch {
+    note?.({ kind: "sign_in", outcome: "key_refused", app: platform(flow.redirect) });
     return page(
       "Check your service key",
       "<p>SAP authentication was unsuccessful. Choose a Cloud ALM client-secret service key from a supported SAP commercial region. Go back to try again.</p>",
+      {},
+      base,
     );
   }
   const id = randomUUID(),
@@ -212,6 +220,7 @@ async function consent(req, origin, sql, exchange) {
     sql`INSERT INTO connections(id,client_id,redirect_uri,challenge,code_hash,code_until,encrypted_grant,expires_at)
        VALUES (${id},${flow.id},${flow.redirect},${flow.challenge},${digest(code)},now()+interval '90 seconds',${encrypted},${expires.toISOString()})`,
   ]);
+  note?.({ kind: "sign_in", outcome: "ok", app: platform(flow.redirect) });
   const dest = new URL(flow.redirect);
   dest.searchParams.set("code", code);
   dest.searchParams.set("iss", origin);
@@ -235,10 +244,15 @@ function authenticate(req, p) {
     const decoded = Buffer.from(basic.slice(6), "base64").toString();
     const sep = decoded.indexOf(":");
     if (sep < 1) fail("invalid_client", 401);
-    const basicId = decodeURIComponent(decoded.slice(0, sep));
+    let basicId;
+    try {
+      basicId = decodeURIComponent(decoded.slice(0, sep));
+      secret = decodeURIComponent(decoded.slice(sep + 1));
+    } catch {
+      fail("invalid_client", 401);
+    }
     if (id && id !== basicId) fail("invalid_client", 401);
     id = basicId;
-    secret = decodeURIComponent(decoded.slice(sep + 1));
   }
   const { method } = unpack("client", id);
   const used = basic
@@ -253,18 +267,14 @@ function authenticate(req, p) {
     fail("invalid_client", 401);
   return id;
 }
-export async function oauth(
-  req,
-  url,
-  origin,
-  sql,
-  exchange = clientCredentials,
-) {
-  const path = url.pathname;
-  if (path === "/oauth/register" && req.method === "POST") return register(req);
+/** The sign-in endpoints. `path` is relative to the connector's base. */
+export async function oauth(req, url, path, ctx) {
+  const { origin, base = "", sql, note } = ctx;
+  ctx = { ...ctx, base, exchange: ctx.exchange ?? clientCredentials };
+  if (path === "/oauth/register" && req.method === "POST") return register(req, note);
   if (path === "/oauth/authorize") {
-    if (req.method === "GET") return authorize(origin, url.searchParams);
-    if (req.method === "POST") return consent(req, origin, sql, exchange);
+    if (req.method === "GET") return authorize(ctx, url.searchParams);
+    if (req.method === "POST") return consent(req, ctx);
   }
   if (
     req.method !== "POST" ||
@@ -275,6 +285,7 @@ export async function oauth(
   const id = authenticate(req, p);
   if (path === "/oauth/revoke") {
     await sql`DELETE FROM connections WHERE client_id=${id} AND access_hash=${digest(p.get("token") ?? "")}`;
+    note?.({ kind: "revoke" });
     return new Response(null, { status: 200 });
   }
   if (p.get("grant_type") !== "authorization_code")
@@ -282,7 +293,7 @@ export async function oauth(
   const verifier = p.get("code_verifier");
   if (
     !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier ?? "") ||
-    (p.has("resource") && p.get("resource") !== origin + "/mcp")
+    (p.has("resource") && p.get("resource") !== origin + base + "/mcp")
   )
     fail("invalid_grant");
   const token = nonce();
@@ -290,7 +301,11 @@ export async function oauth(
     await sql`UPDATE connections SET code_hash=NULL,access_hash=${digest(token)}
     WHERE code_hash=${digest(p.get("code") ?? "")} AND client_id=${id} AND redirect_uri=${p.get("redirect_uri") ?? ""}
     AND challenge=${digest(verifier)} AND code_until>now() AND expires_at>now() RETURNING expires_at`;
-  if (!row) fail("invalid_grant");
+  if (!row) {
+    note?.({ kind: "token", outcome: "refused" });
+    fail("invalid_grant");
+  }
+  note?.({ kind: "token", outcome: "ok", app: platform(p.get("redirect_uri") ?? "") });
   return json({
     access_token: token,
     token_type: "Bearer",

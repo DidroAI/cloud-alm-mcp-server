@@ -48,7 +48,7 @@ export function feedbackSinkFromEnv(env: Record<string, string | undefined>): Fe
 }
 
 /** Didro's public inbox for local installations. It takes a report's fields and nothing else. */
-export const DIDRO_FEEDBACK_URL = "https://calm.didro.ai/feedback";
+export const DIDRO_FEEDBACK_URL = "https://docs.didro.ai/cloud-alm/feedback";
 /** `CALM_FEEDBACK=off` turns reports off for one client's configuration. */
 export const FEEDBACK_ENV = "CALM_FEEDBACK";
 /** Present in the config directory when the user turned reports off (`feedback off`). */
