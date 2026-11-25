@@ -27,7 +27,7 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
 
 <p>
 <img src="docs/images/overview-light.png" alt="Project overview card: findings, project status and expandable breakdowns" width="49%">
-<img src="docs/images/update-light.png" alt="Approval card: a user story's priority from high to very high and a new comment, with Approve and Reject" width="49%">
+<img src="docs/images/update-light.png" alt="Approval card: a user story's priority from high to very high and a new comment, with Reject and Approve" width="49%">
 </p>
 
 > MIT licence. An independent open-source project, not

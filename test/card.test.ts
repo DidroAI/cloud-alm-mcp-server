@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import { createHash } from "node:crypto";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
-import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, cardHtml, overviewHtml } from "../src/approval.js";
+import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, appBundle, cardHtml, overviewHtml } from "../src/approval.js";
 import { CONTENT_URI, CONTENT_URIS_BEFORE, contentHtml } from "../src/content-app.js";
 
 type Call = { name: string; arguments: Record<string, unknown> };
@@ -14,7 +14,7 @@ type Result = Record<string, unknown>;
 
 /** Draw the card; `serverTools: false` is a host that cannot pass on the card's calls. */
 async function card(options: { serverTools?: boolean; answer?: (call: Call) => Result } = {}) {
-  const html = CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", "").replace("__META_KEY__", META_KEY).replace("<!--brand-mark-->", "");
+  const html = CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", "").replace("__META_KEY__", META_KEY).replace("<!--sap-logo-->", "");
   const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? "";
   const window = new Window();
   window.document.write(html.replace(/<script[\s\S]*?<\/script>/, ""));
@@ -160,12 +160,20 @@ test("a card that changes gets a new address", () => {
     [OVERVIEW_URI]: fingerprint(overviewHtml()),
     [CONTENT_URI]: fingerprint(contentHtml(false)),
   }).toEqual({
-    "ui://cloud-alm/approve-v5.html": "94046006d990cd01",
-    "ui://cloud-alm/overview-v3.html": "05abb6da95baf625",
-    "ui://cloud-alm/content-v3.html": "c281e4f3bde071a1",
+    "ui://cloud-alm/approve-v5.html": "0a3b7d3cd6c575e9",
+    "ui://cloud-alm/overview-v3.html": "c037ff94a43df9a9",
+    "ui://cloud-alm/content-v3.html": "24af212ef374de37",
   });
   // The address before stays answerable, and no address is listed twice.
   const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];
   expect(new Set(all).size).toBe(all.length);
   expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(6);
+});
+
+test("the cards use no middle dots or bullets as separators, and Reject stands left of Approve", () => {
+  // The app library is not ours and not text anyone reads: only the cards' own markup and script are checked.
+  for (const html of [cardHtml(), overviewHtml(), contentHtml(false), contentHtml(true)])
+    expect(html.replace(appBundle(), "")).not.toMatch(/[·•∙⋅‧]|&middot;|&bull;/);
+  const buttons = [...CARD_TEMPLATE.matchAll(/<button id="(ok|no)"/g)].map((m) => m[1]);
+  expect(buttons).toEqual(["no", "ok"]);
 });

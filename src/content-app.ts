@@ -1,7 +1,7 @@
 /** A compact source view, not a second Cloud ALM workspace. */
 import { appBundle } from "./approval.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
-import { brandMark } from "./brand-mark.js";
+import { sapLogo } from "./sap-logo.js";
 
 export const CONTENT_URI = "ui://cloud-alm/content-v3.html";
 export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
@@ -47,9 +47,9 @@ header {
   align-items: center;
   margin-bottom: 18px;
 }
-.mark {
-  width: 32px;
-  height: 32px;
+.sap-logo {
+  width: 48px;
+  height: 24px;
   flex-shrink: 0;
 }
 .brand {
@@ -200,7 +200,7 @@ small {display:block;color:var(--muted);font-size:12px}
 .grid-wrap {overflow-x:auto;margin:8px 0 0}
 table {width:100%;border-collapse:collapse;font-size:13px;text-align:start}
 th,td {text-align:start;padding:9px 12px;vertical-align:top;overflow-wrap:anywhere}
-th {color:var(--muted);font-size:12px;background:var(--color-background-secondary,light-dark(#f4f7fa,#24313d))}
+th {color:var(--muted);font-size:12px;background:var(--color-background-secondary,light-dark(#f4f7fa,#24313d));overflow-wrap:normal}
 td {border-top:1px solid var(--line)}
 .references {display:grid;gap:4px}
 @media(max-width:480px){.panel{padding:10px}td,th,.metrics div{padding:7px}.metrics strong{font-size:17px}}
@@ -209,7 +209,7 @@ body.dashboard{background:var(--color-background-secondary,light-dark(#f5f6f7,#1
 .dashboard header,.dashboard .grid-wrap{background:var(--surface);padding:12px;border:1px solid var(--line);border-radius:10px}
 .dashboard .grid-wrap{padding:0}
 </style></head><body><main>
-<header>${brandMark}<div><div class="brand">Cloud ALM by Didro${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
+<header>${sapLogo}<div><div class="brand">SAP Cloud ALM${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
 <div id="content" aria-live="polite"></div>
 <footer><span id="count">Loading…</span><button id="more" hidden>View all</button></footer><p id="status" role="status"></p>
 </main><script type="module">${appBundle()}\n${metricsScript}
@@ -246,6 +246,12 @@ const plurals = {
   task: "Tasks",
   test_plan: "Test plans",
 };
+/** A label on its own starts with a capital: "very high" → "Very high", "notRun" → "Not run". */
+const cap = (value) => {
+  const s = String(value ?? "");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+const human = (key) => cap(String(key).replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase());
 const node = (tag, value, cls) => {
   const n = document.createElement(tag);
   if (value != null) n.textContent = String(value);
@@ -271,7 +277,7 @@ function badge(value) {
   const label =
     lower === "open (in refinement)"
       ? "In refinement"
-      : s.charAt(0).toUpperCase() + s.slice(1);
+      : cap(s);
   return node(
     "span",
     label,
@@ -317,7 +323,7 @@ function sourceAction(item) {
   const hash = new URL(url).hash;
   let label = "Open record";
   if (!hash) label = "Open launchpad";
-  else if (hash.startsWith("#testPlan-display")) label = "Open Test Plans";
+  else if (hash.startsWith("#testPlan-display")) label = "Open test plan list";
   else if (hash.startsWith("#ProcessScopingList")) label = "Open process list";
   else if (hash.startsWith("#test-display") && !hash.includes("&/manual/") && !hash.includes("&/automated/")) label = "Open test case list";
   return recordLink(label, url);
@@ -344,8 +350,8 @@ function appendDetails(body, item) {
   if (item.steps?.length) body.append(table(["Step", "Action", "Expected result"],
     item.steps.map(step => [step.step, step.do, step.expect]), "Test steps"));
   const fields = [
-    ["Priority", item.priority], ["Classification", item.fields?.classification],
-    ["Approval", item.fields?.approval], ["Assignee", item.fields?.assignee],
+    ["Priority", item.priority && cap(item.priority)], ["Classification", item.fields?.classification && cap(item.fields.classification)],
+    ["Approval", item.fields?.approval && cap(item.fields.approval)], ["Assignee", item.fields?.assignee],
     ["Phase", item.fields?.phase], ["Scope", item.fields?.scope],
     ["Due", item.fields?.dueDate], ["Start", item.fields?.startDate],
     ["End", item.fields?.endDate], ["Tags", item.fields?.tags?.join(", ")],
@@ -369,7 +375,7 @@ function appendDetails(body, item) {
     links.map(link => {
       const title = node("div");
       title.append(recordLink(link.title || link.id || "Unnamed record", link.url), node("small", link.id));
-      return [relations[kind] || kind, title, link.status || link.result || "—"];
+      return [relations[kind] || cap(kind), title, link.status || link.result ? cap(link.status || link.result) : "—"];
     }));
   if (related.length) body.append(node("h3", "Related records"), table(["Relationship", "Record", "Status / result"], related, "Related records"));
   if (item.comments?.length) body.append(node("h3", "Comments"), table(["Author", "Date", "Comment"],
@@ -385,7 +391,7 @@ function appendDetails(body, item) {
     body.append(facts);
   }
   const population = item.fields?.population;
-  if (population?.assignmentOnly > 0) body.append(node("p", population.assignmentOnly + " assigned cases have no analytics result and count as not run."));
+  if (population?.assignmentOnly > 0) body.append(node("p", population.assignmentOnly === 1 ? "1 assigned case has no analytics result and counts as not run." : population.assignmentOnly + " assigned cases have no analytics result and count as not run."));
   if (!item.testCases?.length) return;
   body.append(node("h3", population?.assigned > item.testCases.length ? "Test cases (" + item.testCases.length + " of " + population.assigned + ")" : "Test cases (" + item.testCases.length + ")"));
   body.append(table(["Test case", "Result", "Defects"], item.testCases.map(tc => {
@@ -403,7 +409,7 @@ function appendDetails(body, item) {
 function itemList(items, details) {
   if (!details) {
     const hasSource = items.some(item => safeLink(item.url));
-    const headers = ["Item", "Status"];
+    const headers = [current?.result.structuredContent?.projects ? "Project" : "Item", "Status"];
     const priority = items.some(item => item.priority);
     if (priority) headers.push("Priority");
     if (hasSource) headers.push("Cloud ALM");
@@ -411,7 +417,7 @@ function itemList(items, details) {
       const name = node("div");
       name.append(node("strong", item.title || item.name || item.id), node("small", item.id));
       const cells = [name, item.result || item.status ? badge(item.result || item.status) : "—"];
-      if (priority) cells.push(item.priority ? String(item.priority).charAt(0).toUpperCase() + String(item.priority).slice(1) : "—");
+      if (priority) cells.push(item.priority ? cap(item.priority) : "—");
       if (hasSource) cells.push(sourceAction(item));
       return cells;
     }), "Cloud ALM records");
@@ -420,7 +426,7 @@ function itemList(items, details) {
   for (const item of items) {
     const section = node("section", null, "detail panel");
     const top = node("div", null, "record-head"), heading = node("div");
-    heading.append(node("small", (labels[itemKind(item)] || item.kind || "Item") + " · " + (item.id || "")), node("h2", item.title || item.name || item.id));
+    heading.append(node("small", ((labels[itemKind(item)] || (item.kind ? cap(item.kind) : "Item")) + " " + (item.id || "")).trim()), node("h2", item.title || item.name || item.id));
     top.append(heading);
     const action = sourceAction(item);
     if (action) top.append(action);
@@ -473,26 +479,27 @@ function render(result, args = {}) {
     if (!items.length)
       root.append(node("p", "No items match this request.", "empty"));
     const total = typeof data.total === "number" ? data.total : items.length;
+    const noun = Array.isArray(data.projects) ? "project" : "item";
     const offset = data.offset || 0;
     $("count").textContent = total
       ? offset || visible.length < total
         ? offset + 1 + "–" + (offset + visible.length) + " of " + total
-        : total + " " + (total === 1 ? "item" : "items")
-      : "0 items";
+        : total + " " + noun + (total === 1 ? "" : "s")
+      : "0 " + noun + "s";
     $("more").hidden = expanded
       ? data.nextOffset == null
       : !(items.length > 5 || data.nextOffset != null);
     $("more").textContent = expanded ? "Load more" : "View all";
   } else if (data.project) {
     root.append(projectMetrics(data));
-    const counts = Object.entries(data.tasks || {}).map(([type, value]) => [plurals[type.replaceAll(" ", "_")] || type, String(value.total)]);
+    const counts = Object.entries(data.tasks || {}).map(([type, value]) => [plurals[type.replaceAll(" ", "_")] || cap(type), String(value.total)]);
     if (data.features) counts.push(["Features", String(data.features.total)]);
     if (data.testCases) counts.push(["Manual test cases", String(data.testCases.manual)], ["Automated test cases", String(data.testCases.automated)]);
     if (counts.length) root.append(table(["Project scope", "Count"], counts, "Project scope"));
     const results = Object.entries(data.testResults || {}).filter(([, count]) => count > 0);
-    if (results.length) root.append(node("h3", "Test results"), table(["Result", "Count"], results.map(([status, count]) => [badge(status === "notInPlan" ? "Outside test plans" : status), String(count)]), "Test results"));
+    if (results.length) root.append(node("h3", "Test results"), table(["Result", "Count"], results.map(([status, count]) => [badge(status === "notInPlan" ? "Outside a test plan" : human(status)), String(count)]), "Test results"));
     $("count").textContent =
-      [data.project.phase, data.project.status].filter(Boolean).join(" · ") ||
+      cap([data.project.phase && data.project.phase + " phase", data.project.status].filter(Boolean).join(", ")) ||
       "Project summary";
     $("more").hidden = true;
   } else {

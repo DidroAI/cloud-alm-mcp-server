@@ -8,9 +8,14 @@ All notable changes to this package. The format follows
 
 ## [0.3.6] - 2026-11-25
 
-- The cards (approval, project overview, records) show Didro's own mark, the cloud with a check, and the label "Cloud ALM by Didro". SAP's logo is no longer drawn anywhere and no longer ships in the package or the extension. The cards have new addresses; the earlier ones keep answering.
 - The server, the Claude Desktop extension and the MCP Registry entry are titled "Cloud ALM by Didro", not "SAP Cloud ALM": the project is independent and not affiliated with SAP. Descriptions still say what it connects to.
-- The screenshots, the social preview and the setup video show the new cards.
+- Approval card: Reject stands left of Approve (and of "Delete permanently").
+- Cards (approval, project overview, records):
+  - no middle dots between pieces of text any more: "Implementation project, Realize phase", "User story 3-3", "3 manual, 1 automated";
+  - Cloud ALM's own labels start with a capital wherever they stand alone: "Very high", "In testing", "Open (new)", "Yes", "Outside a test plan". Text someone typed (a title, a comment, a tag) is shown as typed;
+  - a list of projects is headed and counted as projects, a table heading no longer breaks inside a word, and the link to the test plans reads "Open test plan list".
+  The cards keep SAP's logo. They have new addresses; the earlier ones keep answering.
+- The screenshots, the social preview and the setup video show the cards with Didro's own mark in place of SAP's logo.
 - Contributing: `main` takes pull requests with passing checks; a maintainer's own pull request no longer needs a second approval that nobody could give.
 
 ## [0.3.5] - 2026-11-25

@@ -21,7 +21,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { brandMark } from "./brand-mark.js";
+import { sapLogo } from "./sap-logo.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
@@ -247,9 +247,9 @@ export const OVERVIEW_URIS_BEFORE = ["ui://cloud-alm/overview-v2.html", "ui://cl
 
 /** The project overview card. */
 export function overviewHtml(): string {
-  return OVERVIEW_TEMPLATE.replace("<!--brand-mark-->", () => brandMark).replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
+  return OVERVIEW_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
 }
 
 export function cardHtml(): string {
-  return CARD_TEMPLATE.replace("<!--brand-mark-->", () => brandMark).replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
+  return CARD_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
 }

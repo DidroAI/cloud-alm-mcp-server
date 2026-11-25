@@ -72,6 +72,9 @@ const PRIORITIES: Record<number, string> = { 10: "very high", 20: "high", 30: "m
 export const priorityLabel = (code: number | null) =>
   code === null ? null : (PRIORITIES[code] ?? String(code));
 
+/** A label that stands alone (a cell on a card): "very high" → "Very high". Inside a sentence it keeps its lower case. */
+export const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 export const typeLabel = (type: string | null) =>
   type ? (TASK_TYPES[type as TaskTypeCode] ?? type) : "task";
 

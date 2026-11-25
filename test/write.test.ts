@@ -182,7 +182,7 @@ describe("calm_link", () => {
     // The same for the card, in people's words: kinds and titles, no ids.
     expect(r.structured?.change).toMatchObject({
       kind: "update",
-      items: [{ type: "document", title: "Credit design", fields: [{ field: "Link to", after: 'user story "Release blocked orders from a worklist"' }] }],
+      items: [{ type: "document", title: "Credit design", fields: [{ field: "Link to", after: 'User story "Release blocked orders from a worklist"' }] }],
     });
     const tc = await call("calm_create_test_case", { ...testCase, dryRun: true });
     const fields = (tc.structured?.change as { items: { type: string; fields: { field: string; after: string }[] }[] }).items[0]?.fields ?? [];
@@ -220,7 +220,7 @@ describe("calm_link", () => {
     const change = r.structured?.change as { items: { id: string; type: string; fields: { field: string; after: string }[] }[] };
     expect(change.items[0]).toMatchObject({ id: "3-1", type: "requirement" });
     expect(change.items[0]?.fields[0]?.field).toBe("Remove the link to");
-    expect(change.items[0]?.fields[0]?.after).toContain("user story");
+    expect(change.items[0]?.fields[0]?.after).toContain("User story");
     expect(change.items[0]?.fields[0]?.after).not.toContain("requirement");
   });
 

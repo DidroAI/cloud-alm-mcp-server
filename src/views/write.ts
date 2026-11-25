@@ -28,7 +28,7 @@ import {
   type Change,
   changeItem,
 } from "./items.js";
-import { clipped, short, statusLabel, typeLabel } from "./text.js";
+import { capital, clipped, short, statusLabel, typeLabel } from "./text.js";
 
 export type { WriteOptions } from "./items.js";
 
@@ -146,8 +146,8 @@ export async function createTestCase(
         type: "test case", title: body.title, op: "create",
         fields: [
           { field: "Scope", after: scopeName },
-          { field: "Priority", after: PRIORITY_NAMES[body.priorityCode] ?? String(body.priorityCode) },
-          ...(covered.length ? [{ field: "Covers", after: covered.map(named).join("\n") }] : []),
+          { field: "Priority", after: capital(PRIORITY_NAMES[body.priorityCode] ?? String(body.priorityCode)) },
+          ...(covered.length ? [{ field: "Covers", after: covered.map((t) => capital(named(t))).join("\n") }] : []),
           { field: "Steps", after: outline },
         ],
       }],
@@ -243,7 +243,7 @@ export async function link(
       project: { id: snap.project.id, name: snap.project.name },
       items: [{
         ...(plan.subject ? { id: plan.subject.displayId, type: typeLabel(plan.subject.type), title: plan.subject.title } : changeItem(source)), op: "update",
-        fields: [{ field: unlink ? "Remove the link to" : "Link to", after: plan.todo.map(named).join("\n") }],
+        fields: [{ field: unlink ? "Remove the link to" : "Link to", after: plan.todo.map((t) => capital(named(t))).join("\n") }],
       }],
       ...(plan.notes.length ? { warnings: plan.notes } : {}),
     };
@@ -483,7 +483,7 @@ export async function tag(
       project: { id: snap.project.id, name: snap.project.name },
       items: plans.filter((p) => !p.same).map((p) => ({
         id: p.task.displayId, type: typeLabel(p.task.type), title: p.task.title, op: "update" as const,
-        fields: [{ field: "Tags", before: p.before.join(", ") || "none", after: p.target.join(", ") || "none" }],
+        fields: [{ field: "Tags", before: p.before.join(", ") || "None", after: p.target.join(", ") || "None" }],
       })),
     };
     return { text: lines.join("\n"), data: { change } };
@@ -576,7 +576,7 @@ export async function createTask(
     const fields = [
       ["Scope", scopeName],
       ["Under", parent ? label(parent) : null],
-      ["Priority", PRIORITY_NAMES[input.priority ?? 30]],
+      ["Priority", capital(PRIORITY_NAMES[input.priority ?? 30] ?? "")],
       ["Assignee", input.assignee],
       ["Start", input.startDate],
       ["Due", input.dueDate],
