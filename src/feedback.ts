@@ -5,8 +5,10 @@ import { z } from "zod";
 
 export const FEEDBACK_TOOL = "calm_report_feedback";
 
-// Catch common copy/paste mistakes. Product terms can still include private names.
-const privateText = /https?:\/\/|\b[^\s@]+@[^\s@]+\.[^\s@]+|\bBearer\s+\S+|\bclient[_-]?secret\b|\b[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}\b/i;
+// Catch common copy/paste mistakes: links, e-mail addresses, bearer tokens, GUIDs, and characters a reader
+// cannot see (control characters, marks that reverse the direction of text). Product terms can still
+// include private names: the sentences are the assistant's.
+const privateText = /https?:\/\/|\b[^\s@]+@[^\s@]+\.[^\s@]+|\bBearer\s+\S+|\bclient[_-]?secret\b|\b[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}\b|[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/i;
 const generalText = (minimum: number, maximum: number) => z.string().trim().min(minimum).max(maximum)
   .refine(text => !privateText.test(text), "Describe tool behavior without URLs, email addresses, credentials or record IDs.");
 
@@ -69,7 +71,7 @@ export function localFeedback(env: Env, configDir: string): { on: boolean; detai
     return { on: false, detail: `off (${FEEDBACK_ENV}=${wanted.slice(0, 20)})` };
   if (existsSync(join(configDir, FEEDBACK_OFF_FILE))) return { on: false, detail: "off (turned off with `feedback off`)" };
   if (env.CALM_FEEDBACK_URL) return { on: true, detail: "on, to the receiver in CALM_FEEDBACK_URL", url: env.CALM_FEEDBACK_URL };
-  return { on: true, detail: "on, to Didro (no records, credentials or chat text)", url: DIDRO_FEEDBACK_URL };
+  return { on: true, detail: "on, to Didro (the server attaches no records, credentials or chat text)", url: DIDRO_FEEDBACK_URL };
 }
 
 /** The sink of a local installation: Didro's inbox unless turned off or sent elsewhere. */

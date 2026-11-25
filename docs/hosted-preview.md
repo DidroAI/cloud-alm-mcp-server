@@ -1,9 +1,11 @@
 # Try Cloud ALM cards in Claude or ChatGPT
 
-Run this preview from a source checkout with Bun. It uses the synthetic
-**Rollout Example** project and the server's read tools. Anyone who can
-reach the endpoint can read the same example. SAP credentials, OAuth,
-writes, and links to a live SAP tenant are outside this preview.
+The demo serves the synthetic **Rollout Example** project through the
+server's read tools. Didro hosts it at
+`https://docs.didro.ai/cloud-alm/demo/mcp` (no sign-in). To run it yourself,
+use a source checkout with Bun, as below. Anyone who can reach the endpoint
+can read the same example. SAP credentials, OAuth, writes, and links to a
+live SAP tenant are outside the demo.
 
 ```sh
 bun install --frozen-lockfile
@@ -45,8 +47,8 @@ Stop the server with Ctrl-C and close your HTTPS forwarding session.
 
 In one terminal run `bun scripts/feedback-inbox.ts`. In another, start the
 demo with `bun scripts/hosted-preview.ts --feedback`. This explicitly adds
-`calm_report_feedback` and sends observations to the loopback inbox on port
-4317. Anyone connected to this demo can submit an observation until it stops.
+`calm_report_feedback` (the demo has no report tool otherwise, and neither
+has Didro's) and sends observations to the loopback inbox on port 4317. Anyone connected to this demo can submit an observation until it stops.
 Use a private testing session for this exercise.
 
 Ask the assistant to do a multi-step task such as “Group the failed test cases

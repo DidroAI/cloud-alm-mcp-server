@@ -1,5 +1,10 @@
 # Findings: 50 prompts and a best-practice review (2026-11-15)
 
+> A record of that day's runs, kept as written. Names and open items have
+> changed since: `calm_find` is now `calm_list`, and the links to the Cloud
+> ALM UI and the icons listed under "Still open" have shipped. For the
+> current tools see [docs/tools.md](../docs/tools.md).
+
 Five agents ran the 50 prompts in [prompts.md](prompts.md) against the live
 tenant through the server (about 100 tool calls; no rate limits; nothing
 written, every write stopped at its proposal). A sixth reviewed current MCP

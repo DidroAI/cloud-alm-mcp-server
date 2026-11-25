@@ -107,4 +107,4 @@ administers the SAP BTP subaccount of your Cloud ALM tenant:
   choose the new file (a key of the same tenant replaces the saved one;
   for another tenant setup asks first), then delete the old binding.
 - **Revoke:** delete the binding in the BTP cockpit; every token from it
-  stops working when it expires (within the hour).
+  stops working when it expires (`doctor` shows how long a token is valid).

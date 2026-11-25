@@ -9,3 +9,5 @@ coverage/
 # Service keys never belong in the repository.
 *service-key*.json
 *.key.json
+# Local agent state, worktrees and the video build
+.claude/

@@ -3,7 +3,7 @@
 Back to the [README](../README.md).
 
 
-The Cloud ALM client is exported too:
+The package also exports the Cloud ALM client:
 
 ```ts
 import { CloudAlm, serviceKeyGrants, formatTasks, createServer, createHttpHandler } from "cloud-alm-mcp-server";
@@ -14,7 +14,9 @@ console.log(formatTasks(await calm.listTasks({ type: "defect", limit: 20 })));
 ```
 
 A grant is `{ accessToken, baseUrl, expiresAt? }`; a callback is called once
-per operation. The library never reads environment variables or files.
-`CloudAlm` (typed reads of every Cloud ALM area), `CloudAlmWriter` (the
+per operation. The client (`CloudAlm`, `CloudAlmWriter`) never reads
+environment variables or files; `createServer` loads the package's own
+icon, skills and card code, and `stdioServer` finds the key as the command
+does. `CloudAlm` (typed reads of every Cloud ALM area), `CloudAlmWriter` (the
 allow-listed writes) and the `format*` helpers are public API; the MCP tools
 are built on the same client.

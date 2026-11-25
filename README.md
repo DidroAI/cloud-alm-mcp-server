@@ -6,14 +6,14 @@
 [![CI](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/DidroAI/cloud-alm-mcp-server/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
-Ask your SAP Cloud ALM project questions in Claude, ChatGPT-style agents,
-Codex, Cursor or VS Code, and let the assistant prepare changes that you
-approve, field by field. An open-source [MCP](https://modelcontextprotocol.io)
+Ask your SAP Cloud ALM project questions in Claude, ChatGPT, Codex, Cursor
+or VS Code, and let the assistant prepare changes that you approve, field by
+field. An open-source [MCP](https://modelcontextprotocol.io)
 server, `cloud-alm-mcp-server`.
 
-For a browser-only connection to your own tenant, try the [hosted ChatGPT and Claude connector](https://docs.didro.ai/cloud-alm/#install). Choose your BTP service key during sign-in to start a read-only session of up to one hour.
+For a browser-only connection to your own tenant, try the [hosted connector for ChatGPT and Claude](https://docs.didro.ai/cloud-alm/#install). Choose your BTP service key during sign-in to start a read-only session of up to one hour. There your browser uploads the key to Didro's server, which exchanges it with SAP and discards it ([PRIVACY.md](PRIVACY.md)).
 
-[Try the hosted demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting) or [connect your own SAP tenant](https://docs.didro.ai/cloud-alm/#install).
+No SAP account at hand? [Try the demo with synthetic data](https://docs.didro.ai/cloud-alm/#hosting).
 
 For local clients, download your Cloud ALM API service key and run `npx -y cloud-alm-mcp-server setup` in a terminal with Node.js 22 or later; it asks which key and which apps. Claude Desktop users can also [install the extension](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb) and choose their key file.
 
@@ -36,7 +36,7 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
 
 ## How it works
 
-- **Your key, your machine.** The server runs on your computer with a
+- **Your key, your machine.** A local install runs on your computer with a
   service key of the *SAP Cloud ALM API* from your SAP BTP subaccount. No
   background telemetry. It connects to SAP and, when your assistant reports a tool problem, to Didro ([PRIVACY.md](PRIVACY.md)).
 - **The key decides.** A read-only key reads. A key with write scopes also
@@ -44,10 +44,10 @@ For local clients, download your Cloud ALM API service key and run `npx -y cloud
   delete. Every change waits for your approval in a card (or your "yes" in
   the chat).
 - **Links back to Cloud ALM.** With a tenant UI address, record cards can open
-  requirements, defects, tasks, features, documents and manual test cases directly.
-  Test plans, automated test cases and processes open their SAP list. Project
+  requirements, defects, tasks, features, documents and test cases (manual and
+  automated) directly. Test plans and processes open their SAP list. Project
   links open the launchpad. Dashboard counts and approval fields are plain text.
-  The synthetic demo has no tenant links.
+  The demo has no tenant links.
 
 ### Browsing results in chat
 
@@ -64,7 +64,7 @@ opens. For a text answer or an export, the assistant can skip that last call.
 
 ### Agent feedback
 
-Your assistant can report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. A report is the tool's name, the outcome, one or two generic sentences, the server's version and a random report ID: no records, credentials or chat text ([PRIVACY.md](PRIVACY.md)). It is on by default in a local install, whichever way you installed; turn it off with `npx -y cloud-alm-mcp-server feedback off` (every app on this computer) or `CALM_FEEDBACK=off` (one app's configuration). How to do that for the Claude Desktop extension, the Claude Code plugin and a registry install: [docs/install.md#reports-about-tool-problems](docs/install.md#reports-about-tool-problems). Operators can send the reports to a receiver of their own with `CALM_FEEDBACK_URL`. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
+Your assistant can report missing fields, unexpected results or extra tool calls to Didro’s private inbox with `calm_report_feedback`. A report is the tool's name, the outcome, one or two sentences, the server's version and a random report ID. The server attaches no records, credentials or chat text; the one or two sentences are written by the assistant ([PRIVACY.md](PRIVACY.md)). It is on by default in a local install, whichever way you installed; turn it off with `npx -y cloud-alm-mcp-server feedback off` (every app on this computer) or `CALM_FEEDBACK=off` (one app's configuration). How to do that for the Claude Desktop extension, the Claude Code plugin and a registry install: [docs/install.md#reports-about-tool-problems](docs/install.md#reports-about-tool-problems). Operators can send the reports to a receiver of their own with `CALM_FEEDBACK_URL`. [Agent feedback guide](https://docs.didro.ai/cloud-alm/#feedback)
 
 ## Setup in 2 minutes (video)
 
@@ -190,9 +190,9 @@ server checks the change still matches what you saw. Details and limits:
 ## Update, rotate, uninstall
 
 ```sh
-npx -y cloud-alm-mcp-server doctor      # check Node, key, token, scopes, API; say whether reports are on
+npx -y cloud-alm-mcp-server doctor      # check Node, key, token, scopes, API; say whether reports are on for this computer
 npx -y cloud-alm-mcp-server setup       # again after rotating the key
-npx -y cloud-alm-mcp-server feedback    # are reports about tool problems on? (feedback off / feedback on)
+npx -y cloud-alm-mcp-server feedback    # are reports about tool problems on for this computer? (feedback off / feedback on)
 npx -y cloud-alm-mcp-server uninstall   # remove it and its skills from your apps (--key: also the saved key)
 ```
 
@@ -218,10 +218,12 @@ next start.
 ## Security
 
 Reads are GET only, to `*.alm.cloud.sap` only. Writes go to a fixed
-allow-list of SAP APIs and only after your approval. The key is stored
-readable only by you and never printed or sent to the model. Text from Cloud
-ALM reaches the model marked as data. A key opens the whole tenant (SAP
-cannot limit it to one project): give read-only keys to whoever only reads.
+allow-list of SAP APIs and only after your approval. In a local install the
+key is stored readable only by you and never printed or sent to the model;
+with the hosted connector your browser uploads it to Didro's server for the
+sign-in. Text from Cloud ALM reaches the model marked as data. A key opens
+the whole tenant (SAP cannot limit it to one project): give read-only keys to
+whoever only reads.
 More: [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md).
 
 ## More

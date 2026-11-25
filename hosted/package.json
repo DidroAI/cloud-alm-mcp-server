@@ -1,5 +1,5 @@
 {
-  "name": "cloud-alm-hosted-preview",
+  "name": "cloud-alm-hosted-connector",
   "private": true,
   "type": "module",
   "engines": {

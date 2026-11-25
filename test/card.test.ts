@@ -4,8 +4,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { Window } from "happy-dom";
+import { createHash } from "node:crypto";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
-import { META_KEY } from "../src/approval.js";
+import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, cardHtml, overviewHtml } from "../src/approval.js";
+import { CONTENT_URI, CONTENT_URIS_BEFORE, contentHtml } from "../src/content-app.js";
 
 type Call = { name: string; arguments: Record<string, unknown> };
 type Result = Record<string, unknown>;
@@ -143,4 +145,27 @@ describe("the approval card", () => {
     expect(c.text()).toContain("<img src=x onerror=alert(1)>");
     expect(c.$("c").textContent).toContain("<img");
   });
+});
+
+/**
+ * Apps keep a card by its address. When this fails, the card's HTML changed
+ * (yours, or the bundled app library's): give the card a new address (raise
+ * the number in its URI), move the address it had to the list of earlier
+ * ones, and put the new fingerprint here.
+ */
+test("a card that changes gets a new address", () => {
+  const fingerprint = (html: string) => createHash("sha256").update(html).digest("hex").slice(0, 16);
+  expect({
+    [CARD_URI]: fingerprint(cardHtml()),
+    [OVERVIEW_URI]: fingerprint(overviewHtml()),
+    [CONTENT_URI]: fingerprint(contentHtml(false)),
+  }).toEqual({
+    "ui://cloud-alm/approve-v4.html": "c8e736278c554663",
+    "ui://cloud-alm/overview-v2.html": "4cf2383aee02527b",
+    "ui://cloud-alm/content-v2.html": "e7bdbda5712f585d",
+  });
+  // The address before stays answerable, and no address is listed twice.
+  const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];
+  expect(new Set(all).size).toBe(all.length);
+  expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(3);
 });

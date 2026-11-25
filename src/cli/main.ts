@@ -92,10 +92,10 @@ Usage:
   ${PACKAGE_NAME} doctor           Check the setup: Node, key, token, scopes, API;
                                    say whether reports are on
   ${PACKAGE_NAME} feedback [on|off]  Short reports from your assistant to Didro about
-                                   tool problems (no records, no chat text):
+                                   tool problems (the server attaches no records):
                                    say whether they are on, or switch them
-  ${PACKAGE_NAME} uninstall        Remove the server from the clients setup knows
-                                   (each changed file is kept as .bak)
+  ${PACKAGE_NAME} uninstall        Remove the server and its skills from the clients
+                                   setup knows (each changed file is kept as .bak)
       --key                        Also delete the saved service key
       --client <list>              Only these clients
   ${PACKAGE_NAME} --version | --help
@@ -110,7 +110,7 @@ it takes the file named ("-": stdin), else the newest key in ~/Downloads from
 the last week, else the one saved before. init reads the file given, or stdin
 ("-", or nothing: paste it, then Ctrl-D). The key is saved, readable only by
 you, at:
-  ${"$"}${CONFIG_DIR_ENV} or ~/.config/${PACKAGE_NAME}/service-key.json
+  ${"$"}${CONFIG_DIR_ENV}/service-key.json, else ~/.config/${PACKAGE_NAME}/service-key.json
   (%APPDATA%\\${PACKAGE_NAME}\\service-key.json on Windows)
 
 Environment:
@@ -123,8 +123,8 @@ Environment:
                      read tools open no card; the assistant shows its
                      final selection with calm_show
   CALM_APPROVAL=card stdio mode: changes are approved in the card only,
-                     never by a yes in the chat (default: the card where
-                     the app shows one with working buttons, else the chat)
+                     never by a yes in the chat. "chat" or unset: the card
+                     where the app shows one with working buttons, else the chat
   ${FEEDBACK_ENV}=off  no reports about tool problems from this client
   CALM_FEEDBACK_URL  send the reports to this https receiver instead of
                      Didro (http mode: reports exist only when it is set)
@@ -572,7 +572,7 @@ async function wizard(io: Io, flags: Flags, e: SetupEnv, p: Prompts, named?: Key
   if (reports.on)
     p.info(
       "Your assistant can send Didro short reports about tool problems.\n" +
-        `They hold no records, credentials or chat text. Turn them off with: ${cli(io)} feedback off`,
+        `The server attaches no records, credentials or chat text; the sentences are the assistant's. Turn them off with: ${cli(io)} feedback off`,
     );
   p.outro(failed.length ? "Finished, with apps to add by hand." : done.length ? "Cloud ALM is ready." : "The key is saved.");
   return failed.length ? 1 : 0;

@@ -1,7 +1,7 @@
 {
   "name": "cloud-alm",
   "description": "SAP Cloud ALM for agents: an MCP server whose tools follow your service key's scopes (every write waits for your approval) and skills for fit-gap, workshops, status reports, test readiness, defect triage and test design",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "author": {
     "name": "Didro",
     "url": "https://didro.ai"
@@ -29,7 +29,7 @@
     "send_reports": {
       "type": "boolean",
       "title": "Send Didro short reports about tool problems",
-      "description": "When a tool misbehaves, your assistant can send Didro a short report: the tool's name, the outcome and one or two generic sentences. No records, credentials or chat text. Turn this off to send none.",
+      "description": "When a tool misbehaves, your assistant can send Didro a short report: the tool's name, the outcome and one or two generic sentences. The server attaches no records, credentials or chat text; the sentences are the assistant's. Turn this off to send none.",
       "default": true
     }
   }

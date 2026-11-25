@@ -21,7 +21,8 @@ The latest release gets fixes.
 - A write reaching Cloud ALM without the user's approval (card or chat).
 - The approval nonce, a token or a key secret appearing in model-visible
   text, logs, errors or structured content.
-- An approval proposed in one HTTP session being used from another.
+- An approval proposed with one bearer token (HTTP mode) being approved
+  with another.
 - `calm_api` reaching a path or method outside its read-only allow-list.
 - Text stored in Cloud ALM (descriptions, comments, documents) steering the
   agent into actions the user did not ask for.
@@ -42,9 +43,11 @@ The latest release gets fixes.
   without this server and without approval. File permissions cannot prevent
   that. Where an agent has a shell, use a key without write scopes unless
   you need it to write, and keep the agent's own command approval on.
-- **Reports about tool problems are written by the agent.** They are
-  checked for links, e-mail addresses, credentials and record ids, and hold
-  a few fixed fields, but their free text is the agent's wording. Turn them
+- **Reports about tool problems are written by the agent.** The server
+  attaches no records, credentials or chat text; the one or two sentences
+  are written by the assistant. The tool refuses text that looks like a web
+  address, an e-mail address, a bearer token or a GUID, and control
+  characters; it does not recognise a short item id or a name. Turn reports
   off with `cloud-alm-mcp-server feedback off` where that is not acceptable.
 
 ## Updates and pinning
@@ -54,7 +57,7 @@ version: the app starts the newest release, so fixes arrive without a
 reinstall. The price is trust in each new release at the moment it is
 published. Releases are published from GitHub Actions with npm provenance,
 which `npm audit signatures` checks. To decide yourself when to update, put
-a version in the app's entry (`cloud-alm-mcp-server@0.3.3`); `setup` run
+a version in the app's entry (`cloud-alm-mcp-server@<version>`); `setup` run
 again writes the entry without it.
 
 Started with `cloud-alm-mcp-server http` on the loopback address, the server
@@ -64,11 +67,26 @@ reach it through the browser.
 
 ## How the server handles secrets
 
-- The service key stays on the user's machine: `setup` and `init` save it
-  readable only by the user (mode 600) and never print it.
+- In a local install the service key stays on the user's machine: `setup`
+  and `init` save it readable only by the user (mode 600; on Windows, which
+  has no file modes, in the user's own profile) and never print it.
 - Tokens are fetched with the key's client credentials and kept in memory.
 - In HTTP mode the server holds no key: each request brings its own bearer
   token, kept in memory only while its read cache is fresh (45 seconds),
   and approvals are bound to it.
 - A key with write scopes can change the whole tenant (SAP cannot limit a key
   to one project). Give read-only keys to anyone who only needs to read.
+
+## Hosted connector
+
+Didro's hosted connector for ChatGPT and Claude (the code in `hosted/`)
+handles the key differently from a local install: your browser uploads the
+service key file to Didro's server during sign-in. The server exchanges it
+with SAP once and discards it. It keeps only the temporary SAP token,
+encrypted, for at most one hour; the app gets a separate random token, of
+which the server stores a digest. The connector has no write tools.
+
+Anyone who can use that connection in the app can read what the key can
+read. Use a key without write scopes, and continue on the sign-in page only
+when you started the connection yourself, never from a link someone sent
+you. What the hosted connector stores and counts: [PRIVACY.md](PRIVACY.md).

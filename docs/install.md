@@ -113,8 +113,7 @@ Badge:
 [![Install in Claude Desktop](https://img.shields.io/badge/Claude_Desktop-Install_extension-D97757?style=flat-square&logo=claude&logoColor=white)](https://github.com/DidroAI/cloud-alm-mcp-server/releases/latest/download/cloud-alm-mcp-server.mcpb)
 ```
 
-The download link works from the first release that carries the file (the
-release workflow attaches it to every tag from the next one on). All
+Every release carries the file; the link always gives the newest. All
 versions: <https://github.com/DidroAI/cloud-alm-mcp-server/releases>.
 
 ## 3. Claude Code: plugin (server and skills)
@@ -198,7 +197,7 @@ The link behind the redirect:
 vscode:mcp/install?%7B%22name%22%3A%22cloud-alm%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22cloud-alm-mcp-server%22%5D%7D
 ```
 
-Once the server is in the official MCP Registry, VS Code can also open it by
+The server is in the official MCP Registry, so VS Code can also open it by
 name: `vscode:mcp/by-name/io.github.DidroAI/cloud-alm-mcp-server`.
 
 By hand, in `.vscode/mcp.json` or the user's `mcp.json`:
@@ -273,10 +272,12 @@ Running `setup` again writes the app's entry anew, without `CALM_FEEDBACK`;
 | Claude Code plugin | Switch off the same option in the plugin's settings, or `feedback off` |
 | MCP Registry | Set `CALM_FEEDBACK` to `off` where your client asks for the server's variables, or `feedback off` |
 
-`doctor` and `feedback` say which of the two turned reports off. To send
-the reports to a receiver of your own instead of Didro, set
-`CALM_FEEDBACK_URL` (below). Over HTTP (`cloud-alm-mcp-server http`) the
-tool exists only when `CALM_FEEDBACK_URL` is set.
+`doctor` and `feedback` show the computer-wide setting (and `CALM_FEEDBACK`
+only when it is set in the shell they run in); a switch set inside one app
+is not visible to them. To send the reports to a receiver of your own
+instead of Didro, set `CALM_FEEDBACK_URL` (below). Over HTTP
+(`cloud-alm-mcp-server http`) the tool exists only when `CALM_FEEDBACK_URL`
+is set.
 
 ## Environment variables
 
@@ -289,7 +290,7 @@ in the shell that starts the server.
 | `CALM_CONFIG_DIR` | stdio and every command | The folder that holds the saved key (`service-key.json`) and the `feedback-off` marker. Unset: `%APPDATA%\cloud-alm-mcp-server` on Windows, else `$XDG_CONFIG_HOME/cloud-alm-mcp-server`, by default `~/.config/cloud-alm-mcp-server` |
 | `CALM_WEB_URL` | stdio, HTTP | The address of your Cloud ALM UI, for the links to items: `https://<tenant>.<region>.alm.cloud.sap`. Unset: derived from the service key in stdio mode; over HTTP a request can send `X-Calm-Web-Url`. Other hosts are ignored |
 | `CALM_CONTENT_PRESENTATION` | stdio, HTTP | `explicit`: read tools open no card, and the assistant shows a card of its final selection with `calm_show` ([Tools](tools.md#links-words-and-cards)). Unset or any other value: lists and item details open as cards on their own |
-| `CALM_APPROVAL` | stdio | `card`: changes can only be approved in the approval card. `chat`: approval in the chat is accepted even in an app that says it shows cards. Unset: decided per app. Any other value stops the server at start ([Tools](tools.md#approving-writes)) |
+| `CALM_APPROVAL` | stdio | `card`: changes can only be approved in the approval card. `chat` or unset: the card where the app shows one with working buttons, else the chat. Any other value stops the server at start ([Tools](tools.md#approving-writes)) |
 | `CALM_FEEDBACK` | stdio | `off`: no reports about tool problems from this server entry, and no `calm_report_feedback` tool. Any value other than `on`, `1`, `true` or `yes` counts as off. Unset: on, unless `feedback off` was run |
 | `CALM_FEEDBACK_URL` | stdio, HTTP | Send the reports to this receiver instead of Didro: an `https://` address (plain `http://` only on localhost) without credentials, query or fragment. Over HTTP, reports exist only when it is set |
 | `CALM_FEEDBACK_TOKEN` | stdio, HTTP | Sent as `Authorization: Bearer …` to the receiver in `CALM_FEEDBACK_URL`. Never sent to Didro's inbox |
@@ -308,6 +309,9 @@ to anything but `0`, `false`, `no` or `off` (`CLAUDECODE`, `CODEX_SANDBOX`,
 A local install connects to your key's SAP token host and to your Cloud ALM
 API (`*.alm.cloud.sap`). Unless you turned reports off, it also posts to
 `https://docs.didro.ai/cloud-alm/feedback` when your assistant sends a report about a
-tool problem ([above](#reports-about-tool-problems)). What the tools return
-goes to the AI model your client uses. See [PRIVACY.md](../PRIVACY.md).
+tool problem ([above](#reports-about-tool-problems)). Started through `npx`
+(every channel except the Claude Desktop extension), npm asks
+registry.npmjs.org for the current version at each start. What the tools
+return goes to the AI model your client uses. See
+[PRIVACY.md](../PRIVACY.md).
 

@@ -12,7 +12,7 @@ import {
   TOOL_NAMES,
 } from "../src/server.js";
 import { readerFromKeyFile, stdioServer } from "../src/stdio.js";
-import { BASE_URL, DEF, fakeCloudAlm, PROCESS, PROJECT_ID, REQ, TENANT } from "./tenant.js";
+import { BASE_URL, fakeCloudAlm, PROCESS, PROJECT_ID, REQ, TENANT } from "./tenant.js";
 
 async function connect(
   routes: Record<string, unknown> = TENANT,
@@ -55,11 +55,14 @@ describe("tools", () => {
 
   test("content cards follow the selected presentation and read allow list", async () => {
     const { client } = await connect();
-    const uri = "ui://cloud-alm/content-v1.html";
+    const uri = "ui://cloud-alm/content-v2.html";
     for (const tool of (await client.listTools()).tools.filter(t => ["calm_projects", "calm_list", "calm_get"].includes(t.name)))
       expect(tool._meta?.ui).toMatchObject({ resourceUri: uri });
     const resource = await client.readResource({ uri });
     expect(resource.contents[0]?.mimeType).toContain("text/html");
+    // An app that listed the tools before an update still asks for the earlier address, and gets the current card.
+    const earlier = await client.readResource({ uri: "ui://cloud-alm/content-v1.html" });
+    expect(earlier.contents[0]).toMatchObject({ uri: "ui://cloud-alm/content-v1.html", text: (resource.contents[0] as { text: string }).text });
 
     const explicit = await connect(TENANT, { contentPresentation: "explicit", tools: ["calm_get", "calm_show"] });
     const { tools } = await explicit.client.listTools();

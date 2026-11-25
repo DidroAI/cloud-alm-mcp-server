@@ -28,7 +28,6 @@ import {
 import {
   byDisplayId,
   approvalLabel,
-  capped,
   classificationLabel,
   counts,
   documentLine,

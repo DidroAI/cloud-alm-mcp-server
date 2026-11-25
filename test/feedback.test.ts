@@ -135,7 +135,9 @@ test("feedback over MCP reaches the local inbox with a separate credential and n
     expect(deliveries).toEqual([{ auth: "Bearer inbox-only-token", body: {
       reportId: expect.stringMatching(/^[\da-f-]{36}$/), serverVersion: SERVER_VERSION, ...report,
     } }]);
-    for (const extra of [{ tool: "secret-project" }, { observation: "   " }, { suggestion: "See https://tenant.example/record" }, { tenant: "private" }]) {
+    // Also refused: characters a reader cannot see (a control character, a mark that reverses the text).
+    for (const extra of [{ tool: "secret-project" }, { observation: "   " }, { suggestion: "See https://tenant.example/record" }, { tenant: "private" },
+      { observation: "A filter was refused\u0007 and then worked." }, { suggestion: "Read this \u202Ebackwards\u202C." }]) {
       const invalid = await client.callTool({ name: FEEDBACK_TOOL, arguments: { ...report, ...extra } });
       expect(invalid.isError).toBe(true);
     }

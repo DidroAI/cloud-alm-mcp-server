@@ -67,6 +67,6 @@ if (COMMANDS.includes(mode)) {
     console.error(`Cloud ALM MCP server on http://${host}:${port}/mcp`);
   });
 } else {
-  console.error(`Unknown command ${mode}. See cloud-alm-mcp-server --help.`);
+  console.error(`Unknown command ${mode}. See: npx -y cloud-alm-mcp-server --help`);
   process.exit(2);
 }
