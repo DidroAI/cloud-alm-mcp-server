@@ -14,7 +14,7 @@ type Result = Record<string, unknown>;
 
 /** Draw the card; `serverTools: false` is a host that cannot pass on the card's calls. */
 async function card(options: { serverTools?: boolean; answer?: (call: Call) => Result } = {}) {
-  const html = CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", "").replace("__META_KEY__", META_KEY).replace("<!--sap-logo-->", "");
+  const html = CARD_TEMPLATE.replace("/*__APP_BUNDLE__*/", "").replace("__META_KEY__", META_KEY).replace("<!--brand-mark-->", "");
   const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? "";
   const window = new Window();
   window.document.write(html.replace(/<script[\s\S]*?<\/script>/, ""));
@@ -160,12 +160,12 @@ test("a card that changes gets a new address", () => {
     [OVERVIEW_URI]: fingerprint(overviewHtml()),
     [CONTENT_URI]: fingerprint(contentHtml(false)),
   }).toEqual({
-    "ui://cloud-alm/approve-v4.html": "c8e736278c554663",
-    "ui://cloud-alm/overview-v2.html": "4cf2383aee02527b",
-    "ui://cloud-alm/content-v2.html": "e7bdbda5712f585d",
+    "ui://cloud-alm/approve-v5.html": "94046006d990cd01",
+    "ui://cloud-alm/overview-v3.html": "05abb6da95baf625",
+    "ui://cloud-alm/content-v3.html": "c281e4f3bde071a1",
   });
   // The address before stays answerable, and no address is listed twice.
   const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];
   expect(new Set(all).size).toBe(all.length);
-  expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(3);
+  expect(CARD_URIS_BEFORE.length + OVERVIEW_URIS_BEFORE.length + CONTENT_URIS_BEFORE.length).toBeGreaterThanOrEqual(6);
 });

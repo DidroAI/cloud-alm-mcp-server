@@ -1,10 +1,10 @@
 /** A compact source view, not a second Cloud ALM workspace. */
 import { appBundle } from "./approval.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
-import { sapLogo } from "./sap-logo.js";
+import { brandMark } from "./brand-mark.js";
 
-export const CONTENT_URI = "ui://cloud-alm/content-v2.html";
-export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v1.html"];
+export const CONTENT_URI = "ui://cloud-alm/content-v3.html";
+export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
 export const CONTENT_TOOLS = new Set([
   "calm_projects",
   "calm_overview",
@@ -47,9 +47,9 @@ header {
   align-items: center;
   margin-bottom: 18px;
 }
-.sap-logo {
-  width: 48px;
-  height: 24px;
+.mark {
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 .brand {
@@ -209,7 +209,7 @@ body.dashboard{background:var(--color-background-secondary,light-dark(#f5f6f7,#1
 .dashboard header,.dashboard .grid-wrap{background:var(--surface);padding:12px;border:1px solid var(--line);border-radius:10px}
 .dashboard .grid-wrap{padding:0}
 </style></head><body><main>
-<header>${sapLogo}<div><div class="brand">SAP Cloud ALM${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
+<header>${brandMark}<div><div class="brand">Cloud ALM by Didro${synthetic ? ' <span class="demo">Demo data</span>' : ""}</div><h1 id="title">Loading results…</h1><p id="project"></p></div></header>
 <div id="content" aria-live="polite"></div>
 <footer><span id="count">Loading…</span><button id="more" hidden>View all</button></footer><p id="status" role="status"></p>
 </main><script type="module">${appBundle()}\n${metricsScript}

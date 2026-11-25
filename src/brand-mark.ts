@@ -1,0 +1,6 @@
+/**
+ * Didro's mark for this server (the package icon: a cloud with a three-point
+ * check), inlined for the sandbox. The cards show whose tool drew them; they
+ * carry no SAP artwork.
+ */
+export const brandMark: string = `<svg class="mark" role="img" aria-label="Cloud ALM by Didro" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Cloud ALM by Didro</title><defs><linearGradient id="calm-mark-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2c63"/><stop offset="1" stop-color="#0e1838"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="url(#calm-mark-bg)"/><g transform="translate(-7,-4) translate(256,256) scale(1.05) translate(-256,-256)"><g fill="#fff"><circle cx="150" cy="322" r="54"/><circle cx="368" cy="314" r="62"/><rect x="150" y="300" width="218" height="76"/><circle cx="212" cy="266" r="70"/><circle cx="300" cy="232" r="98"/></g><polyline points="205,265 253,313 333,221" fill="none" stroke="#2b50d8" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/><g fill="#2b50d8"><circle cx="205" cy="265" r="24"/><circle cx="253" cy="313" r="24"/><circle cx="333" cy="221" r="24"/></g><g fill="#fff"><circle cx="205" cy="265" r="9"/><circle cx="253" cy="313" r="9"/><circle cx="333" cy="221" r="9"/></g></g></svg>`;

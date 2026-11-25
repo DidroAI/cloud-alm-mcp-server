@@ -143,12 +143,12 @@ button:disabled{opacity:.45;cursor:default}
 .hd{border-bottom:2px solid var(--brand)}.hd h1{color:var(--link)}
 .facts{padding:10px 16px}.fl thead th{background:var(--neutral-bg)}
 .card[data-state=waiting] .st{border:0;background:transparent;color:var(--label)}
-.sap-logo{width:48px;height:24px;flex:none}
+.mark{width:32px;height:32px;flex:none}
 </style></head><body>
 <main class="card" id="card" data-state="preparing">
-<header class="hd" style="align-items:center"><!--sap-logo-->
+<header class="hd" style="align-items:center"><!--brand-mark-->
   <div class="hm">
-    <div class="over"><span>SAP Cloud ALM</span><span class="st" id="st" role="status">Preparing</span></div>
+    <div class="over"><span>Cloud ALM by Didro</span><span class="st" id="st" role="status">Preparing</span></div>
     <h1 id="t">Preparing the change…</h1>
   </div>
 </header>

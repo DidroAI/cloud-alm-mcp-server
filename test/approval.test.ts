@@ -411,14 +411,14 @@ test("the card draws a dry run as a preview, field by field", () => {
   const html = cardHtml();
   expect(html).toContain("A preview only. Nothing was sent to Cloud ALM.");
   expect(html).toContain("Nothing sent");
-  expect(CARD_URI).toBe("ui://cloud-alm/approve-v4.html");
+  expect(CARD_URI).toBe("ui://cloud-alm/approve-v5.html");
 });
 
 test("calm_overview carries the overview card", async () => {
   const { client } = await connect("ui", { approval: "prefer" });
   const tool = (await client.listTools()).tools.find((t) => t.name === "calm_overview");
   const uri = (tool?._meta as { ui?: { resourceUri?: string } })?.ui?.resourceUri;
-  expect(uri).toBe("ui://cloud-alm/overview-v2.html");
+  expect(uri).toBe("ui://cloud-alm/overview-v3.html");
   const r = await client.readResource({ uri: uri as string });
   const html = (r.contents[0] as { text: string }).text;
   expect(html).not.toContain("__APP_BUNDLE__");

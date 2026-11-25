@@ -21,7 +21,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { sapLogo } from "./sap-logo.js";
+import { brandMark } from "./brand-mark.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
@@ -45,8 +45,8 @@ export function approvalFromEnv(env: Record<string, string | undefined>): Exclud
  * the list of earlier addresses, which still answer with the current card: an
  * app that listed the tools before an update asks for the address it knows.
  */
-export const CARD_URI = "ui://cloud-alm/approve-v4.html";
-export const CARD_URIS_BEFORE = ["ui://cloud-alm/approve-v3.html"];
+export const CARD_URI = "ui://cloud-alm/approve-v5.html";
+export const CARD_URIS_BEFORE = ["ui://cloud-alm/approve-v4.html", "ui://cloud-alm/approve-v3.html"];
 export const META_KEY = "cloud-alm/approval";
 /** Long enough for a user who answers a turn later; still single-use and bound to one change. */
 export const TTL_MS = 60 * 60_000;
@@ -242,14 +242,14 @@ export function appBundle(): string {
  * The approval card. Shows the server's preview (never HTML from the
  * model or the tenant: text only), and Approve / Reject.
  */
-export const OVERVIEW_URI = "ui://cloud-alm/overview-v2.html";
-export const OVERVIEW_URIS_BEFORE = ["ui://cloud-alm/overview-v1.html"];
+export const OVERVIEW_URI = "ui://cloud-alm/overview-v3.html";
+export const OVERVIEW_URIS_BEFORE = ["ui://cloud-alm/overview-v2.html", "ui://cloud-alm/overview-v1.html"];
 
 /** The project overview card. */
 export function overviewHtml(): string {
-  return OVERVIEW_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
+  return OVERVIEW_TEMPLATE.replace("<!--brand-mark-->", () => brandMark).replace("/*__METRICS_CSS__*/", metricsCss).replace("/*__METRICS_JS__*/", metricsScript).replace("/*__APP_BUNDLE__*/", () => appBundle());
 }
 
 export function cardHtml(): string {
-  return CARD_TEMPLATE.replace("<!--sap-logo-->", () => sapLogo).replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
+  return CARD_TEMPLATE.replace("<!--brand-mark-->", () => brandMark).replace("/*__APP_BUNDLE__*/", () => appBundle()).replace("__META_KEY__", META_KEY);
 }

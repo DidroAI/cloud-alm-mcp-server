@@ -1,4 +1,4 @@
-# Every change needs a review from a maintainer before it lands on main.
+# Who is asked to look at a pull request. Nothing lands on main without a pull request and passing checks.
 *                       @p-haas
 # Release, CI and distribution files: a maintainer as well.
 /.github/               @p-haas
