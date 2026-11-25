@@ -27,7 +27,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
-      # The hosted connector's public report address (no dependencies needed).
+      # The hosted connector: its report inbox, and sign-in end to end against the package version it pins.
+      - run: npm ci --prefix hosted --ignore-scripts --no-audit --no-fund
       - run: bun run test:hosted
       - run: bun run build
       # The built server starts on plain Node and answers 401 without a token.

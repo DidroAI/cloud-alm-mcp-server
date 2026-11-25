@@ -4,11 +4,13 @@ import { createHttpHandler } from "cloud-alm-mcp-server";
 import { digest, open } from "../lib/crypto.mjs";
 import { createFeedbackIntake } from "../lib/feedback.mjs";
 import { createLimiter, limited, json, senderOf } from "../lib/http.mjs";
-import { metadata, oauth } from "../lib/oauth.mjs";
+import { metadata, oauth, platform } from "../lib/oauth.mjs";
 
-async function reportFeedback(fields, serverVersion) {
+const RECEIVER = "https://docs.didro.ai/cloud-alm/feedback";
+/** Passes a report from the hosted feedback tool to Didro's receiver; used when the deployment stores no reports itself. */
+async function forwardReport(fields, serverVersion) {
   const reportId = randomUUID();
-  const response = await fetch("https://docs.didro.ai/cloud-alm/feedback", {
+  const response = await fetch(RECEIVER, {
     method: "POST",
     redirect: "error",
     signal: AbortSignal.timeout(5000),
@@ -18,19 +20,7 @@ async function reportFeedback(fields, serverVersion) {
   if (!response.ok) throw new Error("Feedback could not be delivered");
   return reportId;
 }
-const server = {
-  writeMode: "off",
-  contentPresentation: "explicit",
-  ...(process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? { feedbackSink: reportFeedback } : {}),
-};
-const discovery = createHttpHandler({
-  server,
-  reader: {
-    fetch: async () => {
-      throw new Error("Discovery has no tenant");
-    },
-  },
-});
+const TOOL = /^calm_[a-z_]{1,50}$/;
 const publicMethods = new Set([
   "initialize",
   "ping",
@@ -43,12 +33,55 @@ const publicMethods = new Set([
 ]);
 const schemes = [{ type: "oauth2", scopes: ["calm.read"] }];
 
-export function createGateway({ origin, sql, exchange, reader }) {
-  const feedback = createFeedbackIntake({ token: process.env.DIDRO_HOSTED_FEEDBACK_TOKEN });
+/**
+ * The connector: discovery documents at the root of `origin`, everything else
+ * under `base` (empty when the connector has an origin to itself).
+ *
+ * `reports.save(report)` stores a report in this deployment; without it,
+ * reports go to Didro's receiver with DIDRO_HOSTED_FEEDBACK_TOKEN, and with
+ * neither there is no feedback tool and no inbox.
+ * `record(event)` receives usage counts: { kind, tool?, outcome?, app? } and
+ * nothing about the tenant, the sender or the content. It may not throw into
+ * a request, and a request does not wait for it.
+ */
+export function createGateway({ origin, base = "", sql, exchange, reader, record, reports }) {
+  const token = process.env.DIDRO_HOSTED_FEEDBACK_TOKEN;
+  const note = record
+    ? (event) => {
+        try {
+          Promise.resolve(record(event)).catch(() => {});
+        } catch {}
+      }
+    : undefined;
+  const sink = reports?.save
+    ? async (fields, serverVersion) => {
+        const reportId = randomUUID();
+        await reports.save({ ...fields, serverVersion, reportId });
+        return reportId;
+      }
+    : token
+      ? forwardReport
+      : undefined;
+  const server = {
+    writeMode: "off",
+    contentPresentation: "explicit",
+    ...(sink ? { feedbackSink: sink } : {}),
+  };
+  const discovery = createHttpHandler({
+    server,
+    reader: {
+      fetch: async () => {
+        throw new Error("Discovery has no tenant");
+      },
+    },
+  });
+  const feedback = createFeedbackIntake({ token, save: reports?.save, note });
   const live = createHttpHandler({ server, reader });
   // Registering, submitting a key and exchanging a code: a person does each a few times, not hundreds.
   const signIn = createLimiter({ max: 30, windowMs: 600_000 });
-  const challenge = `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp", scope="calm.read"`;
+  const challenge = `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource${base}/mcp", scope="calm.read"`;
+  // The MCP handler serves /mcp, whatever this connector's own path is.
+  const inner = new URL("/mcp", origin).href;
   async function mcp(req) {
     if (req.method === "GET" && !req.headers.has("authorization"))
       return json({ error: "unauthorized" }, 401, {
@@ -67,17 +100,20 @@ export function createGateway({ origin, sql, exchange, reader }) {
       return json({ error: "Invalid JSON" }, 400);
     }
     const auth = req.headers.get("authorization");
-    let grant;
+    let grant, app;
     if (auth) {
       const token = /^Bearer ([\w-]{43})$/i.exec(auth)?.[1];
       const [row] = token
-        ? await sql`SELECT id,encrypted_grant FROM connections WHERE access_hash=${digest(token)} AND expires_at>now()`
+        ? await sql`SELECT id,encrypted_grant,redirect_uri FROM connections WHERE access_hash=${digest(token)} AND expires_at>now()`
         : [];
-      if (!row)
+      if (!row) {
+        note?.({ kind: "invalid_token" });
         return json({ error: "invalid_token" }, 401, {
           "WWW-Authenticate": challenge,
         });
+      }
       grant = open("grant/" + row.id, row.encrypted_grant);
+      app = platform(row.redirect_uri);
     }
     if (!grant && !publicMethods.has(msg?.method)) {
       if (msg?.method === "tools/call")
@@ -112,8 +148,16 @@ export function createGateway({ origin, sql, exchange, reader }) {
     );
     if (grant) headers.set("x-calm-web-url", grant.webUrl);
     const res = await (grant ? live : discovery)(
-      new Request(req.url, { method: "POST", headers, body }),
+      new Request(inner, { method: "POST", headers, body }),
     );
+    if (grant && note && msg?.method === "tools/call") {
+      const name = msg.params?.name;
+      const tool = typeof name === "string" && TOOL.test(name) ? name : "other";
+      const failed = res.headers.get("content-type")?.includes("application/json")
+        ? res.clone().json().then((data) => Boolean(data?.error || data?.result?.isError), () => !res.ok)
+        : Promise.resolve(!res.ok);
+      failed.then((bad) => note({ kind: "tool_call", tool, outcome: bad ? "error" : "ok", app }));
+    }
     if (
       msg.method === "tools/list" &&
       res.ok &&
@@ -129,19 +173,33 @@ export function createGateway({ origin, sql, exchange, reader }) {
     return res;
   }
   return async (req) => {
+    let area = "other";
     try {
       const url = new URL(req.url);
-      const doc = metadata(origin, url.pathname);
+      const doc = metadata(origin, url.pathname, base);
       if (doc && req.method === "GET") return json(doc);
-      if (url.pathname === "/mcp") return await mcp(req);
-      if (url.pathname === "/feedback") return await feedback(req);
-      if (url.pathname.startsWith("/oauth/") && req.method === "POST" && !signIn(senderOf(req)))
-        return json({ error: "slow_down" }, 429, { "retry-after": "600" });
-      if (url.pathname.startsWith("/oauth/"))
-        return await oauth(req, url, origin, sql, exchange);
+      if (base && !url.pathname.startsWith(base + "/")) return json({ error: "not_found" }, 404);
+      const path = url.pathname.slice(base.length);
+      if (path === "/mcp") {
+        area = "mcp";
+        return await mcp(req);
+      }
+      if (path === "/feedback") {
+        area = "feedback";
+        return await feedback(req);
+      }
+      if (path.startsWith("/oauth/")) {
+        area = "oauth";
+        if (req.method === "POST" && !signIn(senderOf(req))) {
+          note?.({ kind: "rate_limited", outcome: "sign_in" });
+          return json({ error: "slow_down" }, 429, { "retry-after": "600" });
+        }
+        return await oauth(req, url, path, { origin, base, sql, exchange, note });
+      }
       return json({ error: "not_found" }, 404);
     } catch (err) {
       if (err instanceof Response) return err;
+      note?.({ kind: "server_error", outcome: area });
       return json({ error: "server_error" }, 500);
     }
   };
@@ -151,6 +209,7 @@ export default {
   fetch(request) {
     gateway ??= createGateway({
       origin: process.env.CONNECT_ORIGIN,
+      base: process.env.CONNECT_BASE ?? "",
       sql: neon(process.env.DATABASE_URL),
     });
     return gateway(request);

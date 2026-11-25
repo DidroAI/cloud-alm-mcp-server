@@ -70,7 +70,7 @@
     "build": "bun run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "bun test test",
-    "test:hosted": "node --test hosted/test/feedback.mjs",
+    "test:hosted": "node --test hosted/test/feedback.mjs hosted/test/gateway.mjs",
     "start": "node dist/cli.js",
     "start:http": "node dist/cli.js http",
     "check:live": "bun scripts/live-check.ts",

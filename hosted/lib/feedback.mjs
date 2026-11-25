@@ -27,16 +27,17 @@ export function reportFrom(value) {
 /**
  * The public inbox for local installations: `cloud-alm-mcp-server` on a
  * user's computer posts its agent's reports here, without a credential.
- * Only a well-formed report is passed on, with the receiver's token, which
- * never leaves this service, and under an id of ours. Limits are per running instance: a first line
+ * Only a well-formed report is kept, under an id of ours: stored by `save`
+ * when this deployment keeps reports, else passed on with the receiver's
+ * token, which never leaves this service. Limits are per running instance: a first line
  * against a flood, next to the receiver's own bounded insert.
  */
-export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, perSender = 20, perInstance = 300 }) {
+export function createFeedbackIntake({ token, save, note, deliver = fetch, now = Date.now, perSender = 20, perInstance = 300 }) {
   const senders = new Map();
   let all = [];
   const fresh = (times, at) => times.filter((t) => at - t < HOUR);
   return async (req) => {
-    if (!token) return json({ error: "not_found" }, 404);
+    if (!token && !save) return json({ error: "not_found" }, 404);
     if (req.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
     // A server sends these, not a web page.
     if (req.headers.get("origin") || !req.headers.get("content-type")?.startsWith("application/json"))
@@ -45,7 +46,10 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
     const sender = req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const mine = fresh(senders.get(sender) ?? [], at);
     all = fresh(all, at);
-    if (mine.length >= perSender || all.length >= perInstance) return json({ error: "slow_down" }, 429, { "retry-after": "3600" });
+    if (mine.length >= perSender || all.length >= perInstance) {
+      note?.({ kind: "report", outcome: "limited" });
+      return json({ error: "slow_down" }, 429, { "retry-after": "3600" });
+    }
     // Every attempt counts against its sender; only reports passed on count against everyone.
     mine.push(at);
     all.push(at);
@@ -59,7 +63,14 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
     }
     if (!report) {
       all.splice(all.lastIndexOf(at), 1);
+      note?.({ kind: "report", outcome: "invalid" });
       return json({ error: "invalid_report" }, 400);
+    }
+    if (save) {
+      // This deployment keeps the reports itself: no second service, no token.
+      const stored = await save(report).then(() => true, () => false);
+      note?.({ kind: "report", outcome: stored ? "accepted" : "not_delivered" });
+      return stored ? new Response(null, { status: 204 }) : json({ error: "not_delivered" }, 502);
     }
     const response = await deliver(RECEIVER, {
       method: "POST",
@@ -69,6 +80,7 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
       body: JSON.stringify(report),
     });
     await response.body?.cancel();
+    note?.({ kind: "report", outcome: response.ok ? "accepted" : "not_delivered" });
     return response.ok ? new Response(null, { status: 204 }) : json({ error: "not_delivered" }, 502);
   };
 }
