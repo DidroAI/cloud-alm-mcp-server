@@ -91,12 +91,12 @@ describe("tools", () => {
     expect(text).toContain("Realize (current) 2026-10-01–2026-12-31");
     expect(text).toContain("1 requirement (1 open)");
     expect(text).toContain("2 user stories (2 open)");
-    expect(text).toContain("Defects: 1 open (new) · priority: 1 very high");
+    expect(text).toContain("Defects: 1 open (new); priority: 1 very high");
     expect(text).toContain("Features: 1 (1 in testing)");
     expect(text).toContain("Test cases: 3 manual (2 prepared), 1 automated");
     expect(text).toContain("Test results (latest per test case and plan): 1 failed, 1 passed");
     expect(text).toContain(
-      "Gaps: 1 of 3 open requirements/user stories without a test case · 0 open requirements without a solution process · 2 test cases linked to no task",
+      "Gaps: 1 of 3 open requirements/user stories without a test case; 0 open requirements without a solution process; 2 test cases linked to no task",
     );
     // Where outages and tenant-wide counts are.
     expect(text).toContain("calm_landscape");
@@ -108,17 +108,17 @@ describe("tools", () => {
     const credit = await call("calm_list", { query: "credit" });
     expect(credit.text).toStartWith("6 matches");
     expect(credit.text).toContain(
-      '- 3-1 · requirement · open (in refinement) · priority high · gap · "[demo] REQ-01 Credit check on order release" · unassigned · #Wave 1',
+      '- 3-1 requirement, open (in refinement), priority high, gap, "[demo] REQ-01 Credit check on order release", unassigned, #Wave 1',
     );
     const gaps = await call("calm_list", { classification: "gap" });
     expect(gaps.text).toStartWith("1 match");
     expect((gaps.structured as { items: { classification?: string; uuid?: string }[] }).items[0]).toMatchObject({ classification: "gap" });
     expect((gaps.structured as { items: { uuid?: string }[] }).items[0]?.uuid).toBeUndefined();
     expect((await call("calm_list", { classification: "fit" })).text).toStartWith("0 matches");
-    expect(credit.text).toContain('- 3-4 · defect · open (new) · priority very high · "Credit block not set for export orders"');
+    expect(credit.text).toContain('- 3-4 defect, open (new), priority very high, "Credit block not set for export orders"');
     const alt = await call("calm_list", { query: "worklist | regression" });
-    expect(alt.text).toContain("3-2 ·");
-    expect(alt.text).toContain("8-1-3 ·");
+    expect(alt.text).toContain("3-2 user story");
+    expect(alt.text).toContain("8-1-3 manual test case");
     const defects = await call("calm_list", { types: ["defect"], status: "open" });
     expect(defects.text).toStartWith("1 match");
     const tagged = await call("calm_list", { tag: "wave 1" });
@@ -128,13 +128,13 @@ describe("tools", () => {
   test("get: several items by display id, with their links named", async () => {
     const { call } = await connect();
     const { text } = await call("calm_get", { ids: ["3-1", "8-1-2", "6-1", "9-9"] });
-    expect(text).toContain('3-1 requirement · open (in refinement) · priority high · "[demo] REQ-01 Credit check on order release"');
+    expect(text).toContain('3-1 requirement, open (in refinement), priority high, "[demo] REQ-01 Credit check on order release"');
     expect(text).toContain("Orders above the credit limit are blocked.");
     expect(text).toContain('User stories / tasks under it: 3-2 user story "Release blocked orders from a worklist" (open); 3-3');
     expect(text).toContain("Solution processes: Lead to Cash");
     expect(text).toContain("1.1 Open the worklist [evidence]");
     expect(text).toContain("Latest result: passed, 1 of 1 steps passed in UAT cycle 1");
-    expect(text).toContain('Test cases: 8-1-1 "Order blocked by credit limit" (failed, 1 of 2 steps passed in UAT cycle 1) · defect 3-4');
+    expect(text).toContain('Test cases: 8-1-1 "Order blocked by credit limit" (failed, 1 of 2 steps passed in UAT cycle 1), defect 3-4');
     expect(text).toContain("expect: The order is listed");
     expect(text).toContain("Transports: DEVK900123");
     expect(text).toContain("9-9: not_found");
@@ -161,7 +161,7 @@ describe("tools", () => {
     const { text } = await call("calm_trace", { id: "3-3" });
     expect(text).toContain("- 3-1 requirement");
     expect(text).toContain("process: Lead to Cash");
-    expect(text).toContain("feature: 6-1 \"Credit management\" (in testing) · transports: DEVK900123");
+    expect(text).toContain("feature: 6-1 \"Credit management\" (in testing); transports: DEVK900123");
     expect(text).toContain('    - 3-3 user story "Credit exposure shown in the order (see REQ-01)" (open)');
     expect(text).toContain("test cases: NONE");
   });
@@ -170,21 +170,21 @@ describe("tools", () => {
     const { call } = await connect();
     const { text } = await call("calm_gaps");
     expect(text).toContain("Without a test case: 1");
-    expect(text).toContain("3-3 · user story");
+    expect(text).toContain("3-3 user story");
     expect(text).toContain("1 of 2 tasks it delivers have no test case: 3-3");
     expect(text).toContain("Test cases linked to no task: 2");
     expect(text).toContain("Test cases not prepared: 1");
     expect(text).toContain(
-      'Test cases whose latest run failed: 1\n- 8-1-1 · manual test case · prepared · failed, 1 of 2 steps passed in UAT cycle 1 · "Order blocked by credit limit" — covers 3-1 "[demo] REQ-01 Credit check on order release" — defect 3-4 "Credit block not set for export orders" (open (new), priority very high)',
+      'Test cases whose latest run failed: 1\n- 8-1-1 manual test case, prepared, result: failed, 1 of 2 steps passed in UAT cycle 1, "Order blocked by credit limit" — covers 3-1 "[demo] REQ-01 Credit check on order release" — defect 3-4 "Credit block not set for export orders" (open (new), priority very high)',
     );
   });
 
   test("landscape: open events first, services by name", async () => {
     const { call } = await connect();
     const { text } = await call("calm_landscape");
-    expect(text).toContain("- SAP Cloud ALM · CloudService · 100 · PROD");
+    expect(text).toContain("- SAP Cloud ALM, CloudService, 100, PROD");
     expect(text).toContain("Service status events: 1 open, 1 closed");
-    expect(text.indexOf("Planned")).toBeLessThan(text.indexOf("Closed ·"));
+    expect(text.indexOf("Planned")).toBeLessThan(text.indexOf("Closed,"));
     // The event's own text, not only its id.
     expect(text).toContain("Planned database upgrade; the service is read-only for 30 minutes. (EVB2)");
   });
@@ -379,6 +379,29 @@ describe("mode (a): stdio with the developer's service key", () => {
       "Cannot read the service key file",
     );
   });
+});
+
+test("what the assistant reads has no middle dots or bullets: the instructions, the tool list and each tool's answer", async () => {
+  const { client, call } = await connect();
+  const dot = /[·•∙⋅‧]/;
+  expect(client.getInstructions() ?? "").not.toMatch(dot);
+  expect(JSON.stringify((await client.listTools()).tools)).not.toMatch(dot);
+  const calls: [string, Record<string, unknown>][] = [
+    ["calm_overview", {}], ["calm_projects", {}], ["calm_team", {}], ["calm_list", {}], ["calm_list", { types: ["process", "document", "test_plan"] }],
+    ["calm_list", { query: "credit" }], ["calm_changes", { since: "2020-01-01" }],
+    ["calm_get", { ids: ["3-1", "3-4", "6-1", "7-1", "8-1-1", "8-2-1", "8-3-1"] }], ["calm_trace", { id: "3-1" }], ["calm_gaps", {}],
+    ["calm_analytics", {}], ["calm_analytics", { dataset: "Defects", groupBy: ["statusText", "priority"] }], ["calm_api", {}], ["calm_landscape", {}],
+  ];
+  // Every tool the server offers is asked at least once.
+  expect([...new Set(calls.map(([name]) => name))].sort()).toEqual([...TOOL_NAMES].sort());
+  let answered = 0;
+  for (const [name, args] of calls) {
+    const r = await call(name, args);
+    expect(r.text, `${name} ${JSON.stringify(args)}`).not.toMatch(dot);
+    if (!r.error) answered++;
+  }
+  // The check means something only if the tools gave their real lines.
+  expect(answered).toBeGreaterThanOrEqual(11);
 });
 
 test("SERVER_VERSION matches package.json", async () => {

@@ -55,7 +55,7 @@ export async function api(calm: CloudAlm, input: { requests?: ApiRequest[]; path
   if (!requests.length) {
     const lines = [
       "Cloud ALM APIs this tool can read (GET; paths relative to the API root). Pass path and query, or several requests at once:",
-      ...API_CATALOG.map((a) => `- ${a.base} · ${a.style} · ${a.about} · query: ${a.query}`),
+      ...API_CATALOG.map((a) => `- ${a.base} (${a.style}): ${a.about}. Query: ${a.query}`),
       "Ids: GUIDs (the [brackets] in other tools' answers, or uuid in their data). Prefer calm_list / calm_get when they answer the question.",
     ];
     return { text: lines.join("\n"), data: { catalog: API_CATALOG, results: [] } };

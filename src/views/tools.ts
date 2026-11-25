@@ -87,7 +87,7 @@ const projectLabel = (p: Pick<Project, "id" | "name">) => `${p.name ?? "?"} [${p
 
 /** Where agents should look for what the project tools do not show. */
 const ELSEWHERE =
-  "SAP service status and outages: calm_landscape · tenant-wide counts by status, priority, day: calm_analytics.";
+  "SAP service status and outages: calm_landscape. Tenant-wide counts by status, priority, day: calm_analytics.";
 
 // ---------------------------------------------------------------------------
 // calm_overview
@@ -124,11 +124,11 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   const milestones = timeboxes.filter((t) => t.type === 0);
   const current = timeboxes.find((t) => t.id === p.phaseId);
   lines.push(
-    `Project ${projectLabel(p)} · ${(p.purpose ?? "?").toLowerCase()} · ${projectHealth(p.operationalStatus) ?? "?"}${projects.length > 1 ? ` · ${projects.length - 1} other projects in the tenant` : ""}`,
+    `Project ${projectLabel(p)}, ${(p.purpose ?? "?").toLowerCase()}, ${projectHealth(p.operationalStatus) ?? "?"}${projects.length > 1 ? `, ${projects.length - 1} other projects in the tenant` : ""}`,
   );
   if (timeboxes.length)
     lines.push(
-      `Phases: ${phases.map((t) => `${t.name}${t.id === p.phaseId ? " (current)" : ""}${t.startDate ? ` ${t.startDate}–${t.endDate ?? ""}` : ""}`).join(", ")}${milestones.length ? ` · milestones: ${milestones.map((t) => `${t.name}${t.startDate ? ` ${t.startDate}` : ""}`).join(", ")}` : ""}${!current ? " · current phase not set" : ""}${[...phases, ...milestones].every((t) => !t.startDate && !t.endDate) ? " · no phase or milestone dates are maintained" : ""}`,
+      `Phases: ${phases.map((t) => `${t.name}${t.id === p.phaseId ? " (current)" : ""}${t.startDate ? ` ${t.startDate}–${t.endDate ?? ""}` : ""}`).join(", ")}${milestones.length ? `; milestones: ${milestones.map((t) => `${t.name}${t.startDate ? ` ${t.startDate}` : ""}`).join(", ")}` : ""}${!current ? "; current phase not set" : ""}${[...phases, ...milestones].every((t) => !t.startDate && !t.endDate) ? "; no phase or milestone dates are maintained" : ""}`,
     );
   const scoped = processes.filter((x) => x.isScoped);
   if (processes.length)
@@ -141,20 +141,20 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
   const defects = tasks.filter((t) => t.type === "CALMDEF");
   if (tasksKnown && defects.length)
     lines.push(
-      `Defects: ${counts(defects.map(taskStatus))} · priority: ${counts(defects.map((t) => priorityLabel(t.priority) ?? "none"))}`,
+      `Defects: ${counts(defects.map(taskStatus))}; priority: ${counts(defects.map((t) => priorityLabel(t.priority) ?? "none"))}`,
     );
   if (snap.complete("features") && features.length) lines.push(`Features: ${features.length} (${counts(features.map((f) => featureStatus(f.statusCode)))})`);
   const manual = testCases.filter((t) => t.kind === "manual");
   const automated = testCases.filter((t) => t.kind === "automated");
   if (casesKnown) lines.push(
-    `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated · test plans: ${snap.complete("testPlans") ? testPlans.length : "unknown"}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
+    `Test cases: ${manual.length} manual (${manual.filter((t) => t.prepared).length} prepared), ${automated.length} automated; test plans: ${snap.complete("testPlans") ? testPlans.length : "unknown"}${testPlans.length ? ` (${testPlans.slice(0, 3).map((t) => `${t.displayId} "${short(t.title, 50)}"`).join(", ")})` : ""}`,
   );
   const latest = [...results.values()].flat();
   const assignmentOnly = latest.filter(r => r.source === "assignment").length;
   const notInPlan = testCases.filter((t) => !results.get(t.id)?.length).length;
   if (resultsKnown && (latest.length || (casesKnown && notInPlan)))
     lines.push(
-      `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${casesKnown && notInPlan ? ` · ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
+      `Test results (latest per test case and plan): ${counts(latest.map((r) => (r.status.toLowerCase() === "initial" ? "not run" : r.status.toLowerCase()))) || "none"}${casesKnown && notInPlan ? `; ${notInPlan} test case${notInPlan === 1 ? "" : "s"} ${NOT_IN_PLAN}` : ""}`,
     );
   if (resultsKnown && assignmentOnly) lines.push(`Includes ${assignmentOnly} current plan assignments with no matching analytics result, counted as not run. Daily analytics omits these assignments.`);
   if (snap.complete("documents")) lines.push(`Documents: ${documents.length}${documents.length ? `: ${documents.slice(0, 8).map((d) => `${d.displayId} "${short(d.title, 50)}" (${documentType(d.documentTypeCode)})`).join("; ")}${documents.length > 8 ? "; …" : ""}` : ""}`);
@@ -173,7 +173,7 @@ export async function overview(calm: CloudAlm, input: { projectId?: string }, o:
     noProcess: tasksKnown && snap.complete("processLinks") ? noProcess : null,
     orphanTestCases: casesKnown ? orphans : null,
   };
-  lines.push(`Gaps: ${gapCounts.untested ?? "unknown"} of ${gapCounts.openRequirementsAndStories ?? "unknown"} open requirements/user stories without a test case · ${gapCounts.noProcess ?? "unknown"} open requirements without a solution process · ${gapCounts.orphanTestCases ?? "unknown"} test cases linked to no task (calm_gaps lists them)`);
+  lines.push(`Gaps: ${gapCounts.untested ?? "unknown"} of ${gapCounts.openRequirementsAndStories ?? "unknown"} open requirements/user stories without a test case; ${gapCounts.noProcess ?? "unknown"} open requirements without a solution process; ${gapCounts.orphanTestCases ?? "unknown"} test cases linked to no task (calm_gaps lists them)`);
   lines.push(ELSEWHERE);
   const footnotes = footer(snap, ["tasks", "features", "documents", "testCases", "testPlans", "processes", "processLinks", "timeboxes", "testResults"]);
   lines.push(...footnotes);
@@ -541,7 +541,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         rows.push({
           sort: "5",
           displayId: t.displayId,
-          line: `${t.displayId} · test plan · "${short(t.title)}"${t.startDate ? ` · ${t.startDate}–${t.endDate ?? ""}` : ""}`,
+          line: `${t.displayId} test plan, "${short(t.title)}"${t.startDate ? `, ${t.startDate}–${t.endDate ?? ""}` : ""}`,
           data: { id: t.displayId, url: webUrl(o.webUrl, { kind: "testPlan" }), type: "test plan", title: t.title },
         });
   }
@@ -553,7 +553,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         rows.push({
           sort: "6",
           displayId: null,
-          line: `${p.id} · solution process · ${scope} · "${short(p.name)}"`,
+          line: `${p.id} solution process, ${scope}, "${short(p.name)}"`,
           data: { id: p.id, url: webUrl(o.webUrl, { kind: "process" }), type: "solution process", title: p.name, status: scope },
         });
     }
@@ -565,7 +565,7 @@ export async function list(calm: CloudAlm, input: ListInput, o: ViewOptions = {}
         rows.push({
           sort: `7${kind}`,
           displayId: item.displayId,
-          line: `${item.displayId ?? item.id} · ${kind.replace(/s$/, "")} · "${short(item.title)}"${item.objectId ? ` · ${item.objectId}` : ""}`,
+          line: `${item.displayId ?? item.id} ${kind.replace(/s$/, "")}, "${short(item.title)}"${item.objectId ? `, ${item.objectId}` : ""}`,
           data: { id: item.displayId ?? item.id, ...(o.webUrl ? { url: o.webUrl + "/launchpad" } : {}), type: kind.replace(/s$/, ""), title: item.title },
         });
   });
@@ -771,7 +771,7 @@ async function namer(snap: Snapshot, parts: readonly Part[] = ALL_PARTS) {
     testCase: (t: SnapTestCase) => {
       const r = resultText(results.get(t.id));
       const raised = defectsOf(t.id).map((d) => d.displayId);
-      return `${t.displayId} "${short(t.title, 70)}"${t.kind === "automated" ? " (automated)" : ""}${r ? ` (${r})` : ""}${raised.length ? ` · defect ${raised.join(", ")}` : ""}`;
+      return `${t.displayId} "${short(t.title, 70)}"${t.kind === "automated" ? " (automated)" : ""}${r ? ` (${r})` : ""}${raised.length ? `, defect ${raised.join(", ")}` : ""}`;
     },
     document: (d: SnapDocument) => `${d.displayId} "${short(d.title, 70)}" (${documentType(d.documentTypeCode)})`,
     process: (id: string) => processes.find((p) => p.id === id)?.name ?? id,
@@ -913,10 +913,11 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
   if (ref.kind === "task") {
     const [t, relations] = await Promise.all([calm.getTask(ref.task.id, { links: false }), snap.relations(ref.task.id)]);
     lines.push(
-      `${t.displayId} ${typeLabel(t.type)} · ${taskStatus(t)}${t.priority !== null ? ` · priority ${priorityLabel(t.priority)}` : ""} · "${t.title}" [${t.id}]`,
+      `${t.displayId} ${typeLabel(t.type)}, ${taskStatus(t)}${t.priority !== null ? `, priority ${priorityLabel(t.priority)}` : ""}, "${t.title}" [${t.id}]`,
       [t.scopeName && `scope ${t.scopeName}`, t.timeboxName && `phase ${t.timeboxName}`, `assignee ${t.assigneeName ?? "none"}`, `due ${t.dueDate ?? "none"}`, t.tags.length && `tags ${t.tags.join(", ")}`, t.createdAt && `created ${t.createdAt.slice(0, 10)}`, t.changedAt && `changed ${t.changedAt.slice(0, 10)}`]
         .filter(Boolean)
-        .join(" · "),
+        // Semicolons: the tags are a comma list of their own.
+        .join("; "),
     );
     const description = own(t.description, t.displayId);
     list("Requirement", "requirement", relations.filter((r) => r.type === "10").map((r) => taskL(r.taskId)));
@@ -950,7 +951,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     };
   } else if (ref.kind === "feature") {
     const f = await calm.getFeature(ref.feature.id);
-    lines.push(`${f.displayId} feature · ${featureStatus(f.statusCode)}${f.priorityCode !== null ? ` · priority ${priorityLabel(f.priorityCode)}` : ""} · "${f.title}" [${f.id}]`);
+    lines.push(`${f.displayId} feature, ${featureStatus(f.statusCode)}${f.priorityCode !== null ? `, priority ${priorityLabel(f.priorityCode)}` : ""}, "${f.title}" [${f.id}]`);
     if (ref.feature.tags.length) lines.push(`tags ${ref.feature.tags.join(", ")}`);
     const description = own(f.description, f.displayId);
     lines.push(`Transports: ${f.transports.length ? f.transports.join(", ") : "none linked"}`);
@@ -969,7 +970,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     };
   } else if (ref.kind === "document") {
     const d = await calm.getDocument(ref.document.id);
-    lines.push(`${d.displayId} ${documentType(d.documentTypeCode)} · "${d.title}" [${d.id}]`);
+    lines.push(`${d.displayId} ${documentType(d.documentTypeCode)}, "${d.title}" [${d.id}]`);
     list("Tasks", "tasks", ref.document.taskIds.map(taskL));
     list("Test cases", "testCases", n.testCases.filter((x) => ref.document.testCaseIds.includes(x.id)).map(testCaseL));
     list("Solution processes", "processes", ref.document.processIds.map(processL));
@@ -982,7 +983,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     const steps: NonNullable<ItemDetail["steps"]> = [];
     if (tc.kind === "manual") {
       const t = await calm.getTestCase(tc.id);
-      lines.push(`${t.displayId} manual test case · ${t.isPrepared ? "prepared" : "not prepared"}${t.priorityCode !== null ? ` · priority ${priorityLabel(t.priorityCode)}` : ""} · "${t.title}" [${t.id}]`);
+      lines.push(`${t.displayId} manual test case, ${t.isPrepared ? "prepared" : "not prepared"}${t.priorityCode !== null ? `, priority ${priorityLabel(t.priorityCode)}` : ""}, "${t.title}" [${t.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
       lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}${results.some((r) => r.failed) ? " (Cloud ALM's API gives step counts per run, not which step failed or its actual result)" : ""}`);
@@ -1000,7 +1001,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       if (!t.activities.length) lines.push("No steps.");
       data = { id: t.displayId, uuid: t.id, kind: "manual test case", title: t.title, status: t.isPrepared ? "prepared" : "not prepared", priority: priorityLabel(t.priorityCode), links, steps, ...(n.resultsKnown ? { results } : {}) };
     } else {
-      lines.push(`${tc.displayId} automated test case · ${tc.prepared ? "prepared" : "not prepared"}${tc.priority !== null ? ` · priority ${priorityLabel(tc.priority)}` : ""} · "${tc.title}" [${tc.id}]`);
+      lines.push(`${tc.displayId} automated test case, ${tc.prepared ? "prepared" : "not prepared"}${tc.priority !== null ? `, priority ${priorityLabel(tc.priority)}` : ""}, "${tc.title}" [${tc.id}]`);
       lines.push(tc.taskIds.length ? `Covers: ${tc.taskIds.map(n.task).join("; ")}` : "Covers: no task (linked to nothing)");
       links.covers = tc.taskIds.map((id) => taskL(id).link);
       lines.push(`Latest result: ${n.resultsKnown ? result || "none recorded" : "unknown"}`);
@@ -1010,7 +1011,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
     }
   } else if (ref.kind === "test plan") {
     const p = await calm.getTestPlan(ref.id);
-    lines.push(`${p.displayId} test plan · "${p.title}" [${p.id}]${p.startDate ? ` · ${p.startDate}–${p.endDate ?? ""}` : ""}`);
+    lines.push(`${p.displayId} test plan, "${p.title}" [${p.id}]${p.startDate ? `, ${p.startDate}–${p.endDate ?? ""}` : ""}`);
     const description = own(p.description, p.displayId);
     const plans = n.resultsKnown ? await snap.testPlans() : [];
     const ambiguousTitle = !p.title || plans.filter(plan => plan.title === p.title).length > 1;
@@ -1024,7 +1025,7 @@ async function getOne(calm: CloudAlm, snap: Snapshot, n: Names, ref: Ref, budget
       const raised = t.testCaseId ? n.defectsOf(t.testCaseId).map((d) => d.displayId ?? "?") : [];
       const word = !resultsKnown || !t.testCaseId ? "unknown" : r ? resultWords(r) : "not run";
       const priority = priorityLabel(t.testCaseId ? n.testCaseOf(t.testCaseId)?.priority ?? null : null);
-      return { t, r, raised, word, priority, line: `- ${t.displayId} "${short(t.title, 80)}" · ${word}${raised.length ? ` · defect ${raised.join(", ")}` : ""}${priority ? ` · priority ${priority}` : ""}` };
+      return { t, r, raised, word, priority, line: `- ${t.displayId} "${short(t.title, 80)}": ${word}${raised.length ? `; defect ${raised.join(", ")}` : ""}${priority ? `; priority ${priority}` : ""}` };
     });
     const completeResults = resultsKnown && p.assignmentsComplete && rows.every(row => row.t.testCaseId);
     const shown = rows.slice(0, 200);
@@ -1164,7 +1165,7 @@ export async function trace(calm: CloudAlm, input: { id: string; projectId?: str
     if (ps.length) out.push(`${sub}${ref.kind === "process" ? "also in process" : "process"}: ${ps.map(n.process).join("; ")}`);
     for (const f of featureOf(taskId)) {
       const tr = transports.get(f.id);
-      out.push(`${sub}feature: ${n.feature(f)} · transports: ${tr ? (tr.length ? tr.join(", ") : "none") : "not read"}`);
+      out.push(`${sub}feature: ${n.feature(f)}; transports: ${tr ? (tr.length ? tr.join(", ") : "none") : "not read"}`);
     }
     if (t?.type === "CALMDEF") {
       const from = n.raisedFrom(taskId);
@@ -1523,7 +1524,7 @@ export async function analytics(
   if (!input.dataset) {
     const text = [
       "Datasets (pass one as dataset; groupBy counts by columns on the latest day, or per day when groupBy includes date; `status` means the dataset's status column; rows are tenant-wide):",
-      ...Object.entries(DATASETS).map(([k, v]) => `- ${k}: ${v.about}${v.columns ? ` · group by: ${v.columns.join(", ")}` : ""}`),
+      ...Object.entries(DATASETS).map(([k, v]) => `- ${k}: ${v.about}${v.columns ? `; group by: ${v.columns.join(", ")}` : ""}`),
     ].join("\n");
     return { text, data: { dataset: null, datasets: Object.entries(DATASETS).map(([name, info]) => ({ name, description: info.about, groupBy: info.columns ?? [], supportsProject: !!PROJECT_COLUMN[name as AnalyticsDataset] })) } };
   }
@@ -1658,7 +1659,8 @@ export async function analytics(
         continue;
       }
       // Values in the words of the other tools: lower case, "not run" for Initial.
-      const key = groupBy.map((g) => (g === "date" ? String(r[g] ?? "—") : analyticsWord(r[g]))).join(" · ");
+      // The values of one group, kept apart whatever they contain; shown with commas between them.
+      const key = JSON.stringify(groupBy.map((g) => (g === "date" ? String(r[g] ?? "—") : analyticsWord(r[g]))));
       const acc = groups.get(key) ?? {};
       for (const c of numeric.filter((c) => !groupBy.includes(c) && !NOT_SUMMED.test(c))) acc[c] = (acc[c] ?? 0) + Number(r[c] ?? 0);
       groups.set(key, acc);
@@ -1668,7 +1670,7 @@ export async function analytics(
       `${dataset} by ${groupBy.join(", ")}${latest && !groupBy.includes("date") ? `, as of ${latest}` : ""}: ${groups.size} group${groups.size === 1 ? "" : "s"} from ${day.length} rows${dates.length > 1 && !groupBy.includes("date") ? ` (the latest of ${dates.length} daily snapshots)` : ""}${groups.size > shownGroups.length ? `; showing ${shownGroups.length}, pass limit for more` : ""}${result.truncated ? "; rows cut at 200" : ""}:`,
       ...notes,
       ...(blank ? [`(${blank} row${blank === 1 ? "" : "s"} with no value in ${groupBy.join(", ")} left out: deleted or emptied items)`] : []),
-      ...shownGroups.map(([k, v]) => `- ${k}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
+      ...shownGroups.map(([k, v]) => `- ${(JSON.parse(k) as string[]).join(", ")}: ${Object.entries(v).filter(([, x]) => x).map(([c, x]) => `${c} ${Math.round(x * 100) / 100}`).join(", ") || "0"}`),
       scopedTo ? FRESHNESS_PROJECT : FRESHNESS,
     ].join("\n");
     return {
@@ -1681,7 +1683,7 @@ export async function analytics(
         ...(blank ? { leftOut: blank } : {}),
         notes, truncated: result.truncated || shownGroups.length < groups.size,
         totalGroups: groups.size,
-        groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, k.split(" · ")[i] ?? null])), values: v })),
+        groups: shownGroups.map(([k, v]) => ({ key: Object.fromEntries(groupBy.map((g, i) => [g, (JSON.parse(k) as string[])[i] ?? null])), values: v })),
       },
     };
   }
@@ -1729,7 +1731,7 @@ export async function landscape(calm: CloudAlm) {
   const label = (o: (typeof objects.items)[number]) =>
     o.serviceType && o.objectType === "CloudService" ? o.serviceType : (o.name ?? o.id);
   for (const o of objects.items.slice(0, 60))
-    lines.push(`- ${label(o)} · ${o.objectType ?? "?"}${o.systemNumber ? ` · ${o.systemNumber}` : ""}${o.role ? ` · ${o.role}` : ""}${o.name && o.name !== label(o) && !/^[0-9a-f-]{36}$/.test(o.name) ? ` · ${o.name}` : ""}`);
+    lines.push(`- ${label(o)}, ${o.objectType ?? "?"}${o.systemNumber ? `, ${o.systemNumber}` : ""}${o.role ? `, ${o.role}` : ""}${o.name && o.name !== label(o) && !/^[0-9a-f-]{36}$/.test(o.name) ? `, ${o.name}` : ""}`);
   const bySystem = new Map(objects.items.filter((o) => o.systemNumber).map((o) => [o.systemNumber as string, label(o)]));
   if (!events) lines.push("", "Service status events: not readable with this key.");
   else {
@@ -1741,7 +1743,7 @@ export async function landscape(calm: CloudAlm) {
     const upcoming = events.items.filter((e) => (e.startTime ?? "") > now);
     lines.push(upcoming.length ? `Announced for later: ${upcoming.length} (listed below)` : "Nothing announced for later: no event starts after now. SAP announces maintenance here once it is planned.");
     for (const e of [...openEvents, ...recent.filter((e) => !isOpenEvent(e.status)).slice(0, Math.max(0, 10 - openEvents.length))])
-      lines.push(`- ${e.status ?? "?"} · ${e.type ?? "?"} · ${(e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName || "?"} · ${e.startTime?.slice(0, 10) ?? ""}${e.endTime ? `–${e.endTime.slice(0, 10)}` : ""} · ${eventText(e)}`);
+      lines.push(`- ${[e.status ?? "?", e.type ?? "?", (e.systemNumber && bySystem.get(e.systemNumber)) || e.serviceType || e.serviceName || "?", `${e.startTime?.slice(0, 10) ?? ""}${e.endTime ? `–${e.endTime.slice(0, 10)}` : ""}`].filter(Boolean).join(", ")}: ${eventText(e)}`);
   }
   return {
     text: lines.join("\n"),
@@ -1787,7 +1789,7 @@ export async function projectsView(calm: CloudAlm, o: ViewOptions = {}, input: {
   const nextOffset = offset + projects.length < matches.length ? offset + projects.length : null;
   return {
     text: [`${projects.length} of ${matches.length} matching projects.`,
-      ...projects.map(p => [projectLabel(p), p.purpose, p.status, p.operationalStatus].filter(Boolean).join(" · ")),
+      ...projects.map(p => [projectLabel(p), p.purpose, p.status, p.operationalStatus].filter(Boolean).join(", ")),
       ...(nextOffset === null ? [] : [`Continue at offset ${nextOffset}.`])].join("\n"),
     data: { projects, total: matches.length, offset, nextOffset },
   };
@@ -1811,7 +1813,7 @@ export async function team(calm: CloudAlm, input: { projectId?: string }, o: Vie
   for (const t of teams) for (const r of t.roles) for (const m of r.members) people.set(m, (people.get(m) ?? new Set()).add(r.role));
   const lines = [
     `Team of ${projectLabel(project)}: ${people.size} member${people.size === 1 ? "" : "s"}${people.size ? ":" : "."}`,
-    ...[...people].sort().map(([who, roles]) => `- ${who} · ${[...roles].join(", ")}`),
+    ...[...people].sort().map(([who, roles]) => `- ${who}: ${[...roles].join(", ")}`),
     "An assignee is set by user id (shown here; it is the email).",
   ];
   return {
@@ -1931,7 +1933,7 @@ export async function changes(
   const lines = [
     `Changes in ${snap.project.name ?? "the project"} since ${since}: ${rows.filter((r) => r.what === "created").length} created, ${rows.filter((r) => r.what === "changed").length} changed${nextOffset !== null ? ` (showing ${offset + 1}–${offset + page.length}; next page: offset ${nextOffset})` : ""}`,
     `By type: ${[...byType].map(([t, c]) => `${t} ${[c.created && `${c.created} created`, c.changed && `${c.changed} changed`].filter(Boolean).join(", ")}`).join("; ") || "none"}`,
-    ...page.map((r) => `- ${r.at.slice(0, 16).replace("T", " ")} · ${r.what} · ${r.id ?? "?"} ${r.type}${r.status ? ` · ${r.status}` : ""} · "${short(r.title, 70)}"`),
+    ...page.map((r) => `- ${r.at.slice(0, 16).replace("T", " ")}: ${r.what} ${r.id ?? "?"} ${r.type}${r.status ? `, ${r.status}` : ""}, "${short(r.title, 70)}"`),
     population,
     ...(resultMove ? [
       `Reported ${resultMove.from.date}: ${fmt(resultMove.from.counts)} (${resultMove.from.total} pairs).`,

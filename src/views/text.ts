@@ -125,8 +125,7 @@ export const short = (text: string | null, max = 90) => {
 
 export const taskLine = (t: TaskSummary) =>
   [
-    t.displayId ?? "?",
-    typeLabel(t.type),
+    `${t.displayId ?? "?"} ${typeLabel(t.type)}`,
     taskStatus(t),
     t.priority !== null ? `priority ${priorityLabel(t.priority)}` : null,
     t.classification ? classificationLabel(t.classification) : null,
@@ -137,10 +136,10 @@ export const taskLine = (t: TaskSummary) =>
     t.tags.length ? `#${t.tags.join(" #")}` : null,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(", ");
 
 export const featureLine = (f: SnapFeature) =>
-  `${f.displayId ?? "?"} · feature · ${featureStatus(f.statusCode)}${f.priorityCode !== null ? ` · priority ${priorityLabel(f.priorityCode)}` : ""} · "${short(f.title)}"${f.tags.length ? ` · #${f.tags.join(" #")}` : ""}`;
+  `${f.displayId ?? "?"} feature, ${featureStatus(f.statusCode)}${f.priorityCode !== null ? `, priority ${priorityLabel(f.priorityCode)}` : ""}, "${short(f.title)}"${f.tags.length ? `, #${f.tags.join(" #")}` : ""}`;
 
 /**
  * A test case in no test plan has no result at all; "not run" means in a
@@ -163,11 +162,12 @@ export const resultText = (results: TestResult[] | undefined) =>
 
 export const testCaseLine = (t: SnapTestCase, results?: TestResult[] | null) => {
   const result = results === null ? "unknown" : resultText(results);
-  return `${t.displayId ?? "?"} · ${t.kind} test case · ${t.prepared === false ? "not prepared" : "prepared"} · ${result || NOT_IN_PLAN} · "${short(t.title)}"${t.tags.length ? ` · #${t.tags.join(" #")}` : ""}`;
+  // The result is named: it holds commas of its own ("failed, 3 of 4 steps passed in …"), and the quoted title ends it.
+  return `${t.displayId ?? "?"} ${t.kind} test case, ${t.prepared === false ? "not prepared" : "prepared"}, ${result ? `result: ${result}` : NOT_IN_PLAN}, "${short(t.title)}"${t.tags.length ? `, #${t.tags.join(" #")}` : ""}`;
 };
 
 export const documentLine = (d: SnapDocument) =>
-  `${d.displayId ?? "?"} · ${documentType(d.documentTypeCode)} · "${short(d.title)}"`;
+  `${d.displayId ?? "?"} ${documentType(d.documentTypeCode)}, "${short(d.title)}"`;
 
 /** "a, b and 3 more" for capped lists. */
 export function capped<T>(items: T[], line: (t: T) => string, max = 30): string[] {

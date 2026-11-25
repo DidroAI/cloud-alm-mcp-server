@@ -99,7 +99,7 @@ async function call(
 
 // Display ids (3-17, 6-1, 8-1-2) as the tools print them.
 const firstDisplayId = (text: string, prefix: string) =>
-  new RegExp(`- (${prefix}-[0-9-]+) ·`).exec(text)?.[1];
+  new RegExp(`- (${prefix}-[0-9-]+) `).exec(text)?.[1];
 
 await call("calm_overview");
 const all = await call("calm_list", { limit: 100 });

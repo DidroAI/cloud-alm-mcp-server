@@ -6,6 +6,11 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-11-25
+
+- The text the assistant reads has no middle dots any more, so it stops copying them into its answers. The parts of a record line are separated by commas (`3-3 user story, open, priority high, "Credit exposure shown in the order", unassigned`), groups that hold a comma list of their own by semicolons (`Test cases: 3 manual (2 prepared), 1 automated; test plans: 1`), and a test case's result is named (`result: failed, 1 of 2 steps passed in UAT cycle 1`). The same goes for the server's instructions and the tool descriptions. The structured data is unchanged; a script that read the text lines should read that instead.
+- `calm_analytics`: the values of a group are kept apart whatever characters they contain.
+
 ## [0.3.6] - 2026-11-25
 
 - The server, the Claude Desktop extension and the MCP Registry entry are titled "Cloud ALM by Didro", not "SAP Cloud ALM": the project is independent and not affiliated with SAP. Descriptions still say what it connects to.
