@@ -1,6 +1,6 @@
 # Browser connector preview
 
-Deploy this directory as its own Vercel project with Node 24. It serves a read-only OAuth connector for ChatGPT and Claude using the published Cloud ALM MCP. Open the deployment home page for browser setup.
+Deploy this directory as its own Vercel project with Node 24, or mount `createGateway` from `api/connect.mjs` under a path of an existing site (`base`, or `CONNECT_BASE` for the bundled entry point): the discovery documents stay at the root of the origin, everything else moves under the path. It serves a read-only OAuth connector for ChatGPT and Claude using the published Cloud ALM MCP. Open the deployment home page for browser setup.
 
 `package.json` pins `cloud-alm-mcp-server` to an exact version. After each release of the package, change the pin, update `package-lock.json` (`npm install`) and deploy again; until then the connector serves the version before. A release that needs a new endpoint here (as 0.3.1 needed `/feedback`) is deployed here first.
 
@@ -10,4 +10,4 @@ The browser uploads the service key directly to the consent endpoint. The server
 
 Registration is limited to ChatGPT and Claude browser callbacks. Register dynamically in the client. Tenant reads require the user's authorization. MCP initialization, the tool catalog and public UI resources are available during connector creation.
 
-Didro’s hosted service uses https://calm.didro.ai/mcp. Set the deployment secret DIDRO_HOSTED_FEEDBACK_TOKEN to enable its authenticated feedback tool and consent disclosure. The credential is issued for the private Didro feedback receiver. With the same secret set, `/feedback` is the public inbox for local installations: it takes a well-formed report without a credential, limits each sender and each instance per hour, and passes the report to the receiver with the secret.
+Didro’s hosted service runs inside the docs site, at https://docs.didro.ai/cloud-alm/connect/mcp, stores reports itself (`reports.save`) and counts usage per hour without tenant, sender or content (`record`). A deployment of this directory on its own works as before: Set the deployment secret DIDRO_HOSTED_FEEDBACK_TOKEN to enable its authenticated feedback tool and consent disclosure. The credential is issued for the private Didro feedback receiver. With the same secret set, `/feedback` is the public inbox for local installations: it takes a well-formed report without a credential, limits each sender and each instance per hour, and passes the report to the receiver with the secret.
