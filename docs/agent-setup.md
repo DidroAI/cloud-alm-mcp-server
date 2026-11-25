@@ -31,7 +31,9 @@ in the last 7 days), checks it against SAP, saves it readable only by the
 user, and adds the server to Claude Code, Codex, Claude Desktop and Cursor,
 whichever are installed, and installs the skills (fit-gap, status report…)
 for Claude Code, Codex and Cursor. It prints one line per check and per
-client, never the key.
+client, never the key. Its last line says whether reports about tool
+problems are on and the command that turns them off; pass that line on to
+the user and do not switch it yourself.
 
 Read the output:
 
@@ -41,7 +43,7 @@ Read the output:
 | A question with choices (`Which Cloud ALM service key do you want to use?`) | Setup took you for a person. Stop it (Ctrl-C) and run `npx -y cloud-alm-mcp-server setup --no-input`. |
 | `No service key found in ~/Downloads` | Ask the user where the key JSON is, then run `npx -y cloud-alm-mcp-server setup "<path>"`. If they have no key yet, go to "No key yet" below. |
 | `A key for another tenant … is saved` | Ask the user whether to switch tenants. Only on their yes, run `setup "<path>"` with the file they name, or add `--force`. |
-| `✗ Token …` | The key was refused or SAP did not answer. Report the Token message and retry setup with the same key after resolving the issue. A corporate proxy may need `HTTPS_PROXY` / `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
+| `✗ Token …` | The key was refused or SAP did not answer. Report the Token message and retry setup with the same key after resolving the issue. A corporate proxy may need `HTTPS_PROXY` with `NODE_USE_ENV_PROXY=1` (Node 24), and `NODE_EXTRA_CA_CERTS`: ask the user's IT, do not guess values. |
 | `✗ Scopes … it can read nothing` | Setup stopped before saving the key or configuring clients. Ask the BTP admin for a key with the listed read scopes, then run setup again. |
 | `✗ Read …` | The token exchange worked and the API read failed. Use the Read message to diagnose the issue and retry setup. |
 | `! Scopes … needs …` | The key works but lacks scopes for some tools. Report which; the user's BTP admin can add them (see `docs/service-key.md`). |
@@ -63,8 +65,9 @@ If the project read succeeded, suggest *"Which Cloud ALM projects can I access?"
 npx -y cloud-alm-mcp-server doctor
 ```
 
-prints the API address, the token, the scopes, the write tools the key allows, and
-one read from Cloud ALM. `Ready.` at the end means done.
+prints the API address, the token, the scopes, the write tools the key allows,
+one read from Cloud ALM, and whether reports about tool problems are on.
+`Ready.` at the end means done.
 
 ## No key yet
 

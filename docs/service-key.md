@@ -59,8 +59,16 @@ lives. Nothing is deployed; the instance only registers an OAuth client.
    own (`…metrics.read`, `…jobs.read`, `…exm.read` …). Personal fields
    (assignee names) need `calm-api.tasks.personal.read` and its siblings.
 4. Create a **service binding** (the key) on the instance and download its
-   JSON. Run `cloud-alm-mcp-server setup` (it finds the file in
-   `~/Downloads`): it saves a copy readable only by you. Never put it in a repository.
+   JSON. Then run `npx -y cloud-alm-mcp-server setup` in a terminal. It
+   asks which key to use: it offers a key downloaded to `~/Downloads` in
+   the last week, or you type the file's path, or paste the key (it is not
+   shown). It checks the key against SAP, saves a copy readable only by
+   you, asks which apps to add the server to and whether to install the
+   skills, and says what to restart. Run by an AI agent or with
+   `--no-input` it asks nothing and takes the newest key in `~/Downloads`
+   ([install.md](install.md#1-local-clients-the-setup-command-recommended)).
+   Once the key is saved you can delete the download. Never put the key in
+   a repository.
 
 The key holds `uaa.url`, `uaa.clientid`, `uaa.clientsecret` and
 `endpoints.Api` (e.g. `https://eu20.alm.cloud.sap/api`, regional; the token
@@ -68,7 +76,8 @@ selects your tenant). The token carries no user: calls run as a machine
 with access to the whole tenant. SAP cannot limit a key to one project.
 
 Changed the scopes? The token reflects them at once: rerun
-`cloud-alm-mcp-server doctor`. Rotated the key? Download the new one and run `setup` again.
+`npx -y cloud-alm-mcp-server doctor`. Rotated the key? Download the new one
+and run `setup` again.
 
 ## Asking your BTP administrator
 
@@ -86,12 +95,14 @@ administers the SAP BTP subaccount of your Cloud ALM tenant:
 > service binding on it, and send me its JSON through a secure channel?
 >
 > The key only reads Cloud ALM with these scopes; it stays on my laptop
-> (readable only by me) and is used only to call `*.alm.cloud.sap`. It
-> can be revoked at any time by deleting the binding.
+> (readable only by me) and is sent only to SAP: to its token host, and
+> from there a token to `*.alm.cloud.sap`. It can be revoked at any time by
+> deleting the binding.
 
 ## Rotating or revoking a key
 
-- **Rotate:** create a new binding, download it, run `setup` again (it
-  replaces the saved key), then delete the old binding.
+- **Rotate:** create a new binding, download it, run `setup` again and
+  choose the new file (a key of the same tenant replaces the saved one;
+  for another tenant setup asks first), then delete the old binding.
 - **Revoke:** delete the binding in the BTP cockpit; every token from it
   stops working when it expires (within the hour).

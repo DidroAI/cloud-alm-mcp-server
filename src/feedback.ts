@@ -54,12 +54,17 @@ export const FEEDBACK_ENV = "CALM_FEEDBACK";
 /** Present in the config directory when the user turned reports off (`feedback off`). */
 export const FEEDBACK_OFF_FILE = "feedback-off";
 
+/** Reports one running local server sends at most. */
+export const MAX_REPORTS = 10;
+
 type Env = Record<string, string | undefined>;
 
 /** Where a local installation's reports go, and why. */
 export function localFeedback(env: Env, configDir: string): { on: boolean; detail: string; url?: string } {
-  if (/^(off|0|false|no)$/i.test(env[FEEDBACK_ENV]?.trim() ?? ""))
-    return { on: false, detail: `off (${FEEDBACK_ENV}=${env[FEEDBACK_ENV]?.trim()})` };
+  // Anything but a plain yes turns reports off: a typo must not leave them on.
+  const wanted = env[FEEDBACK_ENV]?.trim() ?? "";
+  if (wanted && !/^(on|1|true|yes)$/i.test(wanted))
+    return { on: false, detail: `off (${FEEDBACK_ENV}=${wanted.slice(0, 20)})` };
   if (existsSync(join(configDir, FEEDBACK_OFF_FILE))) return { on: false, detail: "off (turned off with `feedback off`)" };
   if (env.CALM_FEEDBACK_URL) return { on: true, detail: "on, to the receiver in CALM_FEEDBACK_URL", url: env.CALM_FEEDBACK_URL };
   return { on: true, detail: "on, to Didro (no records, credentials or chat text)", url: DIDRO_FEEDBACK_URL };
@@ -70,7 +75,15 @@ export function localFeedbackSink(env: Env, configDir: string): FeedbackSink | u
   const { on, url } = localFeedback(env, configDir);
   if (!on || !url) return undefined;
   // The receiver token belongs to a receiver the operator named, never to Didro's inbox.
-  return feedbackSinkFromEnv({ CALM_FEEDBACK_URL: url, ...(env.CALM_FEEDBACK_URL ? { CALM_FEEDBACK_TOKEN: env.CALM_FEEDBACK_TOKEN } : {}) });
+  const send = feedbackSinkFromEnv({ CALM_FEEDBACK_URL: url, ...(env.CALM_FEEDBACK_URL ? { CALM_FEEDBACK_TOKEN: env.CALM_FEEDBACK_TOKEN } : {}) });
+  if (!send) return undefined;
+  // One running server reports a handful of observations, not a stream of them.
+  let sent = 0;
+  return async (feedback, version) => {
+    if (sent >= MAX_REPORTS) throw new Error("Enough reports for this session.");
+    sent++;
+    return send(feedback, version);
+  };
 }
 
 /** Remember the user's choice for every client on this computer. */

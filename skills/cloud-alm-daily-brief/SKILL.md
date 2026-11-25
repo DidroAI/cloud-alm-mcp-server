@@ -21,15 +21,20 @@ Counts and percentages belong in a status report.
 | Phase, phase end, milestones | `calm_overview` |
 | What moved | `calm_changes` with `since` = last working day |
 | Failing now | `calm_gaps` with `checks: ["failed_tests"]` |
-| Open defects: very high, unassigned, blocked, in retest | `calm_list` `types: ["defect"]`, `status: "open"`, `sort: "priority"` (read the status and assignee columns) |
+| Open defects: very high, unassigned, blocked, in retest | `calm_list` `types: ["defect"]`, `status: "open"` (everything not done), `sort: "priority"`; retest shows as "in progress (retest required)" |
 | Overdue and due this week | `calm_list` `status: "open"`, `dueBefore` = Friday of this week, `sort: "due"` |
-| New coverage gaps | `calm_list` `types: ["requirement", "user_story"]`, `hasTests: false`, `changedSince` = the same day |
+| New items without a test | `calm_list` `types: ["requirement", "user_story"]`, `hasTests: false`, `changedSince` = the same day |
 | Test progress | the `testResults` of `calm_changes` (first and last day) |
-| SAP outages and maintenance | `calm_landscape` (only open or upcoming events) |
+| SAP outages and maintenance | `calm_landscape` (use the open events) |
 
 Add the calls of the current phase (section 2). For the three to five items
 you will lead with, read the latest comment with `calm_get`: it often says
 who is waiting on whom.
+
+`calm_gaps` lists missing links and tests: call them findings, since a gap
+is a requirement the SAP standard does not cover. It looks only at open
+requirements and user stories; coverage for a gate or go-live needs
+`includeClosed: true`.
 
 "Mine": the key carries no user. If the user names themselves, filter with
 `assignee` (part of their name) and lead with their items; for a workstream
@@ -46,37 +51,33 @@ Realize) and state that you inferred it.
 | Phase | Surface first | Extra calls |
 | --- | --- | --- |
 | Prepare | Project tasks due and overdue; system or access events that stop onboarding | none |
-| Explore | Requirements created since yesterday (workshop output) and those still not approved; requirements with no fit/gap classification or no process; open decisions that block a design | `calm_list` `types: ["requirement"]`, `status: "to be approved"`; `calm_gaps` `checks: ["no_process"]` |
+| Explore | Requirements created since yesterday (workshop output) and those still not approved; requirements with no fit/gap classification or no process; open decisions that block a design | `calm_list` `types: ["requirement"]`, `status: "to be approved"`; the same with `classification: "none"`; `calm_gaps` `checks: ["no_process"]` |
 | Realize, build sprints | User stories and tasks due in the sprint; anything `blocked`; approved requirements with no user story moving; features in testing | `calm_list` `status: "blocked"`; `calm_list` `types: ["feature"]`, `status: "in testing"`; `calm_gaps` `checks: ["features", "no_feature"]` |
 | Realize, test cycles | Failed tests without a defect; very-high defects; defects in retest; test cases not prepared for the next cycle | `calm_gaps` `checks: ["unprepared_tests", "untested"]` |
-| Deploy | Cutover and readiness tasks due today and overdue; every open very-high or high defect; features not yet ready for production; SAP maintenance windows near go-live | `calm_list` `types: ["feature"]`, `sort: "changed"` |
+| Deploy | Cutover and readiness tasks due today and overdue; every open very-high or high defect; features not yet approved for deployment; SAP maintenance windows near go-live | `calm_list` `types: ["feature"]`, `status: "open"` (not yet tested); the same with `status: "tested"` |
 | Run (hypercare) | New defects since yesterday by priority; ageing open ones; SAP service events | none |
 
 How to read the objects in Activate terms:
 
-- **Requirement**: a delta from the fit-to-standard workshops, written from
-  the business view. It needs approval before the team builds it, then
-  moves to in realization. In Explore, an unapproved requirement is the
-  thing to chase: design that is not signed off does not pass the quality
-  gate at the end of the phase.
+- **Requirement**: what the business needs, from the fit-to-standard
+  workshops. It moves: open (in refinement) → to be approved → approved
+  (in planning) → in realization → approved for deployment → done;
+  rejected or not relevant end it. Approval is the business's decision.
+  In Explore, a requirement still to be approved is the thing to chase.
 - **User story**: how a requirement is built, small enough for a few days,
   planned into a sprint. An approved requirement without user stories is
   not being worked on.
 - **Feature**: the unit that is deployed, with its transports. Its path is
-  in specification, in realization, in testing, successfully tested, ready
-  for production, deployed. "Ready for production" is an approval by a
-  project admin or change manager, not by the consultant: when a feature
-  is tested but not approved, name it as something to chase.
-- **Test case**: only prepared test cases are run when a test plan starts.
-  An unprepared test case the week before a cycle is today's work.
+  in specification, in realization, in testing, tested, approved for
+  deployment, deployed. "Approved for deployment" is given in Cloud ALM,
+  not through this server: when a feature is tested but not approved,
+  name it as something to chase.
 - **Defect**: the processor fixes it, sets it to retest and hands it back
   to the reporter. A defect in retest waits on the tester, not on the
   developer: tell the tester.
 
-Sprints in Activate run two to four weeks, and nothing is added to a sprint
-once it has started. Treat a new item that lands in the running sprint as a
-point to raise, not as normal work. Realize ends with integration testing
-and then user acceptance testing; in those weeks defects outrank new build.
+A new item landing in a running sprint is a point to raise, unless the
+project allows it. In integration test and UAT weeks defects outrank build.
 
 ## 3. Rank (this is the judgement)
 
@@ -101,12 +102,9 @@ Rules a senior consultant applies:
   escalation to the workstream or project lead.
 - Many overdue items with the same due date usually mean a bulk-planned
   date nobody maintains: say that once instead of listing forty items.
-- A failed test with no defect is unfinished work for the tester: a failure
-  nobody recorded cannot be fixed.
 - A planned SAP maintenance window matters only if it overlaps a workshop,
   a test cycle, a deployment or the cutover: say which.
-- Thresholds differ by project (what counts as very high, how many days
-  before a gate). When the user states their convention, use it.
+- When the user states the project's own thresholds, use them.
 
 ## 4. Write (under 300 words)
 
@@ -131,9 +129,10 @@ words (requirement, test cycle, transport), not field names. Each item
 carries its id and, when the data has one, its `url` as a link. Drop any
 empty section except SAP services.
 
-Say what the data cannot tell: Cloud ALM keeps no change log, so who changed
-an item, what its previous status or assignee was, and whether a defect was
-reopened are unknown; analytics are refreshed daily. Workshops and meetings
+Say what the data cannot tell: Cloud ALM's API gives no change log, so who
+changed an item, what its previous status or assignee was, and whether a
+defect was reopened are unknown; which test step failed is not there
+either. Analytics are refreshed daily, not live. Workshops and meetings
 are not in Cloud ALM: if a calendar connector is available, read today's
 from there, otherwise do not mention them. Never invent a reason for a
 change, an owner, or a date.
@@ -148,4 +147,5 @@ the brief there; show the text first and send only on the user's yes. For a
 daily brief, the host's scheduler (for example a scheduled task in Claude)
 can run this skill each working morning. This skill changes nothing in
 Cloud ALM; if the user asks for a change (reassign, comment, set a status),
-propose it with the write tool and wait for their approval.
+call the write tool: it returns a proposal the user approves. Never
+approve for them.

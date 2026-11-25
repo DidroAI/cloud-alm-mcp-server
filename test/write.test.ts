@@ -214,6 +214,16 @@ describe("calm_link", () => {
     expect(two.text).toContain("goes under one requirement");
   });
 
+  test("named from the user story, the card still shows the requirement and the story, not the story twice", async () => {
+    const { call } = await connect();
+    const r = await call("calm_link", { from: "3-2", tasks: ["3-1"], unlink: true, dryRun: true });
+    const change = r.structured?.change as { items: { id: string; type: string; fields: { field: string; after: string }[] }[] };
+    expect(change.items[0]).toMatchObject({ id: "3-1", type: "requirement" });
+    expect(change.items[0]?.fields[0]?.field).toBe("Remove the link to");
+    expect(change.items[0]?.fields[0]?.after).toContain("user story");
+    expect(change.items[0]?.fields[0]?.after).not.toContain("requirement");
+  });
+
   test("unlinking a test case deletes its task assignment; a 403 names the scope", async () => {
     const { call, writes } = await connect();
     expect((await call("calm_link", { from: "8-1-2", tasks: ["3-2"], unlink: true })).text).toBe("Unlinked test case 8-1-2 from 3-2.");
@@ -495,4 +505,40 @@ test("deleting defects raised from tests warns, and points to soft", async () =>
   const r = await call("calm_delete", { ids, dryRun: true });
   expect(r.text).toContain("record a failed test");
   expect(r.text).toContain("obsolete instead can be undone");
+});
+
+test("a title that reads like an empty value is shown as the title it is", async () => {
+  const { call } = await connect();
+  const r = await call("calm_update", { ids: ["3-3"], title: "None", dryRun: true });
+  const change = r.structured?.change as { items: { fields: { field: string; after: string }[] }[] };
+  expect(change.items[0]?.fields[0]?.after).toBe("None");
+});
+
+test("every write tool only proposes: nothing is sent before the user's yes, and the yes runs it once", async () => {
+  const proposals: Record<string, Record<string, unknown>> = {
+    calm_create_test_case: testCase,
+    calm_link: { from: "8-1-2", tasks: ["3-3"] },
+    calm_tag: { tasks: ["3-1"], add: ["Review"] },
+    calm_create_task: { type: "defect", title: "Credit limit ignored on rush orders", description: "Steps to reproduce." },
+    calm_update: { ids: ["3-3"], status: "in progress" },
+    calm_delete: { ids: ["3-4"] },
+    calm_comment: { task: "3-4", text: "Checked with the key user." },
+    calm_create_feature: { title: "Rush order credit check" },
+    calm_create_document: { title: "Credit check decisions", content: "Decided in the workshop." },
+  };
+  expect(Object.keys(proposals).sort()).toEqual([...WRITE_TOOL_NAMES].sort());
+  for (const [name, args] of Object.entries(proposals)) {
+    const { call, writes } = await connect({ writeMode: "on", approval: "prefer", chatHoldMs: 0 });
+    const r = await call(name, args);
+    expect(`${name}: ${r.text.slice(0, 15)}`).toBe(`${name}: Approval needed`);
+    const approval = r.structured?.approval as { id: string; tool: string };
+    expect(approval.tool).toBe(name);
+    expect(writes).toEqual([]);
+    const done = await call("calm_confirm", { id: approval.id, tool: name });
+    expect(`${name}: ${done.error}`).toBe(`${name}: false`);
+    expect(writes.length).toBeGreaterThan(0);
+    const sent = writes.length;
+    expect((await call("calm_confirm", { id: approval.id, tool: name })).error).toBe(true);
+    expect(writes.length).toBe(sent);
+  }
 });

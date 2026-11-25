@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cliCommand, clientSnippets, packageSpec, shellQuote } from "../src/cli/clients.js";
@@ -21,7 +22,7 @@ import {
   savedKeyPath,
 } from "../src/cli/key.js";
 import { type Io, runCommand, typedPath, version } from "../src/cli/main.js";
-import { canAsk, type Choice, pasteReader, type Prompts } from "../src/cli/prompts.js";
+import { canAsk, type Choice, pasteReader, type Prompts, readSecret } from "../src/cli/prompts.js";
 import { coverage, TOOL_SCOPES, tokenScopes } from "../src/cli/scopes.js";
 import { TOOL_NAMES, WRITE_TOOL_NAMES } from "../src/server.js";
 import { stdioServer } from "../src/stdio.js";
@@ -750,7 +751,70 @@ describe("setup", () => {
     const f = io({ fetch: fakeFetch().fetcher });
     f.io.setup = m.setup;
     f.io.prompts = async () => { throw new Error("asked"); };
-    expect(await runCommand(f.io, ["setup", keyFile(), "--client", "none"])).toBe(0);
+    expect(await runCommand(f.io, ["setup", keyFile(), "--client", "none", "--no-input"])).toBe(0);
+  });
+
+  test("at a terminal, a named file answers the key question; the apps and the skills are still asked", async () => {
+    const m = machine({ cursor: true });
+    const t = io({ fetch: fakeFetch().fetcher });
+    const q = asked([["cursor"], false]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => q.prompts;
+    expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
+    expect(q.seen.map((x) => x.message)).toEqual(["Add Cloud ALM to which apps?", expect.stringContaining("Also install the 9 Cloud ALM skills")]);
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
+    // A file that is no key is refused before any question.
+    const bad = io();
+    bad.io.setup = m.setup;
+    bad.io.prompts = async () => { throw new Error("asked"); };
+    writeFileSync(join(dir, "notes.json"), '{"a":1}');
+    expect(await runCommand(bad.io, ["setup", join(dir, "notes.json")])).toBe(1);
+    expect(bad.all()).toContain("not a Cloud ALM API service key");
+  });
+
+  test("a key nobody named is used only when both its addresses are SAP's", async () => {
+    const m = machine({ cursor: true });
+    const planted = JSON.stringify({ ...KEY, endpoints: { Api: "https://alm.example.net/api" } });
+    const path = join(m.home, "Downloads", "calm-key.json");
+    writeFileSync(path, planted);
+    const t = io({ fetch: fakeFetch().fetcher });
+    t.io.setup = m.setup;
+    expect(await runCommand(t.io, ["setup"])).toBe(1);
+    expect(t.all()).toContain("alm.example.net, which is not an SAP address, so it was not used");
+    expect(existsSync(savedKeyPath(t.io.env))).toBe(false);
+    expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(false);
+    // An app anyone can deploy on SAP BTP is not SAP's either.
+    writeFileSync(path, JSON.stringify({ ...KEY, uaa: { ...KEY.uaa, url: "https://evil.cfapps.eu10.hana.ondemand.com" } }));
+    const app = io({ fetch: fakeFetch().fetcher });
+    app.io.setup = m.setup;
+    expect(await runCommand(app.io, ["setup"])).toBe(1);
+    expect(app.all()).toContain("evil.cfapps.eu10.hana.ondemand.com, which is not an SAP address");
+    writeFileSync(path, planted);
+    // At a terminal the person is asked, with "choose another" first.
+    const w = io({ fetch: fakeFetch().fetcher });
+    const q = asked(["found", (options: Choice<boolean>[]) => { expect(options[0]?.label).toBe("Choose another key"); return false; }, undefined]);
+    w.io.setup = m.setup;
+    w.io.prompts = async () => q.prompts;
+    expect(await runCommand(w.io, ["setup"])).toBe(1);
+    expect(q.seen[1]?.message).toContain("alm.example.net, which is not an SAP address");
+    expect(existsSync(savedKeyPath(w.io.env))).toBe(false);
+  });
+
+  test("two keys with one tenant name but another API address are different tenants", async () => {
+    const m = machine();
+    const first = io({ fetch: fakeFetch().fetcher });
+    first.io.setup = m.setup;
+    expect(await runCommand(first.io, ["setup", keyFile(), "--client", "none", "--no-input"])).toBe(0);
+    const other = JSON.stringify({ ...KEY, endpoints: { Api: "https://us10.alm.cloud.sap/api" } });
+    const t = io({ fetch: fakeFetch().fetcher });
+    const q = asked(["paste", other, undefined]);
+    t.io.setup = m.setup;
+    t.io.prompts = async () => q.prompts;
+    expect(await runCommand(t.io, ["setup"])).toBe(1);
+    expect(q.seen[2]?.message).toContain("A key for another tenant (");
+    expect(q.seen[2]?.message).toContain("us10.alm.cloud.sap");
+    expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
   });
 
   test("questions are for people: not for agents, CI or pipes", () => {
@@ -760,6 +824,10 @@ describe("setup", () => {
     for (const name of ["CLAUDECODE", "CODEX_SANDBOX", "CURSOR_AGENT", "AI_AGENT", "CI"])
       expect(canAsk({ [name]: "1" }, true, true)).toBe(false);
     expect(canAsk({ TERM: "dumb" }, true, true)).toBe(false);
+    // A person's own terminal: CI switched off by name, or Cursor's built-in terminal.
+    expect(canAsk({ CI: "false" }, true, true)).toBe(true);
+    expect(canAsk({ CI: "0" }, true, true)).toBe(true);
+    expect(canAsk({ CURSOR_TRACE_ID: "abc" }, true, true)).toBe(true);
   });
 
   test("a hidden paste takes a key of several lines, in pieces, with or without paste marks", () => {
@@ -775,9 +843,87 @@ describe("setup", () => {
     expect(marked.text()).toBe("not a key\nat all");
     const typed = pasteReader();
     expect(typed.feed("half")).toBeUndefined();
-    expect(typed.feed("\r")).toBe(true);
+    // Enter alone only asks to end: more of a paste may follow.
+    expect(typed.feed("\r")).toBe("enter");
     expect(pasteReader().feed("\x03")).toBe(false);
-    expect(pasteReader().feed("\x1b")).toBe(false);
+    // Esc alone only asks to cancel: it may be the first byte of a paste mark.
+    expect(pasteReader().feed("\x1b")).toBe("escape");
+    const twice = pasteReader();
+    twice.feed("abc\x1b");
+    expect(twice.feed("\x1b")).toBe(false);
+  });
+
+  test("a hidden paste survives the terminal's chunking: a line break alone, marks cut in two, keys pressed before", () => {
+    const lines = KEY_TEXT.split("\n");
+    expect(lines.length).toBeGreaterThan(3);
+    // No paste marks, and a line break arrives as a chunk of its own.
+    const plain = pasteReader();
+    expect(plain.feed(`${lines[0]}\r${lines[1]}`)).toBeUndefined();
+    expect(plain.feed("\r")).toBe("enter");
+    expect(plain.feed(lines.slice(2).join("\r"))).toBe(true);
+    expect(JSON.parse(plain.text())).toEqual(KEY);
+    // The start and end marks cut in two, at every place, with the first byte alone too.
+    const marked = `\x1b[200~${KEY_TEXT.replace(/\n/g, "\r").slice(0, -1)}`;
+    for (let cut = 1; cut < 7; cut++) {
+      const r = pasteReader();
+      expect(r.feed(marked.slice(0, cut))).toBe(cut === 1 ? "escape" : undefined);
+      expect(r.feed(marked.slice(cut))).toBeUndefined();
+      // Inside a marked paste, Enter alone is part of the text.
+      expect(r.feed("\r")).toBeUndefined();
+      expect(r.feed("}\x1b[20")).toBe(true);
+      expect(JSON.parse(r.text())).toEqual(KEY);
+    }
+    // An arrow key before the paste leaves nothing in the key.
+    const arrow = pasteReader();
+    expect(arrow.feed("\x1b[A")).toBeUndefined();
+    expect(arrow.feed("\x1bOB")).toBeUndefined();
+    expect(arrow.feed(KEY_TEXT)).toBe(true);
+    expect(JSON.parse(arrow.text())).toEqual(KEY);
+  });
+
+  test("reading a hidden paste: waits after Enter alone, swallows what trails the end, and stops when the terminal closes", async () => {
+    const terminal = () => {
+      const t = Object.assign(new EventEmitter(), {
+        isTTY: true, isRaw: false, raw: [] as boolean[], paused: false,
+        setRawMode(on: boolean) { t.raw.push(on); t.isRaw = on; return t; },
+        resume() { t.paused = false; return t; },
+        pause() { t.paused = true; return t; },
+      });
+      return t;
+    };
+    const written: string[] = [];
+    const output = { write: (text: string) => (written.push(text), true) } as never;
+    const lines = KEY_TEXT.split("\n");
+    const a = terminal();
+    const first = readSecret(a as never, output);
+    a.emit("data", Buffer.from(lines[0] ?? ""));
+    a.emit("data", Buffer.from("\r"));
+    await new Promise((r) => setTimeout(r, 30));
+    a.emit("data", Buffer.from(lines.slice(1).join("\r")));
+    // The end is known, yet the line break after it must not reach the next question.
+    expect(a.raw).toEqual([true]);
+    a.emit("data", Buffer.from("\r"));
+    expect(JSON.parse((await first) ?? "")).toEqual(KEY);
+    expect(a.raw).toEqual([true, false]);
+    expect(a.listenerCount("data")).toBe(0);
+    expect(written).toEqual(["\x1b[?2004h", "\x1b[?2004l"]);
+    // Enter alone, and nothing after it: the text so far is the answer.
+    const b = terminal();
+    const second = readSecret(b as never, output);
+    b.emit("data", Buffer.from("not a key"));
+    b.emit("data", Buffer.from("\r"));
+    expect(await second).toBe("not a key");
+    // Esc alone cancels, after a moment in which nothing followed.
+    const d = terminal();
+    const fourth = readSecret(d as never, output);
+    d.emit("data", Buffer.from("\x1b"));
+    expect(await fourth).toBeUndefined();
+    // The terminal goes away: no waiting for ever.
+    const c = terminal();
+    const third = readSecret(c as never, output);
+    c.emit("end");
+    expect(await third).toBeUndefined();
+    expect(c.raw).toEqual([true, false]);
   });
 
   test("a path dragged into the terminal loses its quotes and escapes", () => {

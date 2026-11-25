@@ -2,6 +2,8 @@
 
 Deploy this directory as its own Vercel project with Node 24. It serves a read-only OAuth connector for ChatGPT and Claude using the published Cloud ALM MCP. Open the deployment home page for browser setup.
 
+`package.json` pins `cloud-alm-mcp-server` to an exact version. After each release of the package, change the pin, update `package-lock.json` (`npm install`) and deploy again; until then the connector serves the version before. A release that needs a new endpoint here (as 0.3.1 needed `/feedback`) is deployed here first.
+
 Create a dedicated PostgreSQL database and apply schema.sql. Set DATABASE_URL to a runtime role with SELECT, INSERT, UPDATE and DELETE on connections. Set CONNECT_ORIGIN to the canonical HTTPS origin without a trailing slash and CONNECT_KEY to a secret random 32-byte hex value. Use separate configuration for each deployment environment.
 
 The browser uploads the service key directly to the consent endpoint. The server uses SAP client credentials once, discards the key, and stores only the temporary SAP grant encrypted with AES-256-GCM. The connector bearer is random and stored as a digest. Sessions expire after at most one hour and can be revoked through the advertised OAuth revocation endpoint. Expired rows are pruned on the next successful link. Reconnect when the session expires. This preview supports commercial SAP client-secret keys on regional Cloud ALM endpoints. It does not offer refresh tokens or write tools.

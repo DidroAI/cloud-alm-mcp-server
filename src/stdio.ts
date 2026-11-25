@@ -16,6 +16,7 @@ import {
   SERVICE_KEY_ENV,
 } from "./cli/key.js";
 import { tokenScopes, writeToolsFor } from "./cli/scopes.js";
+import { approvalFromEnv } from "./approval.js";
 import { createServer, serverOptionsForKey } from "./server.js";
 
 export { SERVICE_KEY_ENV };
@@ -85,7 +86,7 @@ export function stdioFactory(
     throw new Error(
       "Cloud ALM is not set up yet: no service key was found. " +
         `Run \`${cliCommand(packageSpec(version()), env)} setup\` in a terminal ` +
-        "(it finds the key JSON you downloaded from SAP BTP and saves it), " +
+        "(it asks for the key JSON you downloaded from SAP BTP, checks it and saves it), " +
         `or set ${SERVICE_KEY_ENV} to the key file's path. In a Claude Code plugin or ` +
         "Claude Desktop extension, choose the key file in its settings.",
     );
@@ -95,6 +96,8 @@ export function stdioFactory(
   const webUrl = webBaseFrom(env.CALM_WEB_URL) ?? webBaseFromKey(key);
   // On unless the user turned it off: reports go to Didro's inbox, or the receiver named.
   const feedback = localFeedbackSink(env, configDir(env));
+  // The card only, when the user asked for that (CALM_APPROVAL=card).
+  const approval = approvalFromEnv(env);
   let writeTools: Promise<string[]> | undefined;
   return async () => {
     writeTools ??= grants().then((g) => writeToolsFor(tokenScopes(g.accessToken)));
@@ -103,6 +106,7 @@ export function stdioFactory(
       writeTools = undefined;
       return [] as string[];
     });
-    return createServer(reader, { ...serverOptionsForKey(writer, tools, env.CALM_CONTENT_PRESENTATION ?? "legacy", feedback), ...(webUrl ? { webUrl } : {}) });
+    const fromKey = serverOptionsForKey(writer, tools, env.CALM_CONTENT_PRESENTATION ?? "legacy", feedback);
+    return createServer(reader, { ...fromKey, ...(fromKey.approval ? { approval } : {}), ...(webUrl ? { webUrl } : {}) });
   };
 }

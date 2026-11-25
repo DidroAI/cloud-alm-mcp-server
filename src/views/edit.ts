@@ -32,7 +32,7 @@ import {
   changeItem,
 } from "./items.js";
 import type { Snapshot } from "./snapshot.js";
-import { documentType, featureStatus, short, statusLabel, typeLabel } from "./text.js";
+import { clipped, documentType, featureStatus, short, statusLabel, typeLabel } from "./text.js";
 
 type Step = { title: string; description: string; expected: string; evidence?: boolean };
 
@@ -215,6 +215,8 @@ type Part = {
   field: string;
   body: Record<string, unknown>;
   show: (row: Row) => string;
+  /** The whole value for the approval card, where `show` shortens it. */
+  full?: (row: Row) => string;
   /** Whether a read-back row holds what was sent; default: every body key equal. */
   stored?: (row: Row) => boolean;
 };
@@ -227,7 +229,8 @@ type Planned = {
   ifMatch?: string;
   notes: string[];
   /** Done after the PATCH (test case activities). */
-  extra?: { line: string; run: () => Promise<string> };
+  /** A step after the fields. `detail` is its whole text for the approval card, where `line` shortens it. */
+  extra?: { line: string; detail?: string; run: () => Promise<string> };
 };
 
 const changed = (row: Row, part: Part) => Object.entries(part.body).some(([k, v]) => (row[k] ?? null) !== v);
@@ -268,12 +271,13 @@ async function planTask(calm: CloudAlm, writer: CloudAlmWriter, snap: Snapshot, 
   const type = str(before.type) ?? t.type ?? "";
   const parts: Part[] = [];
   const notes: string[] = [];
-  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"` });
+  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"`, full: (r) => str(r.title) ?? "" });
   if (input.description !== undefined)
     parts.push({
       field: "description",
       body: { description: textToHtml(input.description) },
       show: (r) => `"${short(plainText(r.description) ?? "", 80)}"`,
+      full: (r) => plainText(r.description) ?? "",
       stored: (r) => plainText(r.description) === plainText(textToHtml(input.description ?? "")),
     });
   if (input.status !== undefined) {
@@ -317,7 +321,8 @@ async function planTask(calm: CloudAlm, writer: CloudAlmWriter, snap: Snapshot, 
   const text = input.comment?.trim();
   const extra = text
     ? {
-        line: `comment: "${text.length > 300 ? `${text.slice(0, 300)}…` : text}"`,
+        line: `comment: "${clipped(text, 300)}"`,
+        detail: text,
         run: async () => {
           await needing("tasks.write", () => writer.post(`${PATHS.tasks}/${t.id}/comments`, { text: textToHtml(text) }));
           return "comment added";
@@ -331,7 +336,7 @@ async function planFeature(calm: CloudAlm, item: Item & { kind: "feature" }, inp
   const f = item.feature;
   const before = await readRow(calm, `${PATHS.features}/${f.id}`);
   const parts: Part[] = [];
-  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"` });
+  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"`, full: (r) => str(r.title) ?? "" });
   if (input.description !== undefined) {
     if (/<img\b/i.test(String(before.description ?? "")))
       throw new CloudAlmError(
@@ -343,6 +348,7 @@ async function planFeature(calm: CloudAlm, item: Item & { kind: "feature" }, inp
       field: "description",
       body: { description: html },
       show: (r) => `"${short(plainText(r.description) ?? "", 80)}"`,
+      full: (r) => plainText(r.description) ?? "",
       stored: (r) => plainText(r.description) === plainText(html),
     });
   }
@@ -372,7 +378,7 @@ async function planTestCase(
   const tc = item.testCase;
   const before = await readRow(calm, `${PATHS.manualTestCases}/${tc.id}`, { $expand: "toActivities($expand=toActions)" });
   const parts: Part[] = [];
-  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"` });
+  if (input.title !== undefined) parts.push({ field: "title", body: { title: input.title.trim() }, show: (r) => `"${short(str(r.title), 80)}"`, full: (r) => str(r.title) ?? "" });
   if (input.prepared !== undefined) parts.push({ field: "prepared", body: { isPrepared: input.prepared }, show: (r) => (bool(r.isPrepared) ? "yes" : "no") });
   if (input.priority !== undefined) parts.push({ field: "priority", body: { priorityCode: input.priority }, show: (r) => priorityText(r.priorityCode) });
   const planned: Planned = { item, path: `${PATHS.manualTestCases}/${tc.id}`, scope: "testcases.write", before, parts, notes: [] };
@@ -384,6 +390,7 @@ async function planTestCase(
     const sequence = activities.reduce((n, a) => Math.max(n, num(a.sequence) ?? 0), 0) + 1;
     planned.extra = {
       line: `activities: ${activities.length} → ${activities.length + 1} (adds "${short(add.title, 60)}" as activity ${sequence} with ${add.steps.length} steps: ${add.steps.map((s) => `"${short(s.title, 40)}"`).join(", ")})`,
+      detail: [`${sequence}. ${add.title}`, ...add.steps.map((st, j) => `   ${sequence}.${j + 1} ${st.title} — do: ${st.description} — expect: ${st.expected}${st.evidence ? " [evidence]" : ""}`)].join("\n"),
       run: async () => {
         const created = (await needing("testcases.write", () =>
           writer.post("calm-testmanagement/v1/Activities", { parent_ID: tc.id, title: add.title, sequence, isInScope: true }),
@@ -523,10 +530,13 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
           op: "update" as const,
           fields: [
             ...todo.map((part) => {
-              const before = cardValue(part.show(p.before));
-              return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: cardValue(part.show(planned)) };
+              // The card shows long text whole; the lines for the assistant shorten it.
+              // A whole value is shown as it is: a title "None" is a title, not an empty field.
+              const show = (row: Row) => (part.full ? part.full(row) : cardValue(part.show(row)));
+              const before = show(p.before);
+              return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: show(planned) };
             }),
-            ...(p.extra ? [extraField(p.extra.line)] : []),
+            ...(p.extra ? [extraField(p.extra)] : []),
           ],
           ...(p.notes.length ? { note: p.notes.join(" ") } : {}),
         };
@@ -553,9 +563,9 @@ const FIELD_NAMES: Record<string, string> = {
 /** A value for the card: no priority codes ("10 very high" → "very high"), nothing for none. */
 const cardValue = (v: string) => (/^(none|empty|—|-)$/i.test(v.trim()) ? "" : v.replace(/^\d{2} (very high|high|medium|low)$/, "$1"));
 /** The step after the fields (a comment, a new activity) as one added value. */
-function extraField(line: string): { field: string; after: string } {
-  const comment = /^comment: "([\s\S]*)"$/.exec(line);
-  return comment ? { field: "New comment", after: comment[1] ?? "" } : { field: "Then", after: line };
+function extraField(extra: { line: string; detail?: string }): { field: string; after: string } {
+  if (extra.line.startsWith("comment: ")) return { field: "New comment", after: extra.detail ?? extra.line };
+  return { field: "Then", after: extra.detail ? `${extra.line}\n${extra.detail}` : extra.line };
 }
 
 // ---- calm_delete -----------------------------------------------------------
@@ -748,11 +758,11 @@ export async function comment(
   if (!text) throw new CloudAlmError("bad_request", "the comment is empty");
   o.reviewPlan?.({ project: snap.project.id, task: task.id, label: label(task), title: task.title, text });
   if (dry(o, input.dryRun)) {
-    const shown = text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
+    const shown = clipped(text, 4000);
     const change: Change = {
       kind: "update",
       project: { id: snap.project.id, name: snap.project.name },
-      items: [{ id: task.displayId, type: typeLabel(task.type), title: task.title, op: "update", fields: [{ field: "New comment", after: shown }] }],
+      items: [{ id: task.displayId, type: typeLabel(task.type), title: task.title, op: "update", fields: [{ field: "New comment", after: text }] }],
     };
     return { text: `${dryNote(o)} Would add to ${label(task)} the comment:\n${shown}`, data: { change } };
   }
@@ -807,7 +817,7 @@ export async function createFeature(
           { field: "Status", after: featureStatus(statusCode) },
           { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
           ...(tasks.length ? [{ field: "Delivers", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
-          ...(description ? [{ field: "Description", after: description.length > 600 ? `${description.slice(0, 600)} …` : description }] : []),
+          ...(description ? [{ field: "Description", after: description }] : []),
         ],
       }],
       warnings: [
@@ -916,7 +926,7 @@ export async function createDocument(
           { field: "Status", after: DOCUMENT_STATUS_NAME[status] ?? String(status) },
           { field: "Priority", after: priorityText(body.priorityCode).replace(/^\d+ /, "") },
           ...(tasks.length ? [{ field: "Linked to", after: tasks.map((t) => `${typeLabel(t.type)} "${short(t.title, 70)}"`).join("\n") }] : []),
-          { field: "Content", after: text.length > 600 ? `${text.slice(0, 600)} …` : text },
+          { field: "Content", after: text },
         ],
       }],
       warnings: ["After it is created, a document's title, content, status, priority and type cannot be changed from here"],

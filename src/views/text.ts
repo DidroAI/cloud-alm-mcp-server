@@ -25,6 +25,7 @@ export const isOpen = (code: string | null) =>
 const SUB_STATES: Record<string, string | null> = {
   // A requirement's sub-status "CREATED" is shown as "in refinement" in Cloud ALM.
   CREATED: "in refinement",
+  DFC_POSTPONE: "postponed",
 };
 /**
  * A task's sub-status in words: `DFC_NEW` → "new", `DFC_RETEST_REQ` →
@@ -34,7 +35,8 @@ export function subStatusLabel(code: string | null): string | null {
   if (!code) return null;
   if (code in SUB_STATES) return SUB_STATES[code] ?? null;
   return code
-    .replace(/^[A-Z]{2,4}_/, "")
+    // Only a type prefix goes: TO_BE_APPROVED and IN_PLANNING start with words.
+    .replace(/^(?:DFC|REQ|RSK|TSK|US|QG)_/, "")
     .toLowerCase()
     .replace(/_/g, " ")
     .replace(/\breq\b/, "required")
@@ -104,6 +106,13 @@ const DOCUMENT_TYPES: Record<string, string> = {
 };
 export const documentType = (code: string | null) =>
   code ? (DOCUMENT_TYPES[code] ?? code) : "document";
+
+/**
+ * Long text for a preview in words: its start, and how much more there is.
+ * The approval card gets the whole text; this is for the assistant's answer.
+ */
+export const clipped = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max)} … (+${text.length - max} more characters; the whole text is written)` : text;
 
 /** A title shortened for list lines. */
 export const short = (text: string | null, max = 90) => {

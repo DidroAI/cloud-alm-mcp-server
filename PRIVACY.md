@@ -41,7 +41,10 @@ post and is not stored with the report.
 **Turning reports off.** Run `npx -y cloud-alm-mcp-server feedback off` (for
 every client on this computer; `feedback on` turns them back on), or set
 `CALM_FEEDBACK=off` in a client's configuration. `doctor` shows which it is.
-The tool is then not offered to the assistant at all.
+The tool is then not offered to the assistant at all. The command also
+covers the Claude Desktop extension and the Claude Code plugin, which have
+no setting of their own for it; per install channel:
+[docs/install.md](docs/install.md#reports-about-tool-problems).
 
 **Another receiver.** An operator can set `CALM_FEEDBACK_URL`, and
 `CALM_FEEDBACK_TOKEN` for its credential, to send the reports to a receiver
@@ -76,6 +79,8 @@ of each request to the Cloud ALM API address of that request.
   `%APPDATA%\cloud-alm-mcp-server\service-key.json` on Windows), readable
   only by you. The Claude Desktop extension and the Claude Code plugin store
   the path of the key file you chose, not its contents.
+- The choice made with `feedback off`: a small marker file,
+  `feedback-off`, in the same folder as the saved key.
 - Access tokens and short-lived caches of what was read: in memory only,
   gone when the server stops.
 

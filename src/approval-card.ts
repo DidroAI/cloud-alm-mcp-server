@@ -135,7 +135,7 @@ button.ok:hover:not(:disabled){background:var(--brand-hover);border-color:var(--
 .card[data-kind=delete] button.ok:hover:not(:disabled){background:var(--danger-hover);border-color:var(--danger-hover)}
 button:disabled{opacity:.45;cursor:default}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.card[data-state=unknown] .acts,.card[data-state=closed] .acts,.card[data-state=approved] .acts,.card[data-state=rejected] .acts,.card[data-state=expired] .acts,.card[data-state=blocked] .acts,.card[data-state=chat] .acts,.card[data-state=info] .acts,.card[data-state=failed] .acts,.card[data-state=preparing] .acts{display:none}
+.card[data-state=unknown] .acts,.card[data-state=closed] .acts,.card[data-state=approved] .acts,.card[data-state=rejected] .acts,.card[data-state=expired] .acts,.card[data-state=blocked] .acts,.card[data-state=chat] .acts,.card[data-state=info] .acts,.card[data-state=preview] .acts,.card[data-state=failed] .acts,.card[data-state=preparing] .acts{display:none}
 .card[data-state=info] .ft,.card[data-state=failed] .ft,.card[data-state=preparing] .ft{display:none}
 .card[data-state=rejected] .c,.card[data-state=expired] .c{opacity:.75}
 @media (max-width:380px){.acts{width:100%}.acts button{flex:1}}
@@ -360,7 +360,9 @@ app.ontoolresult = (result) => {
     const preview = !result?.isError && result?.structuredContent?.change;
     if (preview && renderChange(preview)) {
       $("t").textContent = "Preview";
-      state("info", "Nothing sent");
+      // A state of its own: the footer line stays, and a delete is not announced as happening.
+      state("preview", "Nothing sent");
+      $("warn").hidden = true;
       renderFacts({ change: preview });
       plainText("", false);
       $("x").textContent = "A preview only. Nothing was sent to Cloud ALM.";
@@ -455,6 +457,15 @@ async function decide(decision) {
     return;
   }
   const text = (r?.content ?? []).map((c) => c?.text ?? "").join(NL);
+  // Held for a moment after the proposal (a card without its token): nothing is decided, the buttons come back.
+  if (r.isError && /^Too early/.test(text)) {
+    state("waiting");
+    say("Not yet. Try again in a few seconds.", "warn");
+    tick();
+    if (pending.expiresAt) ticking = setInterval(tick, 20000);
+    buttons(true);
+    return;
+  }
   if (r.isError) finish("closed", "Closed " + clock(Date.now()));
   else finish(decision === "approve" ? "approved" : "rejected", (decision === "approve" ? "Approved " : "Rejected ") + clock(Date.now()) + (decision === "approve" ? "" : ". Nothing was written."));
   // The answer is written for the agent (ids, tool names): people get a sentence, and the answer only when it failed.
