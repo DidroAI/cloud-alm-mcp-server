@@ -68,7 +68,7 @@ Your assistant can report missing fields, unexpected results or extra tool calls
 
 ## Setup in 2 minutes (video)
 
-https://github.com/user-attachments/assets/aacac950-e66e-4121-917b-c7a88c85df6f
+https://github.com/user-attachments/assets/302faf0d-5347-4bf3-ae41-ce079fe7469c
 
 Every click in SAP BTP, then `setup` in a terminal, or one prompt to your
 coding agent. With narration, 2 minutes. No player here?

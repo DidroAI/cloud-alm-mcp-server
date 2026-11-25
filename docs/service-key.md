@@ -4,7 +4,7 @@ For whoever administers the SAP BTP subaccount of your Cloud ALM tenant. Back to
 
 The setup video (2 minutes, with sound) shows every click below:
 
-https://github.com/user-attachments/assets/aacac950-e66e-4121-917b-c7a88c85df6f
+https://github.com/user-attachments/assets/302faf0d-5347-4bf3-ae41-ce079fe7469c
 
 No player here? [Open the video file](media/setup-tutorial.mp4).
 
