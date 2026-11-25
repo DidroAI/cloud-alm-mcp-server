@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "cloud-alm-mcp-server",
   "display_name": "SAP Cloud ALM",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Ask Claude about your SAP Cloud ALM project: requirements, features, test cases, defects, processes and landscape. Every write waits for your approval.",
   "long_description": "Connects Claude to SAP Cloud ALM through your own API service key. Read tools cover projects, requirements, user stories, features, documents, test cases and results, defects, processes, landscape and analytics. Write tools appear only when the key's scopes allow them, and each write is shown to you for approval before anything changes in Cloud ALM.\n\nWhen Claude runs into a problem with one of the tools, it can send Didro a short report: the tool's name, the outcome and one or two sentences, with no Cloud ALM records, credentials or chat text. To turn this off, see the privacy policy.\n\nYou need a service key of the \"SAP Cloud ALM API\" instance in SAP BTP (a JSON file). Choose that file when you install the extension.",
   "author": {
@@ -18,15 +18,31 @@
   "support": "https://github.com/DidroAI/cloud-alm-mcp-server/issues",
   "license": "MIT",
   "icon": "assets/icon.png",
-  "keywords": ["sap", "sap-cloud-alm", "cloud-alm", "sap-btp", "alm", "application-lifecycle-management", "requirements", "test-management", "defects", "fit-gap", "mcp", "mcp-server"],
+  "keywords": [
+    "sap",
+    "sap-cloud-alm",
+    "cloud-alm",
+    "sap-btp",
+    "alm",
+    "application-lifecycle-management",
+    "requirements",
+    "test-management",
+    "defects",
+    "fit-gap",
+    "mcp",
+    "mcp-server"
+  ],
   "server": {
     "type": "node",
     "entry_point": "dist/cli.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/dist/cli.js"],
+      "args": [
+        "${__dirname}/dist/cli.js"
+      ],
       "env": {
-        "CALM_SERVICE_KEY": "${user_config.service_key_file}"
+        "CALM_SERVICE_KEY": "${user_config.service_key_file}",
+        "CALM_FEEDBACK": "${user_config.send_reports}"
       }
     }
   },
@@ -38,10 +54,21 @@
       "title": "Cloud ALM service key (JSON file)",
       "description": "The service key file of your \"SAP Cloud ALM API\" instance, downloaded from SAP BTP. It stays on this computer; only its path is stored.",
       "required": true
+    },
+    "send_reports": {
+      "type": "boolean",
+      "title": "Send Didro short reports about tool problems",
+      "description": "When a tool misbehaves, your assistant can send Didro a short report: the tool's name, the outcome and one or two generic sentences. No records, credentials or chat text. Turn this off to send none.",
+      "default": true,
+      "required": false
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=22.0.0"
     }

@@ -706,9 +706,13 @@ describe("setup", () => {
     const claudeSkills = join(m.home, ".claude", "skills");
     mkdirSync(join(claudeSkills, "my-own-skill"), { recursive: true });
     writeFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "mine");
+    // A copy from a version before the marker: recognised by its name and the tools it uses.
     mkdirSync(join(claudeSkills, "cloud-alm-fit-gap"), { recursive: true });
-    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "old");
+    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "---\nname: cloud-alm-fit-gap\ndescription: old\n---\nUse calm_overview.");
     writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "stale.md"), "old");
+    // A skill of the same name the user wrote themselves: never touched.
+    mkdirSync(join(claudeSkills, "cloud-alm-explore"), { recursive: true });
+    writeFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "my own notes");
     const t = io({ fetch: fakeFetch().fetcher });
     t.io.setup = m.setup;
     expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
@@ -717,13 +721,16 @@ describe("setup", () => {
     expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report", "SKILL.md"))).toBe(true);
     // Cursor reads Claude Code's folder: no second copy.
     expect(existsSync(join(m.home, ".cursor", "skills"))).toBe(false);
-    expect(t.all()).toContain(`✓ Skills         9 installed in ${claudeSkills} (Claude Code, Cursor)`);
+    expect(readFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "utf8")).toBe("my own notes");
+    expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap", ".cloud-alm-mcp-server"))).toBe(true);
+    expect(t.all()).toContain(`✓ Skills         8 installed in ${claudeSkills} (Claude Code, Cursor)`);
     expect(t.all()).toContain(`9 installed in ${join(m.home, ".agents", "skills")} (Codex)`);
 
     const u = io();
     u.io.setup = m.setup;
     expect(await runCommand(u.io, ["uninstall"])).toBe(0);
-    expect(u.all()).toContain(`9 removed from ${claudeSkills}`);
+    expect(u.all()).toContain(`8 removed from ${claudeSkills}`);
+    expect(readFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "utf8")).toBe("my own notes");
     expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap"))).toBe(false);
     expect(readFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine");
     expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report"))).toBe(false);

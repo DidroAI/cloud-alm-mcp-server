@@ -269,9 +269,9 @@ Running `setup` again writes the app's entry anew, without `CALM_FEEDBACK`;
 | Installed with | Turn reports off |
 | --- | --- |
 | `setup`, or an entry added by hand (Claude Code, Codex, Claude Desktop, Cursor, VS Code) | `feedback off`, or add `"CALM_FEEDBACK": "off"` to the `env` of the `cloud-alm` entry in that app's configuration (in Codex's `config.toml`: `CALM_FEEDBACK = "off"` in the entry's `env`) |
-| Claude Desktop extension (.mcpb) | `feedback off`. The extension has no setting for it and its environment cannot be edited. Without Node.js, create a file named `feedback-off` (it may be empty) in the folder above by hand |
-| Claude Code plugin | `feedback off`. The plugin has no setting for it |
-| MCP Registry | `feedback off`, or `"CALM_FEEDBACK": "off"` in the `env` of the entry your client wrote from the registry |
+| Claude Desktop extension (.mcpb) | Switch off "Send Didro short reports about tool problems" in the extension's settings, or `feedback off` |
+| Claude Code plugin | Switch off the same option in the plugin's settings, or `feedback off` |
+| MCP Registry | Set `CALM_FEEDBACK` to `off` where your client asks for the server's variables, or `feedback off` |
 
 `doctor` and `feedback` say which of the two turned reports off. To send
 the reports to a receiver of your own instead of Didro, set

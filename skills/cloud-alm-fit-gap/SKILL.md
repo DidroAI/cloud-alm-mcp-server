@@ -90,18 +90,19 @@ Take the first path that meets the need, top to bottom:
 | Gap: key-user extension | In-app: custom field, custom logic, form or email template, analytics view, adapted UI | Level A | User story + feature |
 | Gap: developer extension | On-stack ABAP Cloud using released APIs and extension points | Level A | User story + feature, design document |
 | Gap: side-by-side | App, workflow or integration on SAP BTP using released APIs | Level A | User story + feature, architecture check |
-| Gap: classic development | Private edition / on-premise only. Level B: classic APIs SAP has nominated as stable (its classic API list, e.g. many BAPIs). Level C: internal SAP objects with no stability contract; classic user exits and BAdIs that are not on that list belong here. Level D: modification, direct write to SAP tables, implicit enhancement, objects SAP flags as not to use | B, C or D | User story + feature, specification, design-authority approval |
+| Gap: classic development | Private edition / on-premise only. Level B: classic APIs and extension points SAP has nominated (BAPIs, classic BAdIs and user exits). Level C: internal SAP objects, neither released nor nominated (internal function modules and classes, reads of SAP tables). Level D: modification, write access to SAP tables, implicit enhancement, objects SAP marks "noAPI" | B, C or D | User story + feature, specification, design-authority approval |
 | Gap: workaround | Process or organisational change, manual step, or kept in another system | clean | Decision documented, owner |
 | To clarify | Not enough information | – | Question for the workshop |
 
 Rules an expert applies:
 
-- Rate an extension by the weakest technology it uses: one Level D element
-  makes the whole extension Level D. Aim for A; accept B where no released
-  API exists; C needs a stated reason and an upgrade check; D is not
-  recommended: refuse it or plan its removal. SAP revises the levels and
-  the classic API list: give the level of a specific object as your
-  assessment, to check against SAP's current clean core guidance.
+- Rate an extension by the lowest-ranked technology it uses: one Level D
+  element makes the whole extension Level D. Aim for A; B is the next
+  best where no released API exists; C carries upgrade risk: refactor
+  toward A or B; D is not clean core: refuse or plan
+  its removal. SAP reclassifies objects over time: give the level of a
+  specific object as your assessment, to check in SAP's Cloudification
+  Repository.
 - For development gaps, name the WRICEF type (workflow, report, interface,
   conversion, enhancement, form) and check its standard answer first:
   workflow → flexible workflow or process automation on BTP; report →
@@ -137,15 +138,16 @@ regulatory, industry necessity, proven differentiator, integration with a
 system that stays. "Customer-specific" alone is not a reason.
 
 Every accepted deviation is documented, so it can be replaced when the
-standard catches up. Many projects have a design authority that approves
-deviations: ask who decides, and never present a gap as approved yourself.
+standard catches up. SAP Activate has a Solution Standardization Board
+approve deviations: ask who decides, and never present a gap as approved
+yourself.
 
 ## 5. Prioritise and size
 
 - Priority belongs to the business (product owner / process owner); you
-  propose. Many projects use MoSCoW (must, should, could, won't), ranked
-  inside each bucket. Cloud ALM's priority has four values (very high,
-  high, medium, low): use the project's mapping, or say that none exists.
+  propose. Projects often use MoSCoW, ranked inside each bucket. Cloud
+  ALM's priority has four values (very high, high, medium, low): use the
+  project's mapping, or say that none exists.
 - Push back when almost everything is "must": a must is something go-live
   is impossible or illegal without. Ask what the business would drop first.
 - Only the top-priority gaps go to delta design; the rest stay in the

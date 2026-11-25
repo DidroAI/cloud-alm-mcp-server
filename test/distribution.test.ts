@@ -33,6 +33,8 @@ describe("distribution files", () => {
     });
     expect(npm.environmentVariables).toEqual([
       expect.objectContaining({ name: "CALM_SERVICE_KEY", format: "filepath", isSecret: true, isRequired: false }),
+      // The one switch besides the key: reports about tool problems, on unless turned off.
+      expect.objectContaining({ name: "CALM_FEEDBACK", isSecret: false, isRequired: false, default: "on", choices: ["on", "off"] }),
     ]);
   });
 
@@ -40,8 +42,9 @@ describe("distribution files", () => {
     expect(manifest.server.type).toBe("node");
     expect(manifest.server.entry_point).toBe(pkg.bin["cloud-alm-mcp-server"]);
     expect(manifest.server.mcp_config.args).toEqual([`\${__dirname}/${manifest.server.entry_point}`]);
-    expect(manifest.server.mcp_config.env).toEqual({ CALM_SERVICE_KEY: "${user_config.service_key_file}" });
+    expect(manifest.server.mcp_config.env).toEqual({ CALM_SERVICE_KEY: "${user_config.service_key_file}", CALM_FEEDBACK: "${user_config.send_reports}" });
     expect(manifest.user_config.service_key_file).toMatchObject({ type: "file", required: true });
+    expect(manifest.user_config.send_reports).toMatchObject({ type: "boolean", default: true, required: false });
     expect(manifest.compatibility.runtimes.node).toBe(`${pkg.engines.node}.0.0`);
     expect(manifest.privacy_policies).toEqual([
       "https://github.com/DidroAI/cloud-alm-mcp-server/blob/main/PRIVACY.md",
@@ -53,7 +56,8 @@ describe("distribution files", () => {
     expect(marketplace.plugins).toEqual([expect.objectContaining({ name: plugin.name, source: "./" })]);
     expect(plugin.userConfig.service_key_file.type).toBe("file");
     const entry = mcp.mcpServers["cloud-alm"];
-    expect(entry.env).toEqual({ CALM_SERVICE_KEY: "${user_config.service_key_file}" });
+    expect(entry.env).toEqual({ CALM_SERVICE_KEY: "${user_config.service_key_file}", CALM_FEEDBACK: "${user_config.send_reports}" });
+    expect(plugin.userConfig.send_reports).toMatchObject({ type: "boolean", default: true });
     expect(entry.args).toEqual(["-y", packageSpec(pkg.version)]);
   });
 

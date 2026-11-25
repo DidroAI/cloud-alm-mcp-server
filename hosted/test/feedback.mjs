@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createFeedbackIntake, reportFrom } from "../lib/feedback.mjs";
+import { createLimiter } from "../lib/http.mjs";
 
 const report = {
   reportId: "11111111-2222-3333-4444-555555555555",
@@ -71,4 +72,15 @@ test("junk uses up its sender's limit, not everyone's", async () => {
   assert.equal((await intake(post(report, { "x-real-ip": "203.0.113.2" }))).status, 204);
   assert.equal((await intake(post(report, { "x-real-ip": "203.0.113.3" }))).status, 204);
   assert.equal((await intake(post(report, { "x-real-ip": "203.0.113.4" }))).status, 429);
+});
+
+test("the sign-in limiter allows a few requests per sender in its window", () => {
+  let at = 0;
+  const allow = createLimiter({ max: 2, windowMs: 1000, now: () => at });
+  assert.equal(allow("a"), true);
+  assert.equal(allow("a"), true);
+  assert.equal(allow("a"), false);
+  assert.equal(allow("b"), true);
+  at = 1001;
+  assert.equal(allow("a"), true);
 });

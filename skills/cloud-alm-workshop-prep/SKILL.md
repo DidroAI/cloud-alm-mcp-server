@@ -27,9 +27,10 @@ agenda on them, per process:
 2. Demonstrate it in the system (starter system in public edition, a
    sandbox in private edition), following the test script.
 3. Discuss how it fits the customer's requirements.
-4. Identify delta requirements: extensibility, integration, analytics,
-   output forms, business roles.
-5. Identify the configuration needed (values, organisational units).
+4. Identify delta requirements: analytics, output management,
+   integration, extensibility.
+5. Identify the configuration needed; in private edition also the
+   WRICEF objects.
 6. Enable the customer to run the process themselves afterwards.
 
 Design workshops follow only for the requirements ranked highest. The
@@ -134,7 +135,7 @@ no name as "to be named by the customer":
 | Role | Why |
 | --- | --- |
 | Business process owner | Decides fit and accepts the standard; without them, decisions are provisional |
-| Key users / process experts | Know the daily work; commonly two to four per business role (one is too narrow, many slow the session) |
+| Key users / process experts | Know the daily work; SAP's guidance for public edition is two to four per business process, covering its business roles |
 | Functional consultant, lead | Demonstrates and facilitates |
 | Functional consultant, scribe | Records requirements in Cloud ALM during the session; one person cannot do both |
 | Solution architect | Cross-process and integration impact; needed for key design decisions |
@@ -167,10 +168,10 @@ Agenda pattern for a fit-to-standard session:
 | Wrap-up | short | Read back decisions, requirements, actions with owner and date; parking lot; next session |
 
 Time-boxing: size each process by the measured demo time and the length
-of its test script; many projects plan one to two processes per half day.
-The project's own plan prevails. Group processes run by the same business
-roles. If the user's plan holds more, say what to move. Give every block
-an end time and a named timekeeper.
+of its test script; SAP's guidance for public edition groups one to three
+related processes into a workshop. The project's own plan prevails. If
+the user's plan holds more, say what to move. Give every block an end
+time and a named timekeeper.
 
 Ground rules to print on the pack: standard first; one topic at a time;
 unresolved points go to the parking lot with an owner and a date; a

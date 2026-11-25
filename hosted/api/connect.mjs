@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { createHttpHandler } from "cloud-alm-mcp-server";
 import { digest, open } from "../lib/crypto.mjs";
 import { createFeedbackIntake } from "../lib/feedback.mjs";
-import { limited, json } from "../lib/http.mjs";
+import { createLimiter, limited, json, senderOf } from "../lib/http.mjs";
 import { metadata, oauth } from "../lib/oauth.mjs";
 
 async function reportFeedback(fields, serverVersion) {
@@ -46,6 +46,8 @@ const schemes = [{ type: "oauth2", scopes: ["calm.read"] }];
 export function createGateway({ origin, sql, exchange, reader }) {
   const feedback = createFeedbackIntake({ token: process.env.DIDRO_HOSTED_FEEDBACK_TOKEN });
   const live = createHttpHandler({ server, reader });
+  // Registering, submitting a key and exchanging a code: a person does each a few times, not hundreds.
+  const signIn = createLimiter({ max: 30, windowMs: 600_000 });
   const challenge = `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp", scope="calm.read"`;
   async function mcp(req) {
     if (req.method === "GET" && !req.headers.has("authorization"))
@@ -133,6 +135,8 @@ export function createGateway({ origin, sql, exchange, reader }) {
       if (doc && req.method === "GET") return json(doc);
       if (url.pathname === "/mcp") return await mcp(req);
       if (url.pathname === "/feedback") return await feedback(req);
+      if (url.pathname.startsWith("/oauth/") && req.method === "POST" && !signIn(senderOf(req)))
+        return json({ error: "slow_down" }, 429, { "retry-after": "600" });
       if (url.pathname.startsWith("/oauth/"))
         return await oauth(req, url, origin, sql, exchange);
       return json({ error: "not_found" }, 404);

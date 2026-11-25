@@ -35,7 +35,7 @@ Lifecycle to respect:
   use an orphan story to get a gap built without approval.
 - Feature: in specification → in realization → in testing → tested →
   approved for deployment → deployed. Do not create features from notes
-  unless the user asks: they cannot be deleted.
+  unless the user asks: the API cannot delete them.
 
 ## 2. Sort the notes
 
@@ -97,7 +97,7 @@ description and in the plan, add a tag if the project uses class tags
 requirements still need the field set.
 
 For a gap, capture what the approvers need, because gaps are reviewed
-against clean-core rules (in many projects by a Solution Standardization
+against clean-core rules (in SAP Activate by the Solution Standardization
 Board):
 
 - why the standard process does not cover it, and what was shown;

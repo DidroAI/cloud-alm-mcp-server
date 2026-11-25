@@ -424,7 +424,9 @@ function addSkills(clients: Client[], e: SetupEnv): string[] {
   return dirs.map(({ dir, clients: readers }) => {
     const who = readers.map((c) => LABEL[c]).join(", ");
     try {
-      return `${MARK.ok} ${"Skills".padEnd(14)} ${installSkills(dir)} installed in ${dir} (${who})`;
+      const installed = installSkills(dir);
+      const kept = skillNames().length - installed;
+      return `${MARK.ok} ${"Skills".padEnd(14)} ${installed} installed in ${dir} (${who})${kept ? `; ${kept} left as ${kept === 1 ? "it is" : "they are"}: a skill of the same name there is not ours` : ""}`;
     } catch (error) {
       return `${MARK.warn} ${"Skills".padEnd(14)} not installed in ${dir}: ${(error as Error).message}`;
     }

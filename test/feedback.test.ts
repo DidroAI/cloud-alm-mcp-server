@@ -63,7 +63,8 @@ test("a local installation reports to Didro by default, without a credential, an
   expect(localFeedback({ CALM_FEEDBACK_URL: "https://example.com/r" }, dir)).toMatchObject({ on: true, url: "https://example.com/r" });
   // Anything but a plain yes is off: a typo does not leave reports on.
   for (const value of ["off", "OFF", "0", "false", "no", "of", "disabled", "none"]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(false);
-  for (const value of ["on", "1", "true", "YES", " "]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(true);
+  // The extension and the plugin pass their switch as true or false; a placeholder left unfilled is no answer.
+  for (const value of ["on", "1", "true", "YES", " ", "${user_config.send_reports}"]) expect(localFeedback({ CALM_FEEDBACK: value }, dir).on).toBe(true);
   setLocalFeedback(false, dir);
   expect(localFeedback({}, dir).on).toBe(false);
   expect(localFeedbackSink({}, dir)).toBeUndefined();

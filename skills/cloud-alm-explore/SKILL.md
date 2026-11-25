@@ -83,11 +83,12 @@ documents attach to tasks, test cases and solution processes
 
 ### Requirements
 
-- **Lifecycle**: open (in refinement) → to be approved → approved (in
-  planning) → in realization → approved for deployment → done; rejected
-  or not relevant end it. The tools print the main status (open, in
-  progress, blocked, done, not relevant) with a sub-status in brackets,
-  and the approval state: read the step from both.
+- **Lifecycle**: open (in refinement) → to be approved (In Approval in
+  the UI) → approved (in planning) → in realization → approved for
+  deployment → done; rejected or not relevant end it. The tools print
+  the main status (open, in progress, blocked, done, not relevant) with
+  a sub-status in brackets, and the approval state: read the step from
+  both.
 - **Approval** (to be approved / approved / rejected) is the business's
   decision. Never set it from notes or your own judgement, only when the
   user names the requirement and the decision. It cannot be taken back
@@ -112,18 +113,18 @@ documents attach to tasks, test cases and solution processes
   no requirement (no approval step): a requirement without user stories
   is not automatically a finding.
 - A **feature** is the unit of deployment: it carries the **transports**
-  of the tasks it delivers. Features cannot be deleted.
+  of the tasks it delivers. The API cannot delete one; the UI only
+  before realization starts.
 
 | Tools print | Cloud ALM UI | What it tells you |
 | --- | --- | --- |
-| not planned | Not Planned | parked |
-| in specification | In Specification | being defined |
+| not planned | Not Planned | postponed |
+| in specification | In Specification | being specified |
 | in realization | In Implementation | build under way |
-| in testing | In Testing | under test |
+| in testing | In Testing | ready to be tested |
 | tested | Successfully Tested | test passed |
-| approved for deployment | Ready for Production | released for import to production; set in the Cloud ALM UI only |
-| deployed | Deployed | live in production |
-| confirmed | Confirmed | the last status after deployed |
+| approved for deployment | Ready for Production | required before production deployment; set in the Cloud ALM UI only |
+| deployed, confirmed | Deployed | deployment to production confirmed; the last status, no more changes |
 
 Filter features with the printed words (`status: "tested"`,
 `"approved for deployment"`). `calm_update` moves a feature only from in
@@ -143,8 +144,9 @@ that is not available here and that the user checks it in Cloud ALM.
 - A **test plan** is one test cycle (SIT 1, UAT, regression). The same
   test case has a separate result per plan: passed, failed, in progress,
   blocked, not run (in a plan, not executed), or "not in a test plan".
-- A **defect** is a deviation found in a test. The tools print it as open
-  (new), in progress, in progress (retest required), blocked or done, and
+- A **defect** is a deviation found in a test or in use. The tools print
+  it as open (new), in progress, in progress (retest required), blocked
+  or done, and
   `calm_update` sets open, in progress, blocked, retest or done. A defect
   has no "not relevant" status: a duplicate or rejected defect is closed
   as done with a comment saying why. A closed defect does not make the
@@ -156,8 +158,9 @@ that is not available here and that the user checks it in Cloud ALM.
 ### Documents and library
 
 - **Document types** are a fixed list (Solution Design Document,
-  Functional Specification, Configuration Guide, Test Document, Project
-  Documentation, …); `calm_create_document` names it and rejects any other.
+  Functional Specification, Configuration Guide, Technical Design
+  Document, Project Documentation, …); `calm_create_document` names it
+  and rejects any other.
 - A document's status is in progress, in review or released.
   `calm_list` and `calm_get` print type, title, links and content, not the
   status: read it with `calm_api` (`calm-documents/v1/Documents`) or ask.

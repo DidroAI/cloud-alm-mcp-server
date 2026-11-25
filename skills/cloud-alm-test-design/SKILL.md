@@ -80,7 +80,7 @@ limit" for business data the item does not give.
 standard test script (published with the scope item in SAP Signavio
 Process Navigator), not a blank page. It gives purpose, prerequisites
 (roles, master and organizational data), and test procedures per process
-step. Cloud ALM can usually take it as an upload in test preparation:
+step. Its Excel version uploads into Cloud ALM's Test Preparation app:
 the user does that, this server cannot. Then adapt it:
 
 - remove informational sections and steps not in the project's scope;

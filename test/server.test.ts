@@ -234,6 +234,19 @@ describe("tools", () => {
   });
 });
 
+test("on the loopback address the HTTP server answers to its own names only, and not to web pages", async () => {
+  const handler = createHttpHandler({ baseUrl: BASE_URL, reader: { fetch: fakeCloudAlm().fetch }, server: {}, allowedHosts: ["127.0.0.1:3333", "localhost:3333"] });
+  const post = (headers: Record<string, string>) =>
+    handler(new Request("http://127.0.0.1:3333/mcp", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}" }));
+  // A page that pointed its own name at this computer.
+  expect((await post({ host: "evil.example:3333", authorization: "Bearer t" })).status).toBe(403);
+  // A page on another site calling the local server.
+  expect((await post({ host: "127.0.0.1:3333", origin: "https://evil.example", authorization: "Bearer t" })).status).toBe(403);
+  // The server's own names pass on to the usual checks.
+  expect((await post({ host: "localhost:3333" })).status).toBe(401);
+  expect((await post({ host: "127.0.0.1:3333", origin: "http://localhost:3333" })).status).toBe(401);
+});
+
 describe("mode (b): streamable HTTP with a bearer per request", () => {
   const fake = fakeCloudAlm();
   const server = Bun.serve({

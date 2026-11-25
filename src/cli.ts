@@ -47,8 +47,11 @@ if (COMMANDS.includes(mode)) {
   const port = Number(process.env.PORT ?? 3333);
   const host = process.env.HOST ?? "127.0.0.1";
   const feedbackSink = feedbackSinkFromEnv(process.env);
+  // On the loopback address, only this computer's own names are answered (no DNS rebinding, no web pages).
+  const loopback = ["127.0.0.1", "localhost", "::1"].includes(host);
   const handler = createHttpHandler(
     {
+      ...(loopback ? { allowedHosts: [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`] } : {}),
       ...(feedbackSink ? { feedbackSink } : {}),
       ...(process.env.CALM_API_URL ? { baseUrl: process.env.CALM_API_URL } : {}),
       ...(process.env.CALM_WEB_URL ? { webUrl: process.env.CALM_WEB_URL } : {}),

@@ -6,6 +6,16 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-25
+
+- The Claude Desktop extension and the Claude Code plugin have a switch for the reports about tool problems, and the MCP Registry entry lists `CALM_FEEDBACK`. `feedback off` still turns them off for every copy on the computer.
+- `setup` and `uninstall` replace or remove only skill folders this package installed (they carry a marker file); a skill of the same name you wrote yourself stays, and setup says so.
+- `cloud-alm-mcp-server http` on the loopback address answers only to its own host names and refuses requests from web pages, so a page in the browser cannot reach it.
+- The hosted connector limits how often one sender can register, submit a key or exchange a code.
+- The skills' statements about SAP were checked against SAP's own pages and corrected where they differed.
+- New setup video and approval card screenshot, showing the setup questions and the current card.
+- SECURITY.md explains why the app entries carry no version, and how to pin one.
+
 ## [0.3.2] - 2026-11-25
 
 Fixes from a review of the code, the documentation, the tests and the skills.
