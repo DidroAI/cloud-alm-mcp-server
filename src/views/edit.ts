@@ -531,9 +531,10 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
           fields: [
             ...todo.map((part) => {
               // The card shows long text whole; the lines for the assistant shorten it.
-              const show = part.full ?? part.show;
-              const before = cardValue(show(p.before));
-              return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: cardValue(show(planned)) };
+              // A whole value is shown as it is: a title "None" is a title, not an empty field.
+              const show = (row: Row) => (part.full ? part.full(row) : cardValue(part.show(row)));
+              const before = show(p.before);
+              return { field: FIELD_NAMES[part.field] ?? part.field, ...(before ? { before } : {}), after: show(planned) };
             }),
             ...(p.extra ? [extraField(p.extra)] : []),
           ],

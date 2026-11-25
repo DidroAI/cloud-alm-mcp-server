@@ -171,7 +171,7 @@ export const APPROVAL_TOOL_NAMES = ["calm_approve", "calm_confirm"] as const;
 
 /** A dry run's answer without its "nothing sent" lead, for the user. */
 /** Longer values of a change are shortened in what the assistant reads. */
-const MODEL_FIELD_MAX = 1500;
+const MODEL_FIELD_MAX = 4000;
 
 const previewText = (text: string) => text.replace(/^Dry run[^\n]*?nothing sent\.\s*/, "").trim();
 
@@ -712,7 +712,8 @@ export function createServer(
     );
     const decide = async (id: string, nonce: string | undefined, approve: boolean, tool?: string): Promise<CallToolResult> => {
       try {
-        const p = take(id, subject, nonce, Date.now(), tool, options.chatHoldMs ?? CHAT_HOLD_MS);
+        // A rejection writes nothing: it is never held.
+        const p = take(id, subject, nonce, Date.now(), tool, approve ? (options.chatHoldMs ?? CHAT_HOLD_MS) : 0);
         if (!approve) settle(id, "rejected");
         if (!approve) return { structuredContent: { proposalId: id, tool: p.tool, decision: "rejected" }, content: [{ type: "text", text: "Rejected by the user; nothing was written." }] };
         const write = writes.get(p.tool);

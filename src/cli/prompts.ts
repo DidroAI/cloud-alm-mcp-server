@@ -91,7 +91,9 @@ export function pasteReader() {
      */
     feed(chunk: string): boolean | "enter" | "escape" | undefined {
       if (chunk === "\x03") return false;
-      if (chunk === "\x1b" && !held && !pasting) {
+      if (chunk === "\x1b" && !pasting) {
+        // A second Esc is a person cancelling, not a sequence cut in two.
+        if (held) return false;
         held = chunk;
         return "escape";
       }

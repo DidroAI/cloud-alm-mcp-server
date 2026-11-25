@@ -122,7 +122,7 @@ Environment:
   CALM_CONTENT_PRESENTATION=explicit
                      read tools open no card; the assistant shows its
                      final selection with calm_show
-  CALM_APPROVAL=card changes are approved in the approval card only,
+  CALM_APPROVAL=card stdio mode: changes are approved in the card only,
                      never by a yes in the chat (default: the card where
                      the app shows one with working buttons, else the chat)
   ${FEEDBACK_ENV}=off  no reports about tool problems from this client
@@ -292,9 +292,21 @@ async function init(io: Io, args: string[]): Promise<number> {
 type KeyInput = { text: string; origin: string; file?: string };
 
 /** Whether both of the key's addresses are SAP's: where it gets its token, and the API it then reads. */
-const SAP_HOST = /\.(hana\.ondemand\.com|cloud\.sap)$/;
-const notSap = (key: ServiceKey) =>
-  [new URL(key.uaa.url).hostname, new URL(key.endpoints.Api).hostname].find((host) => !SAP_HOST.test(host));
+const SAP_TOKEN_HOST = /\.authentication\.[a-z0-9-]+\.hana\.ondemand\.com$/;
+const SAP_API_HOST = /\.alm\.cloud\.sap$/;
+/** The address of the key that is not SAP's, if any. Apps anyone can deploy on SAP BTP do not count as SAP's. */
+function notSap(key: ServiceKey): string | undefined {
+  for (const [address, pattern] of [[key.uaa.url, SAP_TOKEN_HOST], [key.endpoints.Api, SAP_API_HOST]] as const) {
+    let host: string;
+    try {
+      host = new URL(address).hostname;
+    } catch {
+      return String(address).slice(0, 80);
+    }
+    if (!pattern.test(host)) return host;
+  }
+  return undefined;
+}
 
 /** A tenant's short name, for a choice: the first label of its token host. */
 const tenantName = (key: ServiceKey) => new URL(key.uaa.url).hostname.split(".")[0] ?? "";

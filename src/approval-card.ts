@@ -457,6 +457,15 @@ async function decide(decision) {
     return;
   }
   const text = (r?.content ?? []).map((c) => c?.text ?? "").join(NL);
+  // Held for a moment after the proposal (a card without its token): nothing is decided, the buttons come back.
+  if (r.isError && /^Too early/.test(text)) {
+    state("waiting");
+    say("Not yet. Try again in a few seconds.", "warn");
+    tick();
+    if (pending.expiresAt) ticking = setInterval(tick, 20000);
+    buttons(true);
+    return;
+  }
   if (r.isError) finish("closed", "Closed " + clock(Date.now()));
   else finish(decision === "approve" ? "approved" : "rejected", (decision === "approve" ? "Approved " : "Rejected ") + clock(Date.now()) + (decision === "approve" ? "" : ". Nothing was written."));
   // The answer is written for the agent (ids, tool names): people get a sentence, and the answer only when it failed.

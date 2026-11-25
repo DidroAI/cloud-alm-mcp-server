@@ -48,6 +48,7 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
     if (mine.length >= perSender || all.length >= perInstance) return json({ error: "slow_down" }, 429, { "retry-after": "3600" });
     // Every attempt counts against its sender; only reports passed on count against everyone.
     mine.push(at);
+    all.push(at);
     senders.set(sender, mine);
     if (senders.size > 5000) for (const [key, times] of senders) if (!fresh(times, at).length) senders.delete(key);
     let report;
@@ -56,8 +57,10 @@ export function createFeedbackIntake({ token, deliver = fetch, now = Date.now, p
     } catch (error) {
       if (error instanceof Response) throw error;
     }
-    if (!report) return json({ error: "invalid_report" }, 400);
-    all.push(at);
+    if (!report) {
+      all.splice(all.lastIndexOf(at), 1);
+      return json({ error: "invalid_report" }, 400);
+    }
     const response = await deliver(RECEIVER, {
       method: "POST",
       redirect: "error",

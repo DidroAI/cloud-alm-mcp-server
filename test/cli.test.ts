@@ -784,6 +784,13 @@ describe("setup", () => {
     expect(t.all()).toContain("alm.example.net, which is not an SAP address, so it was not used");
     expect(existsSync(savedKeyPath(t.io.env))).toBe(false);
     expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(false);
+    // An app anyone can deploy on SAP BTP is not SAP's either.
+    writeFileSync(path, JSON.stringify({ ...KEY, uaa: { ...KEY.uaa, url: "https://evil.cfapps.eu10.hana.ondemand.com" } }));
+    const app = io({ fetch: fakeFetch().fetcher });
+    app.io.setup = m.setup;
+    expect(await runCommand(app.io, ["setup"])).toBe(1);
+    expect(app.all()).toContain("evil.cfapps.eu10.hana.ondemand.com, which is not an SAP address");
+    writeFileSync(path, planted);
     // At a terminal the person is asked, with "choose another" first.
     const w = io({ fetch: fakeFetch().fetcher });
     const q = asked(["found", (options: Choice<boolean>[]) => { expect(options[0]?.label).toBe("Choose another key"); return false; }, undefined]);
@@ -841,6 +848,9 @@ describe("setup", () => {
     expect(pasteReader().feed("\x03")).toBe(false);
     // Esc alone only asks to cancel: it may be the first byte of a paste mark.
     expect(pasteReader().feed("\x1b")).toBe("escape");
+    const twice = pasteReader();
+    twice.feed("abc\x1b");
+    expect(twice.feed("\x1b")).toBe(false);
   });
 
   test("a hidden paste survives the terminal's chunking: a line break alone, marks cut in two, keys pressed before", () => {

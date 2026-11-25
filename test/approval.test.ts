@@ -438,6 +438,10 @@ test("a yes in the chat is not taken right after the proposal, so a card gets th
   // A card without its nonce is the chat by another name: held too.
   expect((await call("calm_approve", { id, decision: "approve" })).text).toContain("Too early");
   expect(posts).toEqual([]);
+  // A rejection is never held: it writes nothing and closes the proposal for the chat too.
+  const other = (await call("calm_create_task", { ...NEW_DEFECT, title: "Rejected at once" })).structured?.approval as { id: string };
+  expect((await call("calm_approve", { id: other.id, decision: "reject" })).text).toContain("Rejected by the user");
+  expect(statusOf(other.id, "local").status).toBe("rejected");
   // The refusal used nothing up.
   expect(statusOf(id, "local").status).toBe("pending");
 
@@ -460,16 +464,21 @@ test("CALM_APPROVAL=card accepts the card only; unset or chat also the chat", ()
 test("the card gets long text whole; the assistant gets its start and how much more there is", async () => {
   const { call } = await connect("ui", { approval: "prefer" });
   const description = `${"Credit exposure must include open deliveries. ".repeat(60)}LAST WORDS`;
+  const content = `${"Decided in the workshop. ".repeat(400)}LAST WORDS`;
   const r = await call("calm_create_task", { ...NEW_DEFECT, description });
   type Shown = { items: { fields: { field: string; after: string }[] }[] };
   const inCard = (r.meta?.[META_KEY] as { change: Shown }).change.items[0]?.fields.find((f) => f.field === "Description")?.after;
   expect(inCard).toBe(description);
   const forModel = (r.structured?.approval as { change: Shown }).change.items[0]?.fields.find((f) => f.field === "Description")?.after ?? "";
-  expect(forModel.length).toBeLessThan(description.length);
-  expect(forModel).toContain(`(+${description.length - 1500} more characters; the whole text is written)`);
+  expect(forModel).toBe(description);
   // The words for the chat say how much was left out, instead of ending in a bare ellipsis.
   expect(r.text).toContain(`(+${description.length - 600} more characters; the whole text is written)`);
   expect(r.text).not.toContain("LAST WORDS");
+  // Past a few thousand characters the assistant's copy is shortened; the card's never is.
+  const doc = await call("calm_create_document", { title: "Credit decisions", content });
+  const field = (c: Shown) => c.items[0]?.fields.find((f) => f.field === "Content")?.after ?? "";
+  expect(field((doc.meta?.[META_KEY] as { change: Shown }).change)).toBe(content);
+  expect(field((doc.structured?.approval as { change: Shown }).change)).toContain(`(+${content.length - 4000} more characters; the whole text is written)`);
 });
 
 test("a link or a tag keeps its own title; only an update or a delete is named after its item", async () => {

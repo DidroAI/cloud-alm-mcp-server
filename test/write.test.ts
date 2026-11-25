@@ -507,6 +507,13 @@ test("deleting defects raised from tests warns, and points to soft", async () =>
   expect(r.text).toContain("obsolete instead can be undone");
 });
 
+test("a title that reads like an empty value is shown as the title it is", async () => {
+  const { call } = await connect();
+  const r = await call("calm_update", { ids: ["3-3"], title: "None", dryRun: true });
+  const change = r.structured?.change as { items: { fields: { field: string; after: string }[] }[] };
+  expect(change.items[0]?.fields[0]?.after).toBe("None");
+});
+
 test("every write tool only proposes: nothing is sent before the user's yes, and the yes runs it once", async () => {
   const proposals: Record<string, Record<string, unknown>> = {
     calm_create_test_case: testCase,

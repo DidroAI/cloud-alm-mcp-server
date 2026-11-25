@@ -101,6 +101,23 @@ describe("the approval card", () => {
     expect(c.$("ok").disabled).toBe(true);
   });
 
+  test("held for a moment after the proposal, it keeps its buttons and says to try again", async () => {
+    let held = true;
+    const c = await card({ answer: (call) => call.name !== "calm_approve" ? { content: [], structuredContent: { status: "pending" } }
+      : held ? { isError: true, content: [{ type: "text", text: "Too early; nothing was written. Confirm only after their own message says yes." }] }
+      : { content: [{ type: "text", text: "Changed 3-3." }] } });
+    await c.show(proposal({}, false));
+    c.$("ok").click();
+    await c.settle();
+    expect(c.$("card").dataset.state).toBe("waiting");
+    expect(c.$("m").textContent).toBe("Not yet. Try again in a few seconds.");
+    expect(c.$("ok").disabled).toBe(false);
+    held = false;
+    c.$("ok").click();
+    await c.settle();
+    expect(c.$("card").dataset.state).toBe("approved");
+  });
+
   test("an expired proposal has no live buttons", async () => {
     const c = await card();
     await c.show(proposal({ expiresAt: new Date(Date.now() - 1000).toISOString() }));
