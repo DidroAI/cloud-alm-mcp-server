@@ -77,8 +77,20 @@ export function createGateway({ origin, base = "", sql, exchange, reader, record
   });
   const feedback = createFeedbackIntake({ token, save: reports?.save, note });
   const live = createHttpHandler({ server, reader });
-  // Registering, submitting a key and exchanging a code: a person does each a few times, not hundreds.
+  // Opening the sign-in page and submitting a key come from a person's browser: a few times, not hundreds.
+  // Registration and the code exchange come from the app's servers, which many users share, so they are not limited by sender.
   const signIn = createLimiter({ max: 30, windowMs: 600_000 });
+  // Only tools this server has are counted by name.
+  let known;
+  const toolNames = () =>
+    (known ??= discovery(new Request(new URL("/mcp", origin), {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: "Bearer metadata-only", "x-calm-api-url": "https://discovery.alm.cloud.sap/api" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    }))
+      .then((res) => res.json())
+      .then((data) => new Set((data.result?.tools ?? []).map((tool) => tool.name)))
+      .catch(() => ((known = undefined), new Set())));
   const challenge = `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource${base}/mcp", scope="calm.read"`;
   // The MCP handler serves /mcp, whatever this connector's own path is.
   const inner = new URL("/mcp", origin).href;
@@ -102,6 +114,7 @@ export function createGateway({ origin, base = "", sql, exchange, reader, record
     const auth = req.headers.get("authorization");
     let grant, app;
     if (auth) {
+
       const token = /^Bearer ([\w-]{43})$/i.exec(auth)?.[1];
       const [row] = token
         ? await sql`SELECT id,encrypted_grant,redirect_uri FROM connections WHERE access_hash=${digest(token)} AND expires_at>now()`
@@ -152,11 +165,11 @@ export function createGateway({ origin, base = "", sql, exchange, reader, record
     );
     if (grant && note && msg?.method === "tools/call") {
       const name = msg.params?.name;
-      const tool = typeof name === "string" && TOOL.test(name) ? name : "other";
+      const named = toolNames().then((names) => (typeof name === "string" && TOOL.test(name) && names.has(name) ? name : "other"));
       const failed = res.headers.get("content-type")?.includes("application/json")
         ? res.clone().json().then((data) => Boolean(data?.error || data?.result?.isError), () => !res.ok)
         : Promise.resolve(!res.ok);
-      failed.then((bad) => note({ kind: "tool_call", tool, outcome: bad ? "error" : "ok", app }));
+      Promise.all([named, failed]).then(([tool, bad]) => note({ kind: "tool_call", tool, outcome: bad ? "error" : "ok", app }));
     }
     if (
       msg.method === "tools/list" &&
@@ -190,7 +203,7 @@ export function createGateway({ origin, base = "", sql, exchange, reader, record
       }
       if (path.startsWith("/oauth/")) {
         area = "oauth";
-        if (req.method === "POST" && !signIn(senderOf(req))) {
+        if (path === "/oauth/authorize" && !signIn(senderOf(req))) {
           note?.({ kind: "rate_limited", outcome: "sign_in" });
           return json({ error: "slow_down" }, 429, { "retry-after": "600" });
         }

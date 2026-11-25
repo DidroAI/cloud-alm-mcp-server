@@ -9,6 +9,7 @@ All notable changes to this package. The format follows
 - Reports about tool problems go to `https://docs.didro.ai/cloud-alm/feedback`. Earlier versions keep posting to `https://calm.didro.ai/feedback`, which still takes them.
 - Didro's hosted connector moved to `https://docs.didro.ai/cloud-alm/connect/mcp`; a connection made at the former address has to be added again. It now counts sign-ins and tool calls per hour (tool name, outcome, app, version; no tenant, address or content), and says so on the sign-in page and in PRIVACY.md.
 - The hosted connector can be mounted under a path of an existing site and can store reports in its own deployment.
+- Hosted connector hardening after a review: a separate derived key for client ids, sign-in flows, stored grants and client secrets (existing registrations must be made again); only tools the server has are counted by name; the per-sender limit covers the sign-in page and key upload, not the registration and code exchange that the apps' shared servers perform; credentials that do not decode are refused instead of failing; the sign-in page warns against continuing from a link someone else sent.
 
 ## [0.3.3] - 2026-11-25
 

@@ -138,7 +138,7 @@ function authorize({ origin, base, note }, params) {
       <script type="module" src="${base}/key-upload.js"></script>
       <input type="hidden" name="csrf" value="${csrf}">
       <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
-      <p class="hint">Anyone using this connection can read the records your key allows.</p>
+      <p class="hint">Anyone using this connection can read the records your key allows. Continue only if you started this from ${platform(redirect)} yourself a moment ago, not from a link someone sent you.</p>
       ${note ? '<p class="hint">Didro counts sign-ins and tool calls by tool name, to see what is used. The counts carry no tenant, no address and no content.</p>' : ""}
       ${process.env.DIDRO_HOSTED_FEEDBACK_TOKEN ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
       <button class="button" type="submit">Connect to ${platform(redirect)}</button>
@@ -244,10 +244,15 @@ function authenticate(req, p) {
     const decoded = Buffer.from(basic.slice(6), "base64").toString();
     const sep = decoded.indexOf(":");
     if (sep < 1) fail("invalid_client", 401);
-    const basicId = decodeURIComponent(decoded.slice(0, sep));
+    let basicId;
+    try {
+      basicId = decodeURIComponent(decoded.slice(0, sep));
+      secret = decodeURIComponent(decoded.slice(sep + 1));
+    } catch {
+      fail("invalid_client", 401);
+    }
     if (id && id !== basicId) fail("invalid_client", 401);
     id = basicId;
-    secret = decodeURIComponent(decoded.slice(sep + 1));
   }
   const { method } = unpack("client", id);
   const used = basic

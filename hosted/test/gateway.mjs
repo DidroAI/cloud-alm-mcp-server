@@ -145,6 +145,10 @@ for (const base of ["", "/cloud-alm/connect"])
     const auth = { authorization: "Bearer " + token.access_token };
     const called = await (await rpc({ method: "tools/call", params: { name: "calm_projects", arguments: {} } }, auth)).json();
     assert.match(JSON.stringify(called), /Synthetic tenant project/);
+    await rpc({ method: "tools/call", params: { name: "calm_made_up_name", arguments: {} } }, auth);
+    // Credentials that do not decode are a refusal, not a server error.
+    const garbled = await req(base + "/oauth/token", { method: "POST", headers: { authorization: "Basic " + Buffer.from("%zz:%zz").toString("base64") }, body: "grant_type=authorization_code" });
+    assert.equal(garbled.status, 401);
     assert.equal((await rpc({ method: "tools/list" }, { authorization: "Bearer " + randomBytes(32).toString("base64url") })).status, 401);
 
     await req(base + "/oauth/revoke", { method: "POST", body: new URLSearchParams({ token: token.access_token, client_id: client.client_id }) });
@@ -161,13 +165,19 @@ for (const base of ["", "/cloud-alm/connect"])
     await new Promise((resolve) => setTimeout(resolve, 20));
     const seen = events.map((e) => [e.kind, e.outcome ?? "", e.tool ?? "", e.app ?? ""].join("/"));
     for (const expected of ["register///Claude", "sign_in_page///Claude", "sign_in/ok//Claude", "token/refused//", "token/ok//Claude",
-      "tool_call/ok/calm_projects/Claude", "invalid_token///", "revoke///", "report/accepted//", "report/invalid//"])
+      "tool_call/ok/calm_projects/Claude", "tool_call/error/other/Claude", "invalid_token///", "revoke///", "report/accepted//", "report/invalid//"])
       assert.ok(seen.includes(expected), expected + " in " + seen.join(" "));
     // Counts say nothing about who or what: only these four fields, from short fixed lists.
     for (const event of events) {
       assert.deepEqual(Object.keys(event).filter((k) => !["kind", "outcome", "tool", "app"].includes(k)), []);
-      assert.doesNotMatch(JSON.stringify(event), /synthetic|eu20|docs\.test/);
+      assert.doesNotMatch(JSON.stringify(event), /synthetic|eu20|docs\.test|made_up/);
     }
+    assert.ok(!seen.some((e) => e.startsWith("server_error")), seen.join(" "));
+    // The sign-in page is for people: one sender cannot open it without end.
+    let last;
+    for (let i = 0; i < 31; i++) last = await req(base + "/oauth/authorize?" + query, { headers: { "x-real-ip": "203.0.113.9" } });
+    assert.equal(last.status, 429);
+    assert.equal((await req(base + "/oauth/register", { method: "POST", headers: { "x-real-ip": "203.0.113.9" }, body: JSON.stringify({ redirect_uris: [redirect], token_endpoint_auth_method: "none" }) })).status, 201);
   });
 
 test("a failing counter never fails a request", async () => {

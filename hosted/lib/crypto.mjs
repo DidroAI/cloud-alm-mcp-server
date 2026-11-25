@@ -1,4 +1,5 @@
 import {
+  hkdfSync,
   randomBytes,
   createCipheriv,
   createDecipheriv,
@@ -17,13 +18,22 @@ function key() {
     throw new Error("Invalid encryption configuration");
   return Buffer.from(process.env.CONNECT_KEY, "hex");
 }
+// One key per use, derived from the configured one: client ids, sign-in flows, stored grants and client secrets never share a key.
+const derived = new Map();
+function keyFor(use) {
+  const root = key();
+  const name = root.toString("hex") + "/" + use;
+  if (!derived.has(name)) derived.set(name, Buffer.from(hkdfSync("sha256", root, Buffer.alloc(0), "cloud-alm-connect/" + use, 32)));
+  return derived.get(name);
+}
+const useOf = (purpose) => purpose.split("/")[0];
 export const clientSecret = (id) =>
-  createHmac("sha256", key())
+  createHmac("sha256", keyFor("client-secret"))
     .update("client-secret/" + id)
     .digest("base64url");
 export function seal(purpose, value) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key(), iv);
+  const cipher = createCipheriv("aes-256-gcm", keyFor(useOf(purpose)), iv);
   cipher.setAAD(Buffer.from(purpose));
   const data = Buffer.concat([
     cipher.update(JSON.stringify(value)),
@@ -33,7 +43,7 @@ export function seal(purpose, value) {
 }
 export function open(purpose, text) {
   const bytes = Buffer.from(text, "base64url");
-  const cipher = createDecipheriv("aes-256-gcm", key(), bytes.subarray(0, 12));
+  const cipher = createDecipheriv("aes-256-gcm", keyFor(useOf(purpose)), bytes.subarray(0, 12));
   cipher.setAAD(Buffer.from(purpose));
   cipher.setAuthTag(bytes.subarray(12, 28));
   return JSON.parse(
