@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "cloud-alm-mcp-server",
   "display_name": "Cloud ALM by Didro",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Ask Claude about your SAP Cloud ALM project: requirements, features, test cases, defects, processes and landscape. Every write waits for your approval.",
   "long_description": "Connects Claude to SAP Cloud ALM through your own API service key. Read tools cover projects, requirements, user stories, features, documents, test cases and results, defects, processes, landscape and analytics. Write tools appear only when the key's scopes allow them, and each write is shown to you for approval before anything changes in Cloud ALM.\n\nWhen Claude runs into a problem with one of the tools, it can send Didro a short report: the tool's name, the outcome and one or two sentences written by Claude; the server attaches no Cloud ALM records, credentials or chat text. To turn this off, switch off \"Send Didro short reports about tool problems\" in the extension's settings.\n\nYou need a service key of the \"SAP Cloud ALM API\" instance in SAP BTP (a JSON file). Choose that file when you install the extension.\n\nAn independent open-source project by Didro, not affiliated with or endorsed by SAP.",
   "author": {

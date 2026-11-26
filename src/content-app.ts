@@ -3,8 +3,8 @@ import { appBundle } from "./approval.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
 import { sapLogo } from "./sap-logo.js";
 
-export const CONTENT_URI = "ui://cloud-alm/content-v3.html";
-export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
+export const CONTENT_URI = "ui://cloud-alm/content-v4.html";
+export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v3.html", "ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
 export const CONTENT_TOOLS = new Set([
   "calm_projects",
   "calm_overview",
@@ -96,6 +96,33 @@ h1 {
 .detail h3 {
   font-size: 13px;
   margin: 14px 0 4px;
+}
+/* A record's description: its own section, paragraphs and lists as written in Cloud ALM. */
+.prose {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--color-background-secondary, light-dark(#f4f7fa, #24313d));
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.prose h3 {
+  margin: 0 0 8px;
+}
+.detail .prose p {
+  margin: 0 0 10px;
+}
+.prose ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.prose li {
+  margin: 2px 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
 }
 .detail p {
   margin: 4px 0;
@@ -345,10 +372,29 @@ function table(headers, rows, title) {
   wrap.append(grid);
   return wrap;
 }
+/**
+ * The description as a section: a line of its own is a paragraph, lines that start with "- " or "* " are a list,
+ * as Cloud ALM's editor wrote them. Text only, through textContent.
+ */
+function prose(text) {
+  const box = node("section", null, "prose");
+  box.append(node("h3", "Description"));
+  let list = null;
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) { list = null; continue; }
+    const bullet = /^[-*\u2022]\s+(.*)$/.exec(line);
+    if (bullet) {
+      if (!list) { list = node("ul"); box.append(list); }
+      list.append(node("li", bullet[1]));
+    } else {
+      list = null;
+      box.append(node("p", line));
+    }
+  }
+  return box;
+}
 function appendDetails(body, item) {
-  if (item.description) body.append(node("p", item.description, "description"));
-  if (item.steps?.length) body.append(table(["Step", "Action", "Expected result"],
-    item.steps.map(step => [step.step, step.do, step.expect]), "Test steps"));
   const fields = [
     ["Priority", item.priority && cap(item.priority)], ["Classification", item.fields?.classification && cap(item.fields.classification)],
     ["Approval", item.fields?.approval && cap(item.fields.approval)], ["Assignee", item.fields?.assignee],
@@ -366,6 +412,10 @@ function appendDetails(body, item) {
     }
     body.append(facts);
   }
+  // As in Cloud ALM: the key fields first, then the description, then the steps.
+  if (item.description) body.append(prose(item.description));
+  if (item.steps?.length) body.append(table(["Step", "Action", "Expected result"],
+    item.steps.map(step => [step.step, step.do, step.expect]), "Test steps"));
   if (item.results?.length) {
     body.append(node("h3", "Execution results"), table(["Plan", "Result", "Steps passed", "Date"],
       item.results.map(r => [r.plan, badge(r.status), r.passed + " / " + r.actions, r.date]), "Execution results"));

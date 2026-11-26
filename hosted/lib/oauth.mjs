@@ -133,21 +133,18 @@ function authorize({ origin, base, note, reportsOn }, params) {
   note?.({ kind: "sign_in_page", app: platform(redirect) });
   return page(
     "Connect your tenant",
-    `<p class="intro">Give <strong>${platform(redirect)}</strong> read access to your SAP Cloud ALM tenant.</p>
+    `<p class="intro">Give <strong>${platform(redirect)}</strong> read access to your SAP Cloud ALM tenant, for up to one hour.</p>
     <form class="panel" method="post" action="${base}/oauth/authorize" enctype="multipart/form-data">
       <fieldset class="upload-field"><legend>BTP service key</legend>
-      <p class="hint" id="key-hint">Choose the JSON file you downloaded from SAP BTP.</p>
+      <p class="hint" id="key-hint">The JSON file you downloaded from SAP BTP.</p>
       <div id="key-upload"></div>
       <input aria-label="BTP service key JSON" id="key" type="file" name="key" accept=".json,application/json" aria-describedby="key-hint" required></fieldset>
       <script type="module" src="${base}/key-upload.js"></script>
       <input type="hidden" name="csrf" value="${csrf}">
-      <dl><div><dt>Access</dt><dd>Read only</dd></div><div><dt>Session length</dt><dd>Up to one hour</dd></div></dl>
-      <p class="hint">Anyone using this connection can read the records your key allows. Continue only if you started this from ${platform(redirect)} yourself a moment ago, not from a link someone sent you.</p>
-      ${note ? '<p class="hint">Didro counts sign-ins and tool calls by tool name, to see what is used. The counts carry no tenant, no address and no content.</p>' : ""}
-      ${reportsOn ? '<p class="hint">Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>' : ""}
+      <p class="hint">Continue only if you started this from ${platform(redirect)} yourself.</p>
       <button class="button" type="submit">Connect to ${platform(redirect)}</button>
     </form>
-    <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The app discards the file and encrypts the temporary SAP token in the session database. ${platform(redirect)} receives a separate connector token.</p></details>`,
+    <details><summary>What happens to my service key?</summary><p>Didro reads the file in memory and sends its client credentials to SAP. The file is then discarded, and the temporary SAP token is kept encrypted for the session. ${platform(redirect)} receives a separate connector token. Anyone using this connection can read the records your key allows.</p>${note ? "<p>Didro counts sign-ins and tool calls by tool name, to see what is used. The counts carry no tenant, no address and no content.</p>" : ""}${reportsOn ? "<p>Your assistant can send Didro short reports about tool problems. Reports should omit tenant records, credentials and chat text.</p>" : ""}</details>`,
     { "set-cookie": cookie + "=" + flow + cookieOptions + "; Max-Age=600" },
     base,
   );

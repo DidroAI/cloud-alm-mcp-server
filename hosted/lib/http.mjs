@@ -63,7 +63,7 @@ export async function limited(request, limit) {
 export function page(title, content, headers = {}, base = "") {
   return new Response(
     `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><link rel="icon" href="${base}/assets/favicon.png"><link rel="stylesheet" href="${base}/dropzone.css"><link rel="stylesheet" href="${base}/connect.css">
-    <header class="masthead"><a class="brand" href="https://didro.ai" aria-label="Didro"><img src="${base}/assets/logo-didro.png" alt="Didro"></a><span>SAP Cloud ALM</span></header>
+    <header class="masthead"><a class="brand" href="https://didro.ai" aria-label="Didro"><img src="${base}/assets/logo-didro.png" alt="Didro"></a><span>Cloud ALM</span></header>
     <main class="consent"><h1>${title}</h1>${content}<p class="hint about">Cloud ALM by Didro is an independent open-source project, not affiliated with or endorsed by SAP.</p></main></html>`,
     {
       headers: {

@@ -162,7 +162,7 @@ test("a card that changes gets a new address", () => {
   }).toEqual({
     "ui://cloud-alm/approve-v5.html": "0a3b7d3cd6c575e9",
     "ui://cloud-alm/overview-v3.html": "c037ff94a43df9a9",
-    "ui://cloud-alm/content-v3.html": "24af212ef374de37",
+    "ui://cloud-alm/content-v4.html": "be006511f033bf8a",
   });
   // The address before stays answerable, and no address is listed twice.
   const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];

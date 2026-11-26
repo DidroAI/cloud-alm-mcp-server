@@ -6,6 +6,13 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-11-26
+
+- Record card: the description has its own section, under the key fields as in Cloud ALM, with paragraphs and lists as they were written instead of one block of text. The card has a new address; the earlier ones keep answering.
+- Hosted connector:
+  - it answers nothing without a sign-in, the first handshake included. Claude used to see an open server and suggest "No sign-in", which connected a connector that could read nothing; it now detects the sign-in;
+  - the sign-in page is shorter: one line on what the app gets, the file, one warning and the button. What happens to the key, the usage counts and the reports are in the "What happens to my service key?" section.
+
 ## [0.3.7] - 2026-11-25
 
 - The text the assistant reads has no middle dots any more, so it stops copying them into its answers. The parts of a record line are separated by commas (`3-3 user story, open, priority high, "Credit exposure shown in the order", unassigned`), groups that hold a comma list of their own by semicolons (`Test cases: 3 manual (2 prepared), 1 automated; test plans: 1`), and a test case's result is named (`result: failed, 1 of 2 steps passed in UAT cycle 1`). The same goes for the server's instructions and the tool descriptions. The structured data is unchanged; a script that read the text lines should read that instead.
