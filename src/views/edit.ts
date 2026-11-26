@@ -7,6 +7,7 @@
  * changed after create, test cases cannot be tagged).
  */
 import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js";
+import { writeResult, writeFailure, type WriteItemOutcome } from "../write-outcome.js";
 import { PATHS } from "../calm/client.js";
 import { bool, num, plainText, type Row, str } from "../calm/values.js";
 import type { CloudAlmWriter } from "../calm/writer.js";
@@ -14,6 +15,8 @@ import {
   afterWrite,
   dry,
   dryNote,
+  missingCreatedId,
+  linkCreatedRecord,
   NOTHING_TO_DO,
   similarTitles,
   gone,
@@ -230,7 +233,7 @@ type Planned = {
   notes: string[];
   /** Done after the PATCH (test case activities). */
   /** A step after the fields. `detail` is its whole text for the approval card, where `line` shortens it. */
-  extra?: { line: string; detail?: string; run: () => Promise<string> };
+  extra?: { line: string; detail?: string; run: () => Promise<string | WriteItemOutcome> };
 };
 
 const changed = (row: Row, part: Part) => Object.entries(part.body).some(([k, v]) => (row[k] ?? null) !== v);
@@ -396,7 +399,7 @@ async function planTestCase(
           writer.post("calm-testmanagement/v1/Activities", { parent_ID: tc.id, title: add.title, sequence, isInScope: true }),
         )) as { uuid?: string } | null;
         const activityId = str(created?.uuid);
-        if (!activityId) return `activity "${add.title}" sent, but Cloud ALM did not return its id; its steps were not added`;
+        if (!activityId) return { item: add.title, status: "partial", detail: `Activity "${add.title}" sent, but Cloud ALM did not return its id; its steps were not added` };
         let steps = 0;
         try {
           for (const [j, s] of add.steps.entries()) {
@@ -412,13 +415,14 @@ async function planTestCase(
           }
         } catch (error) {
           const why = error instanceof CloudAlmError ? error.reason : "unexpected error";
-          return `Created activity "${short(add.title, 60)}" (${activityId}). Confirmed ${steps} of ${add.steps.length} steps before step ${steps + 1} failed: ${why}. Read the activity before adding any remaining steps.`;
+          return { item: add.title, status: "partial", detail: `Created activity "${short(add.title, 60)}" (${activityId}). Confirmed ${steps} of ${add.steps.length} steps before step ${steps + 1} failed: ${why}. Read the activity before adding any remaining steps.` };
         }
         const back = await afterWrite("reading it back", () =>
           readRow(calm, `${PATHS.manualTestCases}/${tc.id}`, { $expand: "toActivities($expand=toActions)" }),
         );
         const count = typeof back === "string" ? back : `${activitiesOf(back).length} activities stored`;
-        return `activities: ${activitiesOf(before).length} → added "${short(add.title, 60)}" with ${steps} steps (${count})`;
+        const detail = `activities: ${activitiesOf(before).length} → added "${short(add.title, 60)}" with ${steps} steps (${count})`;
+        return typeof back === "string" ? { item: add.title, status: "unconfirmed", detail } : detail;
       },
     };
   }
@@ -454,13 +458,13 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
   if (plans.length && plans.every(noop))
     return `${NOTHING_TO_DO} ${plans.map((p) => `${itemLabel(p.item)} already has ${p.parts.map((part) => `${part.field} ${part.show(p.before)}`).join(", ")}`).join("; ")}.`;
   if (isDry) lines.push(`${dryNote(o)} Would change:`);
-  let failed = 0;
   let firstError: unknown;
-  let partial = false;
+  const outcomes: WriteItemOutcome[] = [];
   for (const p of plans) {
     const todo = p.parts.filter((part) => changed(p.before, part));
     const head = itemLabel(p.item);
     if (!todo.length && !p.extra) {
+      outcomes.push({ item: head, status: "unchanged", detail: "Already had the requested values." });
       lines.push(`${head}: no change (${p.parts.map((part) => `${part.field} already ${part.show(p.before)}`).join(", ")})`);
       continue;
     }
@@ -481,6 +485,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
     }
     const out: string[] = [];
     let patched = false;
+    let status: WriteItemOutcome["status"] = "written";
     try {
       if (todo.length) {
         await needing(p.scope, () => writer.patch(p.path, body, p.ifMatch ? { ifMatch: p.ifMatch } : {})).catch((error) => {
@@ -494,29 +499,37 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
         );
         for (const part of todo) {
           if (typeof after === "string") {
+            status = "unconfirmed";
             out.push(`  ${lineOf(part, p.before, plannedRow)} (sent; ${after})`);
             continue;
           }
           const kept = !(part.stored ? part.stored(after) : Object.entries(part.body).every(([k, v]) => (after[k] ?? null) === v));
+          if (kept) status = "partial";
           out.push(`  ${lineOf(part, p.before, after)}${kept ? ` (asked for ${part.show(plannedRow)}; Cloud ALM stored this)` : ""}`);
         }
       }
-      if (p.extra) out.push(`  ${await p.extra.run()}`);
+      if (p.extra) {
+        const extra = await p.extra.run();
+        if (typeof extra !== "string") status = extra.status;
+        out.push(`  ${typeof extra === "string" ? extra : extra.detail}`);
+      }
+      outcomes.push({ item: head, status, detail: out.join("\n").trim() });
       lines.push(`${head}:`, ...out);
     } catch (error) {
       const why = error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error";
       if (patched) {
         // The fields were written; only the step after them failed.
         lines.push(`${head}:`, ...out, `  ${p.extra?.line ?? "the next step"}: not confirmed (${why}); the changes above were written. Check the item before trying that part again.`);
-        partial = true;
+        outcomes.push({ item: head, status: "partial", detail: `Fields written. ${p.extra?.line ?? "Follow-up"} not confirmed: ${why}` });
         continue;
       }
-      failed++;
       firstError ??= error;
-      lines.push(`${head}: update failed (${why})`);
+      const row = writeFailure(head, error);
+      outcomes.push(row);
+      lines.push(`${head}: update ${row.status} (${why})`);
     }
   }
-  if (failed && failed === plans.length && !partial) throw firstError;
+  if (firstError && outcomes.every(row => row.status === "failed" || row.status === "unchanged")) throw firstError;
   if (isDry) {
     // The same plan as the text, as data for the approval card.
     const change: Change = {
@@ -544,7 +557,7 @@ export async function update(calm: CloudAlm, writer: CloudAlmWriter, input: Upda
     };
     return { text: lines.join("\n"), data: { change } };
   }
-  return lines.join("\n");
+  return writeResult(lines.join("\n"), outcomes);
 }
 
 /** Field names as the Cloud ALM UI shows them. */
@@ -579,7 +592,7 @@ function extraField(extra: { line: string; detail?: string }): { field: string; 
 
 // ---- calm_delete -----------------------------------------------------------
 
-type DeletePlan = { item: Item; state?: Row; line: string; run: () => Promise<string> };
+type DeletePlan = { item: Item; state?: Row; line: string; run: () => Promise<string | WriteItemOutcome> };
 
 /**
  * Delete tasks (or with `soft`, mark them obsolete, which SAP recommends),
@@ -644,24 +657,30 @@ export async function remove(
     return { text, data: { change } };
   }
   const lines: string[] = [];
-  let failed = 0;
+  const outcomes: WriteItemOutcome[] = [];
   let firstError: unknown;
   for (const p of plans) {
     try {
-      lines.push(await p.run());
+      const result = await p.run();
+      const row: WriteItemOutcome = typeof result === "string" ? { item: itemLabel(p.item), status: "written", detail: result } : result;
+      outcomes.push(row);
+      lines.push(row.detail);
     } catch (error) {
-      failed++;
       firstError ??= error;
-      lines.push(`${itemLabel(p.item)}: not deleted (${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error"})`);
+      const row = writeFailure(itemLabel(p.item), error);
+      outcomes.push(row);
+      lines.push(`${row.item}: deletion ${row.status} (${row.detail})`);
     }
   }
-  if (failed === plans.length) throw firstError;
-  return lines.join("\n");
+  if (firstError && outcomes.every(row => row.status === "failed" || row.status === "unchanged")) throw firstError;
+  return writeResult(lines.join("\n"), outcomes);
 }
 
 const goneNote = async (what: string, read: () => Promise<unknown>) => {
   const check = await gone(read);
-  return check === true ? `Deleted ${what}.` : check === false ? `${what}: Cloud ALM accepted the delete, but it still reads back` : `Deleted ${what} (read back ${check}).`;
+  if (check === true) return `Deleted ${what}.`;
+  const detail = check === false ? `${what}: Cloud ALM accepted the delete, but it still reads back` : `Deletion accepted for ${what} (${check}).`;
+  return { item: what, status: "unconfirmed" as const, detail };
 };
 
 async function deletePlan(
@@ -677,14 +696,16 @@ async function deletePlan(
     const row = await readRow(calm, path);
     if (input.soft) {
       if (row.obsolete === true)
-        return { item, state: row, line: `${name}: already obsolete, nothing to do`, run: async () => `${name}: already obsolete.` };
+        return { item, state: row, line: `${name}: already obsolete, nothing to do`, run: async () => ({ item: name, status: "unchanged", detail: `${name}: already obsolete.` }) };
       return {
         item, state: row,
         line: `mark ${name} obsolete (soft delete: it stays, with its links and history; obsolete: no → yes)`,
         run: async () => {
           await needing("tasks.write", () => writer.patch(path, { obsolete: true }));
           const back = await afterWrite("reading it back", () => readRow(calm, path));
-          return typeof back === "string" ? `Marked ${name} obsolete (${back}).` : `Marked ${name} obsolete: obsolete ${back.obsolete === true ? "yes" : "no"}.`;
+          if (typeof back === "string" || back.obsolete !== true)
+            return { item: name, status: "unconfirmed", detail: typeof back === "string" ? back : "SAP still shows the item as active." };
+          return `Marked ${name} obsolete: obsolete yes.`;
         },
       };
     }
@@ -839,26 +860,21 @@ export async function createFeature(
   }
   const created = (await needing("features.write", () => writer.post(PATHS.features, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
-  if (!id)
-    return `Cloud ALM accepted the feature "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
-  const linked: string[] = [];
-  const failed: string[] = [];
-  for (const t of tasks) {
-    try {
-      await needing("tasks.write", () => writer.post(`${PATHS.tasks}/${t.id}/featureAssignments`, { featureId: id }));
-      linked.push(t.displayId ?? t.id);
-    } catch (error) {
-      failed.push(`${t.displayId}: ${error instanceof CloudAlmError ? error.reason : "failed"}`);
-    }
-  }
+  if (!id) return missingCreatedId(`feature "${title}"`);
+  const { linked, outcomes } = await linkCreatedRecord(tasks, task =>
+    needing("tasks.write", () => writer.post(`${PATHS.tasks}/${task.id}/featureAssignments`, { featureId: id })));
   const back = await afterWrite("reading it back", () => readRow(calm, `${PATHS.features}/${id}`));
   const stored = typeof back === "string" ? back : `${featureStatus(str(back.statusCode))}, priority ${priorityText(back.priorityCode)}`;
-  return [
+  const issues = outcomes.filter(row => row.status !== "written");
+  const text = [
     `Created ${str(created?.displayId) ?? ""} feature "${title}" [${id}]: ${stored}${linked.length ? `; linked to ${linked.join(", ")}` : ""}.`,
-    failed.length ? `Links that failed: ${failed.join("; ")}` : "",
+    ...issues.map(row => `${row.item}: ${row.status} (${row.detail})`),
   ]
     .filter(Boolean)
     .join("\n");
+  outcomes.unshift({ item: created?.displayId ?? id, status: "written", detail: "Created." });
+  if (typeof back === "string") outcomes.push({ item: "Read back", status: "unconfirmed", detail: back });
+  return writeResult(text, outcomes);
 }
 
 // ---- calm_create_document --------------------------------------------------
@@ -944,12 +960,21 @@ export async function createDocument(
   }
   const created = (await needing("documents.write", () => writer.post(PATHS.documents, body))) as { uuid?: string; displayId?: string } | null;
   const id = str(created?.uuid);
-  if (!id)
-    return `Cloud ALM accepted the document "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
+  if (!id) return missingCreatedId(`document "${title}"`);
   const back = await afterWrite("reading it back", () => readRow(calm, `${PATHS.documents}/${id}`, { $expand: "toTaskAssignments" }));
   const stored =
     typeof back === "string"
       ? back
       : `${documentType(str(back.documentTypeCode))}, ${DOCUMENT_STATUS_NAME[num(back.statusCode) ?? 0] ?? "?"}, linked to ${Array.isArray(back.toTaskAssignments) ? back.toTaskAssignments.length : 0} tasks`;
-  return `Created ${str(created?.displayId) ?? ""} document "${title}" [${id}]: ${stored}.`;
+  const text = `Created ${str(created?.displayId) ?? ""} document "${title}" [${id}]: ${stored}.`;
+  const outcomes: WriteItemOutcome[] = [{ item: created?.displayId ?? id, status: "written", detail: "Document created." }];
+  if (typeof back === "string") outcomes.push({ item: "Read back", status: "unconfirmed", detail: back });
+  else if (tasks.length) {
+    const assignments = Array.isArray(back.toTaskAssignments) ? back.toTaskAssignments : [];
+    for (const task of tasks) {
+      if (!assignments.some(row => row && typeof row === "object" && str(row.id)?.toLowerCase() === task.id.toLowerCase()))
+        outcomes.push({ item: `Link to ${task.displayId ?? task.id}`, status: "unconfirmed", detail: "The requested link was missing from the read-back." });
+    }
+  }
+  return writeResult(text, outcomes);
 }

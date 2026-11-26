@@ -22,8 +22,11 @@ const each = (pattern: RegExp, use: (skill: string, match: RegExpExecArray) => v
 const quoted = (list: string) => [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
 
 describe("the skills name only what the server has", () => {
-  test("nine skills, each with a name that is its folder and a description an app accepts", () => {
-    expect(skills.length).toBe(9);
+  test("bundled skills, each with a name that is its folder and a description an app accepts", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const listed = [...readme.matchAll(/^\| `(cloud-alm-[a-z-]+)` \|/gm)].map(match => match[1]!);
+    expect(skills.map(skill => skill.name).sort()).toEqual(listed.sort());
+    expect(listed).toContain("cloud-alm-retest");
     for (const { name, text } of skills) {
       const front = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
       expect(/^name: (.+)$/m.exec(front)?.[1]).toBe(name);

@@ -31,9 +31,9 @@ reads these two settings and uses its bundled fixtures for SAP API calls.
 
 1. Ask “Which project can I read? Answer in text.” Expect **Rollout Example**.
 2. Ask “Show me the test cases in a card, two per page.” The assistant can
-   read with `calm_list` and present it with `calm_show`. The card loads
-   live fixture results. Expand it if offered, then choose **Load more**
-   to see all four test cases.
+   read with `calm_list` and present it with `calm_show`. The card includes
+   the first two fixture results. Expand it if offered. In hosts with
+   pagination, choose **Load more** to see all four test cases.
 3. Ask “Show me the steps and expected result for test case 8-1-2 in a
    card.” Look for **Open the worklist** and **The order is listed**.
 4. Ask “Show test plan 8-3-1 as a card.” Expect two of three cases executed,

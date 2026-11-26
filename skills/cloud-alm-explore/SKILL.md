@@ -38,6 +38,7 @@ gap list), `cloud-alm-workshop-prep` (agenda and open questions for a
 workshop), `cloud-alm-backlog-from-notes` (minutes into requirements and
 tasks), `cloud-alm-daily-brief` (morning update), `cloud-alm-status-report` (steering committee update),
 `cloud-alm-test-readiness` (SIT/UAT entry and exit, go-live),
+`cloud-alm-retest` (which cases to rerun after a change),
 `cloud-alm-defect-triage`, `cloud-alm-test-design` (test cases for
 untested items).
 

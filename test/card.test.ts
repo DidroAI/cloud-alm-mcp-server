@@ -3,7 +3,7 @@
  * host: what the user sees and can press for each answer the server gives.
  */
 import { describe, expect, test } from "bun:test";
-import { Window } from "happy-dom";
+import { Window, type HTMLElement } from "happy-dom";
 import { createHash } from "node:crypto";
 import { CARD_TEMPLATE } from "../src/approval-card.js";
 import { CARD_URI, CARD_URIS_BEFORE, META_KEY, OVERVIEW_URI, OVERVIEW_URIS_BEFORE, appBundle, cardHtml, overviewHtml } from "../src/approval.js";
@@ -71,6 +71,27 @@ describe("the approval card", () => {
     expect(c.$("card").dataset.state).toBe("approved");
     expect(c.$("ok").disabled).toBe(true);
     expect(c.context[0]).toContain("the user chose approve");
+  });
+
+  test("a partial write shows each item both on approval and on reopening", async () => {
+    const outcome = { status: "partial", items: [
+      { item: '3-3 "Credit exposure shown"', status: "written", detail: "Priority changed." },
+      { item: "3-4", status: "failed", detail: "Missing permission." },
+    ] };
+    const receipt = { content: [{ type: "text", text: "One of two completed." }], structuredContent: { outcome } };
+    const first = await card({ answer: c => c.name === "calm_approve" ? receipt : { structuredContent: { status: "pending" } } });
+    await first.show(proposal());
+    first.$("ok").click();
+    await first.settle();
+    const replay = await card({ answer: () => ({ structuredContent: { status: "partial", outcome } }) });
+    await replay.show(proposal());
+    for (const view of [first, replay]) {
+      expect(view.$("card").dataset.state).toBe("partial");
+      expect(view.$("ok").disabled).toBe(true);
+      expect(view.$("m").textContent).toContain("Written — 3-3");
+      expect(view.$("m").textContent).toContain("Failed — 3-4");
+      expect(view.$("m").textContent).toContain("Missing permission.");
+    }
   });
 
   test("reject writes nothing and says so", async () => {
@@ -147,6 +168,59 @@ describe("the approval card", () => {
   });
 });
 
+/** Run the actual content card with the host bridge stubbed, as for the approval card. */
+async function projectCard(serverTools: boolean) {
+  const html = contentHtml().replace(appBundle(), "").replace(/<svg[\s\S]*?<\/svg>/, "");
+  const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const window = new Window();
+  window.document.write(html.replace(/<script[\s\S]*?<\/script>/, ""));
+  const calls: Call[] = [];
+  let app!: { ontoolresult: (result: Result) => void };
+  class App {
+    constructor() { app = this as unknown as typeof app; }
+    connect = async () => {};
+    getHostContext = () => ({ availableDisplayModes: ["inline"] });
+    getHostCapabilities = () => serverTools ? { serverTools: {} } : {};
+    updateModelContext = async () => {};
+    callServerTool = async (call: Call) => {
+      calls.push(call);
+      return { structuredContent: { projects: [{ id: "p2", name: "Second project" }], total: 2, offset: 1, nextOffset: null } };
+    };
+  }
+  new Function("document", "App", "applyDocumentTheme", "applyHostStyleVariables", script)(window.document, App, () => {}, () => {});
+  await Promise.resolve();
+  const args = { limit: 1, query: "project" };
+  app.ontoolresult({
+    structuredContent: { display: { tool: "calm_projects", arguments: args } },
+    _meta: { "cloud-alm/page": { structuredContent: {
+      projects: [{ id: "p1", name: "First project" }], total: 2, offset: 0, nextOffset: 1,
+    } } },
+  });
+  const element = (id: string) => window.document.querySelector<HTMLElement>(`#${id}`)!;
+  return { calls, element, args };
+}
+
+test("the selected page is visible without a server tools bridge", async () => {
+  const { calls, element } = await projectCard(false);
+  expect(element("content").textContent).toContain("First project");
+  expect(element("count").textContent).toBe("1–1 of 2");
+  expect(element("more").hidden).toBe(true);
+  expect(element("status").textContent).toContain("next page");
+  expect(calls).toEqual([]);
+});
+
+test("a host with a bridge fetches only subsequent pages and preserves the selection filters", async () => {
+  const { calls, element, args } = await projectCard(true);
+  expect(calls).toEqual([]);
+  expect(element("more").hidden).toBe(false);
+  element("more").click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(calls).toEqual([{ name: "calm_projects", arguments: { ...args, offset: 1 } }]);
+  expect(element("content").textContent).toContain("First project");
+  expect(element("content").textContent).toContain("Second project");
+  expect(element("more").hidden).toBe(true);
+});
+
 /**
  * Apps keep a card by its address. When this fails, the card's HTML changed
  * (yours, or the bundled app library's): give the card a new address (raise
@@ -160,9 +234,9 @@ test("a card that changes gets a new address", () => {
     [OVERVIEW_URI]: fingerprint(overviewHtml()),
     [CONTENT_URI]: fingerprint(contentHtml(false)),
   }).toEqual({
-    "ui://cloud-alm/approve-v5.html": "0a3b7d3cd6c575e9",
+    "ui://cloud-alm/approve-v6.html": "8c981a973b1734a8",
     "ui://cloud-alm/overview-v3.html": "c037ff94a43df9a9",
-    "ui://cloud-alm/content-v4.html": "be006511f033bf8a",
+    "ui://cloud-alm/content-v5.html": "d5d7aff1d25a243a",
   });
   // The address before stays answerable, and no address is listed twice.
   const all = [CARD_URI, ...CARD_URIS_BEFORE, OVERVIEW_URI, ...OVERVIEW_URIS_BEFORE, CONTENT_URI, ...CONTENT_URIS_BEFORE];

@@ -111,6 +111,7 @@ describe("write mode", () => {
     expect(posts[0]?.body).toEqual({ taskId: US2, tags: ["Wave 2", "old"] });
     expect(r.text).toContain("3-3: [Old] → [Wave 2]");
     expect(r.text).toContain("did not store old");
+    expect(r.structured?.outcome).toMatchObject({ status: "partial", items: [{ item: "3-3", status: "partial" }] });
   });
 
   test("tag keeps every existing tag, also past the 20th", async () => {
@@ -339,6 +340,7 @@ describe("calm_update", () => {
     });
     expect(result.text).toContain(`Created activity "Undo" (${NEW_ACTIVITY}). Confirmed 0 of 1 steps`);
     expect(result.text).toContain("Read the activity");
+    expect(result.structured?.outcome).toMatchObject({ status: "partial", items: [{ status: "partial" }] });
     expect(writes.map(w => w.path)).toEqual(["calm-testmanagement/v1/Activities", "calm-testmanagement/v1/Actions"]);
   });
 
@@ -450,6 +452,16 @@ describe("calm_comment, calm_create_feature, calm_create_document", () => {
     expect(r.text).toBe(`Created 6-9 feature "Dunning" [${NEW_FEATURE}]: in specification, priority 20 high; linked to 3-2.`);
     expect(writes[0]?.body).toEqual({ projectId: expect.any(String), title: "Dunning", description: "<p>Two levels</p>", statusCode: "CREATED", priorityCode: 20 });
     expect(writes[1]).toMatchObject({ path: `calm-tasks/v1/tasks/${US1}/featureAssignments`, body: { featureId: NEW_FEATURE } });
+  });
+
+  test("creating a feature reports the saved record and each attempted link", async () => {
+    const { call } = await connect(undefined, [`POST calm-tasks/v1/tasks/${US2}/featureAssignments`]);
+    const result = await call("calm_create_feature", { title: "Dunning", tasks: ["3-2", "3-3"] });
+    expect(result.structured?.outcome).toMatchObject({ status: "partial", items: [
+      { item: "6-9", status: "written" },
+      { item: "Link to 3-2", status: "written" },
+      { item: "Link to 3-3", status: "failed" },
+    ] });
   });
 
   test("a document: type by name, links in the create, immutability said up front", async () => {

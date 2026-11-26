@@ -23,6 +23,7 @@ for (const mode of ["legacy", "auto"] as const) {
       const argumentsForList = { types: ["test_case"], limit: 2 };
       const show = await client.callTool({ name: "calm_show", arguments: { tool: "calm_list", arguments: argumentsForList } });
       expect(show.structuredContent).toEqual({ display: { tool: "calm_list", arguments: argumentsForList } });
+      expect(show._meta?.["cloud-alm/page"]).toMatchObject({ structuredContent: { total: 4, nextOffset: 2 } });
       const resource = await client.readResource({ uri: "ui://cloud-alm/content-v2.html" });
       const content = resource.contents[0];
       expect(content && "text" in content && content.text).toContain("cloud-alm-content");
