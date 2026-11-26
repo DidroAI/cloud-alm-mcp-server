@@ -35,13 +35,15 @@ counts open items only: do not use it for a gate.)
 
 1. `calm_overview`: phase, test plans, results, defects by status and
    priority.
-2. Coverage: `calm_gaps` with `checks: ["coverage"]`, `includeClosed: true`,
-   `max: 200` (every requirement and user story × test cases × latest
-   result). Page with `offset` until no "more" line is left.
-3. Untested, unprepared, failed: `calm_gaps` with `checks: ["untested",
-   "unprepared_tests", "orphan_tests", "failed_tests"]`,
-   `includeClosed: true` (a failed row names the items covered and the
-   defects raised, or "no defect raised").
+2. Resolve each cycle plan with `calm_list` using `types: ["test_plan"]`.
+   For each plan, call `calm_gaps` with `checks: ["coverage"]`,
+   `includeClosed: true` and `testPlanId` set to its display ID or GUID.
+   Page with `offset` until no "more" line remains. Coverage lists project
+   requirements and stories even when their tests are outside the plan.
+   Select the agreed business scope before calculating coverage.
+3. Use the same plan ID for `checks: ["unprepared_tests", "orphan_tests", "failed_tests"]`.
+   Check project-wide `untested` separately, without a plan selector.
+   A failure's linked defect may have been raised in another cycle.
 4. Defects: `calm_list` `types: ["defect"]`, `status: "open"` (everything not
    done), paged; group by priority. `status: "retest"` gives those waiting
    for a retest. `calm_trace` the very-high ones: it names the test case
@@ -49,7 +51,7 @@ counts open items only: do not use it for a gate.)
 5. Build state: features by status from `calm_overview`; `calm_list`
    `types: ["feature"]` with `status: "in realization"` or `"in testing"`
    for the ones not through; `calm_trace` on a process for its features.
-6. Plan progress: `calm_list` `types: ["test_plan"]`, then `calm_get` each
+6. Plan progress: `calm_get` each
    plan of the cycle: executed and passed of the assigned test cases
    (`fields.progress`), result and defects per test case.
 7. Trend, for an exit review: `calm_analytics` with `projectId`,
@@ -59,10 +61,11 @@ counts open items only: do not use it for a gate.)
 
 How to read the answers:
 
-- The coverage verdict per row is one of: no test, failed, not prepared,
-  not in a test plan, not run, in progress, passed, unknown. It is taken
-  over all test plans: for a gate on one cycle, check the plan with
-  `calm_get`.
+- Read the plan assignment, preparation flag, result and coverage verdict
+  together. Distinguish a case outside the selected plan from an assigned
+  case awaiting its first run and from unknown membership.
+  Without a plan selector, results span plans. A pass in another cycle
+  cannot satisfy this gate.
 - A requirement tested through its user stories shows its own verdict and a
   rollup "with its user stories": use the rollup. The tool reads the user
   stories of the first 60 requirements only; beyond that, trace the
@@ -93,7 +96,7 @@ stays the fit/gap classification of a requirement.
 | --- | --- |
 | Test case prepared / not prepared | Only prepared test cases can be executed. "Prepared" is the author's flag, not a business review: ask whether the scripts were reviewed. |
 | Test plan | One plan per cycle, with its own results, so a pass in the SIT plan says nothing about UAT. Judge a gate on the plan(s) of that cycle. The plan's own status is not in `calm_get`; `calm_analytics` `Tests` has `testPlanStatus`. |
-| Result *not in a test plan* | The test case exists but nobody planned to run it in this cycle: a hole in the test scope, not a pending test. |
+| Test outside the selected plan | Check whether the case belongs in the agreed scope. If it does, report an assignment gap. Unknown membership stays unknown. |
 | Result *not run* | Planned, not executed. Counts against execution rate. |
 | *blocked* | Could not be tested (data, role, environment, upstream defect). Report with failed, never with "remaining". |
 | Solution process | The tools do not read a test case's process: process coverage is read through its requirements. Standard processes with no requirement can be in scope and have no test at all. |
@@ -103,11 +106,14 @@ stays the fit/gap classification of a requirement.
 
 Always state these three, with their denominators:
 
-- **Execution rate** = executed / assigned in the cycle's plan(s).
+- **Execution rate** = executed / assigned in the cycle's plan(s). The server
+  counts passed, failed and blocked as executed. Break out blocked cases.
 - **Pass rate** = passed / assigned (strict). If the project reports
   passed / executed, show that too and name it.
-- **Coverage** = in-scope requirements (and processes) with at least one
-  prepared test case in the plan / all in-scope requirements, open and done.
+- **Requirement coverage** = in-scope requirements with at least one
+  prepared case in the plan (directly or via a linked story) / all in-scope
+  requirements, open and done. Report process coverage separately using
+  the agreed process population.
   A 98% pass rate on 60% coverage is not a pass.
 
 ## 3. Apply the criteria
@@ -125,7 +131,8 @@ sign-off; it sets no percentages.
 | | 100% of in-scope requirements have a prepared test case, assigned to the SIT plan with a tester | Yes, except the tester: ask |
 | | Interfaces connected, test data and migrated master data loaded, test users with their business roles | Ask |
 | | Defect process agreed: priority definitions, triage rhythm, who may close | Ask |
-| SIT exit / UAT entry | ≥ 95% of planned test cases executed; every end-to-end scenario run to its last step | Yes |
+| SIT exit / UAT entry | ≥ 95% of planned test cases executed | Yes, from the plan counts |
+| | Every end-to-end scenario reached its last step | Ask for run evidence for each scenario. Aggregate run and step counts alone cannot establish the last step reached. |
 | | No very-high or high defect open; the rest triaged with an owner and date | Yes |
 | | UAT scripts prepared and reviewed by the business; testers named and released; UAT plan exists | Partly |
 | | UAT system holds the latest transports and a recent data load | Ask |
@@ -133,7 +140,8 @@ sign-off; it sets no percentages.
 | | No very-high open; no high open unless the process owner accepted it in writing with a workaround that holds at real volume, and a fix date | Defects yes; acceptance ask |
 | | Every fixed defect retested by the tester; regression of critical scenarios after the last fix was imported | Partly |
 | | Sign-off by named process owners (not the project manager) | Ask |
-| Go-live | UAT exit met and signed; all features of the scope approved for deployment or deployed | Yes |
+| Go-live | UAT exit criteria met and signed by the named process owners | Inspect the criteria and request dated sign-off evidence |
+| | All features of the scope approved for deployment or deployed | Yes, from feature status |
 | | Open defects accepted by the business with owner and date; none very high | Defects yes; acceptance ask |
 | | Outside Cloud ALM test data: data migration validated, cutover rehearsed, users trained, roles assigned in production, support and hypercare ready | Ask |
 
@@ -165,8 +173,8 @@ Go through these before recommending; report each one that applies.
   or not re-run.
 - **Failed test without a defect**, or defect without a test case: the count
   of open issues is then wrong in one direction.
-- **Blocked hidden in "open"**: blocked tests usually share one cause
-  (missing role, data, interface). Name the cause, it is one blocker.
+- **Blocked hidden in "open"**: identify missing roles, data or interfaces.
+  Group blocked cases when a linked record or the team confirms a shared cause.
 - **Untested interfaces and authorizations**: look for test cases on
   interfaces, outputs, batch jobs, month-end, and on business roles (also
   the negative case). If none exist, say so.

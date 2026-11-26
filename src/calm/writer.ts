@@ -4,6 +4,7 @@
  * reader, which stays GET-only. Writes are never retried (a repeated POST
  * could create twice, a repeated DELETE could hit something else).
  */
+import { UnconfirmedWrite } from "../write-outcome.js";
 import { CloudAlmError } from "./errors.js";
 import {
   apiRoot,
@@ -107,12 +108,12 @@ export class CloudAlmWriter {
     } catch (error) {
       // A timeout after sending may still have written: say so.
       if ((error as Error)?.name === "TimeoutError")
-        throw new CloudAlmError("unavailable", "no answer in time; the change may or may not have been made: read the item before trying again");
-      throw new CloudAlmError("unavailable", "network error; the change may already have been made: read the item before trying again");
+        throw new UnconfirmedWrite("no answer in time; the change may or may not have been made: read the item before trying again");
+      throw new UnconfirmedWrite("network error; the change may already have been made: read the item before trying again");
     }
     if (response.status >= 200 && response.status < 300) {
       const text = await response.text().catch(() => {
-        throw new CloudAlmError("unavailable", "Cloud ALM accepted the change, but its response could not be read: check the item before trying again");
+        throw new UnconfirmedWrite("Cloud ALM accepted the change, but its response could not be read: check the item before trying again");
       });
       if (!text) return null;
       try {
@@ -121,6 +122,12 @@ export class CloudAlmWriter {
         return null;
       }
     }
-    return readAnswer(response);
+    try {
+      return await readAnswer(response);
+    } catch (error) {
+      if (response.status >= 500 && error instanceof CloudAlmError)
+        throw new UnconfirmedWrite(`${error.reason}. Check the item in Cloud ALM before trying the change again.`);
+      throw error;
+    }
   }
 }

@@ -118,6 +118,40 @@ describe("approval of writes", () => {
     expect(posts.length).toBe(1);
   });
 
+  test("the approval receipt and later status retain successful and refused batch items", async () => {
+    const tenant = fakeWritableTenant({ forbid: [`PATCH calm-tasks/v1/tasks/${US2}`] });
+    const { call } = await connect("ui", { approval: "required" }, { fetcher: tenant.fetcher, posts: [] });
+    const proposal = await call("calm_update", { ids: ["3-1", "3-3"], description: "New batch description" });
+    const a = proposal.meta?.[META_KEY] as { id: string; nonce: string };
+    const receipt = await call("calm_approve", { ...a, decision: "approve" });
+    expect(receipt.error).toBe(false);
+    const outcome = (receipt.structured as unknown as { outcome: { status: string; items: { item: string; status: string }[] } }).outcome;
+    expect(outcome.status).toBe("partial");
+    expect(outcome.items.map(r => [r.item.split(" ")[0], r.status])).toEqual([["3-1", "written"], ["3-3", "failed"]]);
+    expect((await call("calm_approval_status", { id: a.id })).structured).toMatchObject({ status: "partial", outcome });
+    const duplicate = await call("calm_approve", { ...a, decision: "approve" });
+    expect(duplicate.error).toBe(true);
+    expect(duplicate.text).toContain("partly applied");
+  });
+
+  test("losing the SAP response after a create keeps the outcome unconfirmed", async () => {
+    const fake = fakeTenant();
+    const fetcher = (async (input, init) => {
+      const response = await fake.fetcher(input, init);
+      if (init?.method === "POST") throw new TypeError("connection reset");
+      return response;
+    }) as typeof fetch;
+    const { call } = await connect("ui", { approval: "required" }, { ...fake, fetcher });
+    const proposal = await call("calm_create_task", NEW_DEFECT);
+    const a = proposal.meta?.[META_KEY] as { id: string; nonce: string };
+    const result = await call("calm_approve", { ...a, decision: "approve" });
+    expect(result.error).toBe(true);
+    expect(result.structured).toMatchObject({ outcome: { status: "unconfirmed" } });
+    expect((await call("calm_approval_status", { id: a.id })).structured).toMatchObject({ status: "unconfirmed" });
+    expect((await call("calm_approve", { ...a, decision: "approve" })).error).toBe(true);
+    expect(fake.posts).toHaveLength(1);
+  });
+
   test("the outcome of a proposal is its approver's only", () => {
     const p = propose({ tool: "calm_tag", args: {}, fingerprint: "p", subject: "s", allowChat: false }, 0);
     take(p.id, "s", p.nonce, 1);
@@ -424,7 +458,7 @@ test("the card draws a dry run as a preview, field by field", () => {
   const html = cardHtml();
   expect(html).toContain("A preview only. Nothing was sent to Cloud ALM.");
   expect(html).toContain("Nothing sent");
-  expect(CARD_URI).toBe("ui://cloud-alm/approve-v5.html");
+  expect(CARD_URI).toBe("ui://cloud-alm/approve-v6.html");
 });
 
 test("calm_overview carries the overview card", async () => {

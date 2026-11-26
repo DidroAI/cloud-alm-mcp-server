@@ -24,7 +24,7 @@ In a terminal, setup asks three questions:
    have a key yet" says how to get one and asks again.
 2. **Which apps?** Claude Code, Codex, Claude Desktop and Cursor, the ones
    installed, all ticked.
-3. **The skills too?** The nine workflows of `skills/` (fit-gap, workshop
+3. **The skills too?** The workflows in `skills/` (fit-gap, workshop
    preparation, status report, test readiness…), so the assistant uses one on
    its own when a request matches. They are copied to where the chosen apps
    read skills:
@@ -34,7 +34,9 @@ In a terminal, setup asks three questions:
    | Claude Code | `~/.claude/skills` (`$CLAUDE_CONFIG_DIR/skills` when that variable is set) |
    | Codex | `~/.agents/skills` |
    | Cursor | the Claude Code folder when Claude Code is set up too, else the Codex folder when Codex is, else `~/.cursor/skills` |
-   | Claude Desktop | none: it reads no skills from disk; there they are the server's prompts |
+   | Claude Desktop | Use the server’s MCP prompts |
+
+Setup and uninstall preserve customized skill files and folders with extra team material. An intact older copy can be upgraded in place.
 
 After the first question it checks the key against SAP (a token, its scopes,
 one read) and saves it readable only by you; a key that fails is not saved,
@@ -136,7 +138,7 @@ it empty if `setup` already saved your key. The plugin brings the MCP server
 and the skills (fit-gap, workshop preparation, status report, test readiness,
 defect triage, test design, …).
 
-Server only, without the skills:
+To connect the server without installing local skill files:
 
 ```sh
 claude mcp add cloud-alm --scope user -- npx -y cloud-alm-mcp-server

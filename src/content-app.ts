@@ -3,8 +3,8 @@ import { appBundle } from "./approval.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
 import { sapLogo } from "./sap-logo.js";
 
-export const CONTENT_URI = "ui://cloud-alm/content-v4.html";
-export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v3.html", "ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
+export const CONTENT_URI = "ui://cloud-alm/content-v5.html";
+export const CONTENT_URIS_BEFORE = ["ui://cloud-alm/content-v4.html", "ui://cloud-alm/content-v3.html", "ui://cloud-alm/content-v2.html", "ui://cloud-alm/content-v1.html"];
 export const CONTENT_TOOLS = new Set([
   "calm_projects",
   "calm_overview",
@@ -489,6 +489,7 @@ function itemList(items, details) {
 }
 function render(result, args = {}) {
   if (result.isError) {
+    if (!current) $("count").textContent = "";
     status(
       (result.content || [])
         .filter((c) => c.type === "text")
@@ -536,9 +537,10 @@ function render(result, args = {}) {
         ? offset + 1 + "–" + (offset + visible.length) + " of " + total
         : total + " " + noun + (total === 1 ? "" : "s")
       : "0 " + noun + "s";
-    $("more").hidden = expanded
-      ? data.nextOffset == null
-      : !(items.length > 5 || data.nextOffset != null);
+    const nextPage = data.nextOffset != null && !!app.getHostCapabilities()?.serverTools;
+    $("more").hidden = expanded ? !nextPage : !(items.length > 5 || nextPage);
+    if (expanded && data.nextOffset != null && !nextPage)
+      status("Ask in the chat for the next page.");
     $("more").textContent = expanded ? "Load more" : "View all";
   } else if (data.project) {
     root.append(projectMetrics(data));
@@ -553,6 +555,8 @@ function render(result, args = {}) {
       "Project summary";
     $("more").hidden = true;
   } else {
+    $("title").textContent = "Cloud ALM results";
+    $("count").textContent = "";
     for (const c of result.content || [])
       if (c.type === "text") root.append(node("p", c.text, "description"));
     $("more").hidden = true;
@@ -606,6 +610,7 @@ async function call(name, args, append = false) {
     $("title").textContent = current
       ? $("title").textContent
       : "Cloud ALM results";
+    if (!current) $("count").textContent = "";
     status("Couldn't load results. Try again in the chat.", true);
   } finally {
     busy = false;
@@ -656,9 +661,12 @@ app.ontoolresult = (result) => {
     ["calm_projects", "calm_overview", "calm_list", "calm_get"].includes(
       display.tool,
     )
-  )
-    call(display.tool, display.arguments || {});
-  else render(result, input);
+  ) {
+    const page = result._meta?.["cloud-alm/page"];
+    if (page) render(page, display.arguments || {});
+    else if (app.getHostCapabilities()?.serverTools) call(display.tool, display.arguments || {});
+    else render({ content: result.content }, display.arguments || {});
+  } else render(result, input);
 };
 app.ontoolcancelled = () => status("This request was cancelled.");
 app

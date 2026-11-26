@@ -54,7 +54,7 @@ body{padding:2px;font:14px/1.4 var(--font);color:var(--text);-webkit-font-smooth
 .over{font-size:12px;color:var(--label);display:flex;flex-wrap:wrap;gap:2px 8px;align-items:center;justify-content:space-between}
 h1{font-size:16px;line-height:1.3;font-weight:700;margin:2px 0 0;overflow-wrap:anywhere}
 .st{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;line-height:1;padding:4px 8px;border-radius:3px;border:1px solid var(--neutral-edge);background:var(--neutral-bg);color:var(--text);white-space:nowrap}
-.card[data-state=waiting] .st{background:var(--crit-bg);border-color:var(--crit-edge);color:var(--crit)}
+.card[data-state=partial] .st,.card[data-state=unconfirmed] .st,.card[data-state=waiting] .st{background:var(--crit-bg);border-color:var(--crit-edge);color:var(--crit)}
 .card[data-state=working] .st,.card[data-state=chat] .st{background:var(--info-bg);border-color:var(--info-edge);color:var(--info)}
 .card[data-state=approved] .st{background:var(--pos-bg);border-color:var(--pos-edge);color:var(--pos)}
 .card[data-state=failed] .st,.card[data-state=blocked] .st{background:var(--neg-bg);border-color:var(--neg-edge);color:var(--neg)}
@@ -135,14 +135,14 @@ button.ok:hover:not(:disabled){background:var(--brand-hover);border-color:var(--
 .card[data-kind=delete] button.ok:hover:not(:disabled){background:var(--danger-hover);border-color:var(--danger-hover)}
 button:disabled{opacity:.45;cursor:default}
 :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
-.card[data-state=unknown] .acts,.card[data-state=closed] .acts,.card[data-state=approved] .acts,.card[data-state=rejected] .acts,.card[data-state=expired] .acts,.card[data-state=blocked] .acts,.card[data-state=chat] .acts,.card[data-state=info] .acts,.card[data-state=preview] .acts,.card[data-state=failed] .acts,.card[data-state=preparing] .acts{display:none}
+.card[data-state=partial] .acts,.card[data-state=unconfirmed] .acts,.card[data-state=unknown] .acts,.card[data-state=closed] .acts,.card[data-state=approved] .acts,.card[data-state=rejected] .acts,.card[data-state=expired] .acts,.card[data-state=blocked] .acts,.card[data-state=chat] .acts,.card[data-state=info] .acts,.card[data-state=preview] .acts,.card[data-state=failed] .acts,.card[data-state=preparing] .acts{display:none}
 .card[data-state=info] .ft,.card[data-state=failed] .ft,.card[data-state=preparing] .ft{display:none}
 .card[data-state=rejected] .c,.card[data-state=expired] .c{opacity:.75}
 @media (max-width:380px){.acts{width:100%}.acts button{flex:1}}
 @media (forced-colors:active){.st,.strip,.it,button{border:1px solid CanvasText}}
 .hd{border-bottom:2px solid var(--brand)}.hd h1{color:var(--link)}
 .facts{padding:10px 16px}.fl thead th{background:var(--neutral-bg)}
-.card[data-state=waiting] .st{border:0;background:transparent;color:var(--label)}
+.card[data-state=partial] .st,.card[data-state=unconfirmed] .st,.card[data-state=waiting] .st{border:0;background:transparent;color:var(--label)}
 .sap-logo{width:48px;height:24px;flex:none}
 </style></head><body>
 <main class="card" id="card" data-state="preparing">
@@ -183,7 +183,7 @@ const el = (tag, cls, text) => {
 const str = (v) => (v === null || v === undefined ? "" : String(v));
 const cap = (v) => { const t = str(v); return t.charAt(0).toUpperCase() + t.slice(1); };
 const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
-const STATUS = { preparing: "Preparing", waiting: "Approval needed", working: "Writing", approved: "Approved", rejected: "Rejected", expired: "Expired", blocked: "Cannot approve here", chat: "Approve in the chat", info: "No approval pending", failed: "Not proposed", unknown: "Outcome unknown", closed: "Closed" };
+const STATUS = { preparing: "Preparing", waiting: "Approval needed", working: "Writing", partial: "Partly applied", unconfirmed: "Check in Cloud ALM", approved: "Approved", rejected: "Rejected", expired: "Expired", blocked: "Cannot approve here", chat: "Approve in the chat", info: "No approval pending", failed: "Not proposed", unknown: "Outcome unknown", closed: "Closed" };
 const state = (name, label) => { card.dataset.state = name; $("st").textContent = label ?? STATUS[name]; };
 const say = (text, cls = "") => {
   const m = $("m");
@@ -416,6 +416,7 @@ async function settled(id) {
     if (r && !r.isError) s = r.structuredContent;
   } catch {}
   if (pending?.id !== id || done) return true;
+  if (showOutcome(s?.outcome)) return true;
   if (s?.status === "approved") { finish("approved", "Approved earlier"); say("The change was written to Cloud ALM.", "done"); }
   else if (s?.status === "rejected") finish("rejected", "Rejected earlier. Nothing was written.");
   else if (s?.status === "failed") { finish("closed", "Closed"); say(forPeople(s.summary), "err"); }
@@ -431,6 +432,14 @@ function forPeople(text) {
   if (/already rejected/.test(text)) return "This change was already rejected. Nothing was written.";
   if (/unknown or expired/.test(text)) return "This approval is no longer valid; nothing was written. Ask again in the chat to get a new one.";
   return (text || "Cloud ALM refused the change.").replace(/\s*Propose the change again\.?/g, "") + " Ask again in the chat if you still want this change.";
+}
+
+function showOutcome(outcome) {
+  if (!outcome || !["partial", "unconfirmed"].includes(outcome.status) || !Array.isArray(outcome.items)) return false;
+  const labels = { written: "Written", unchanged: "Already up to date", partial: "Partly applied", failed: "Failed", unconfirmed: "Unconfirmed", skipped: "Skipped" };
+  finish(outcome.status, "Check the listed items before retrying any changes.");
+  say(outcome.items.map(row => (labels[row.status] ?? "Check") + " — " + row.item + NL + row.detail).join(NL + NL), "warn");
+  return true;
 }
 
 async function decide(decision) {
@@ -466,10 +475,11 @@ async function decide(decision) {
     buttons(true);
     return;
   }
-  if (r.isError) finish("closed", "Closed " + clock(Date.now()));
-  else finish(decision === "approve" ? "approved" : "rejected", (decision === "approve" ? "Approved " : "Rejected ") + clock(Date.now()) + (decision === "approve" ? "" : ". Nothing was written."));
-  // The answer is written for the agent (ids, tool names): people get a sentence, and the answer only when it failed.
-  say(r.isError ? forPeople(text) : decision === "approve" ? "The change was written to Cloud ALM." : "", r.isError ? "err" : "done");
+  if (!showOutcome(r.structuredContent?.outcome)) {
+    if (r.isError) finish("closed", "Closed " + clock(Date.now()));
+    else finish(decision === "approve" ? "approved" : "rejected", (decision === "approve" ? "Approved " : "Rejected ") + clock(Date.now()) + (decision === "approve" ? "" : ". Nothing was written."));
+    say(r.isError ? forPeople(text) : decision === "approve" ? "The change was written to Cloud ALM." : "", r.isError ? "err" : "done");
+  }
   const note = "Approval card for " + (pending.tool ?? "a change") + " (id " + pending.id + "): the user chose " + decision + ". Server answer: " + text;
   await app.updateModelContext({ content: [{ type: "text", text: note }] }).catch(() => {});
 }

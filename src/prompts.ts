@@ -1,18 +1,18 @@
 /**
- * The skills of `skills/` as MCP prompts, so hosts without skill support
- * still offer the workflows (fit-gap, workshop prep, status report…). A
- * prompt is the skill's text plus the user's request.
+ * Publish the same bundled workflow through native skill discovery and
+ * through prompts for clients that offer slash commands.
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { skillEntry, SkillsExtension } from "@modelcontextprotocol/server/ext/skills";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 
-export type Skill = { name: string; title: string; description: string; body: string };
+type Skill = { name: string; title: string; description: string; body: string; text: string };
 
 const SKILLS_DIR = new URL("../skills/", import.meta.url);
 
 /** Read `skills/<name>/SKILL.md` files; none when the folder is missing. */
-export function loadSkills(dir: URL = SKILLS_DIR): Skill[] {
+function loadSkills(dir: URL = SKILLS_DIR): Skill[] {
   let names: string[];
   try {
     names = readdirSync(dir).sort();
@@ -27,20 +27,46 @@ export function loadSkills(dir: URL = SKILLS_DIR): Skill[] {
     } catch {
       continue;
     }
-    const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    const front = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
     const field = (key: string) => new RegExp(`^${key}:\\s*(.+)$`, "m").exec(front?.[1] ?? "")?.[1]?.trim();
     const description = field("description");
     if (!front || !description) continue;
     const body = text.slice(front[0].length).trim();
     const title = /^#\s+(.+)$/m.exec(body)?.[1]?.trim() ?? name;
-    skills.push({ name: field("name") ?? name, title, description, body });
+    skills.push({ name: field("name") ?? name, title, description, body, text });
   }
   return skills;
 }
 
-let cached: Skill[] | undefined;
+// The public server factory is synchronous. Build and share the SDK manifests on
+// the first discovery request, including a digest over each exact shipped file.
+function bundledWorkflows() {
+  const skills = loadSkills();
+  const baseUri = "skill://cloud-alm/";
+  const files = new Map(skills.map(skill => [`${baseUri}${skill.name}/SKILL.md`, skill.text]));
+  const buildManifests = () => Promise.all(skills.map(skill =>
+    skillEntry(skill.name, { "SKILL.md": skill.text }, { baseUri })));
+  let manifests: ReturnType<typeof buildManifests> | undefined;
+  const entries = () => manifests ??= buildManifests();
+  const extension = new SkillsExtension({
+    baseUri,
+    source: {
+      list: async () => ({ skills: await entries() }),
+      get: async uri => (await entries()).find(entry => entry.uri === uri),
+      read: async uri => {
+        const text = files.get(uri);
+        return text === undefined ? undefined : { text, mimeType: "text/markdown" };
+      },
+    },
+  });
+  return { skills, extension };
+}
 
-export function registerSkillPrompts(server: McpServer, skills: Skill[] = (cached ??= loadSkills())) {
+let cached: ReturnType<typeof bundledWorkflows> | undefined;
+
+export function registerSkills(server: McpServer) {
+  const { skills, extension } = cached ??= bundledWorkflows();
+  extension.attach(server);
   for (const skill of skills)
     server.registerPrompt(
       skill.name,

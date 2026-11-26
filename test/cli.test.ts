@@ -625,9 +625,9 @@ describe("setup", () => {
     expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
     expect(m.calls.some((c) => c.startsWith("claude mcp add"))).toBe(false);
     expect(q.all()).toContain("✓ Cursor");
-    expect(q.seen[2]?.message).toContain("Also install the 9 Cloud ALM skills");
+    expect(q.seen[2]?.message).toContain("Also install the 10 Cloud ALM skills");
     expect(existsSync(join(m.home, ".cursor", "skills", "cloud-alm-fit-gap", "SKILL.md"))).toBe(true);
-    expect(q.all()).toContain(`9 installed in ${join(m.home, ".cursor", "skills")} (Cursor)`);
+    expect(q.all()).toContain(`10 installed in ${join(m.home, ".cursor", "skills")} (Cursor)`);
     expect(q.all()).toContain("Reload the Cursor window.");
     expect(q.all()).toContain(`You can now delete ${keyPath}`);
     expect(q.all()).toContain("Cloud ALM is ready.");
@@ -706,31 +706,41 @@ describe("setup", () => {
     const claudeSkills = join(m.home, ".claude", "skills");
     mkdirSync(join(claudeSkills, "my-own-skill"), { recursive: true });
     writeFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "mine");
-    // A copy from a version before the marker: recognised by its name and the tools it uses.
-    mkdirSync(join(claudeSkills, "cloud-alm-fit-gap"), { recursive: true });
-    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "---\nname: cloud-alm-fit-gap\ndescription: old\n---\nUse calm_overview.");
-    writeFileSync(join(claudeSkills, "cloud-alm-fit-gap", "stale.md"), "old");
-    // A skill of the same name the user wrote themselves: never touched.
-    mkdirSync(join(claudeSkills, "cloud-alm-explore"), { recursive: true });
-    writeFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "my own notes");
+    // An intact copy may predate markers. A lookalike or a team playbook must survive both commands.
+    const bundled = (name: string) => readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url));
+    const fitGap = join(claudeSkills, "cloud-alm-fit-gap");
+    mkdirSync(fitGap);
+    writeFileSync(join(fitGap, "SKILL.md"), bundled("cloud-alm-fit-gap"));
+    const custom = "---\nname: cloud-alm-explore\ndescription: Team notes\n---\nUse calm_get.";
+    const explore = join(claudeSkills, "cloud-alm-explore");
+    mkdirSync(explore);
+    writeFileSync(join(explore, "SKILL.md"), custom);
+    const team = join(claudeSkills, "cloud-alm-test-readiness");
+    mkdirSync(team);
+    writeFileSync(join(team, "SKILL.md"), bundled("cloud-alm-test-readiness"));
+    writeFileSync(join(team, "playbook.md"), "team evidence");
     const t = io({ fetch: fakeFetch().fetcher });
     t.io.setup = m.setup;
     expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
     expect(readFileSync(join(claudeSkills, "cloud-alm-fit-gap", "SKILL.md"), "utf8")).toContain("name: cloud-alm-fit-gap");
-    expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap", "stale.md"))).toBe(false);
+    expect(readFileSync(join(team, "playbook.md"), "utf8")).toBe("team evidence");
     expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report", "SKILL.md"))).toBe(true);
     // Cursor reads Claude Code's folder: no second copy.
     expect(existsSync(join(m.home, ".cursor", "skills"))).toBe(false);
-    expect(readFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "utf8")).toBe("my own notes");
+    expect(readFileSync(join(explore, "SKILL.md"), "utf8")).toBe(custom);
     expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap", ".cloud-alm-mcp-server"))).toBe(true);
     expect(t.all()).toContain(`✓ Skills         8 installed in ${claudeSkills} (Claude Code, Cursor)`);
-    expect(t.all()).toContain(`9 installed in ${join(m.home, ".agents", "skills")} (Codex)`);
+    expect(t.all()).toContain(`10 installed in ${join(m.home, ".agents", "skills")} (Codex)`);
 
+    const edited = join(claudeSkills, "cloud-alm-retest", "SKILL.md");
+    writeFileSync(edited, "our local retest procedures");
     const u = io();
     u.io.setup = m.setup;
     expect(await runCommand(u.io, ["uninstall"])).toBe(0);
-    expect(u.all()).toContain(`8 removed from ${claudeSkills}`);
-    expect(readFileSync(join(claudeSkills, "cloud-alm-explore", "SKILL.md"), "utf8")).toBe("my own notes");
+    expect(u.all()).toContain(`7 removed from ${claudeSkills}`);
+    expect(readFileSync(edited, "utf8")).toBe("our local retest procedures");
+    expect(readFileSync(join(team, "playbook.md"), "utf8")).toBe("team evidence");
+    expect(readFileSync(join(explore, "SKILL.md"), "utf8")).toBe(custom);
     expect(existsSync(join(claudeSkills, "cloud-alm-fit-gap"))).toBe(false);
     expect(readFileSync(join(claudeSkills, "my-own-skill", "SKILL.md"), "utf8")).toBe("mine");
     expect(existsSync(join(m.home, ".agents", "skills", "cloud-alm-status-report"))).toBe(false);
@@ -768,7 +778,7 @@ describe("setup", () => {
     t.io.setup = m.setup;
     t.io.prompts = async () => q.prompts;
     expect(await runCommand(t.io, ["setup", keyFile()])).toBe(0);
-    expect(q.seen.map((x) => x.message)).toEqual(["Add Cloud ALM to which apps?", expect.stringContaining("Also install the 9 Cloud ALM skills")]);
+    expect(q.seen.map((x) => x.message)).toEqual(["Add Cloud ALM to which apps?", expect.stringContaining("Also install the 10 Cloud ALM skills")]);
     expect(JSON.parse(readFileSync(savedKeyPath(t.io.env), "utf8"))).toEqual(KEY);
     expect(existsSync(join(m.home, ".cursor", "mcp.json"))).toBe(true);
     // A file that is no key is refused before any question.

@@ -3,8 +3,9 @@
  * server to every MCP client installed. One command, no questions, so an
  * agent can run it for the user. Never prints the key's contents.
  */
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { homedir } from "node:os";
@@ -365,16 +366,39 @@ export function skillsDirs(clients: Client[], e: Pick<SetupEnv, "home" | "env">)
 /** Left in each skill folder setup writes, so only those are replaced or removed later. */
 export const SKILL_MARKER = ".cloud-alm-mcp-server";
 
-/**
- * Whether a skill folder is one this package installed: it holds the
- * marker, or (installed before the marker existed) a SKILL.md of that name
- * that uses this server's tools. A folder someone made themselves is not.
- */
-export function ownSkill(target: string): boolean {
-  if (existsSync(join(target, SKILL_MARKER))) return true;
+// The complete skill directories in 0.3.1–0.3.8 each contained only SKILL.md.
+// 0.3.1 and 0.3.2 shipped without markers. The original marker had no digest.
+const historicalSkills: Record<string, string[]> = {
+  "cloud-alm-backlog-from-notes": ["fcf45d257e4430b84faf6fa231366d01206044c780da879b1d92a68be6f83c94", "d052d847005f8b1cce1734a0f4b2c0d184b733c139fa2771cf191d79b5b3d54a", "cb0206934580120b7d7c2f91f1aa6214bdc42167613786366bee0cf65df4588c"],
+  "cloud-alm-daily-brief": ["076f9bc28437b11d7510d1ccf4733c978f5bd29c48cd572752a60580613bea3e", "2ae76c0d6cd8fa87c50647da827625d5ee3ec8f8eec9d7d5203eaa088e3d7777", "f71d44ddcb1447dd182f7a8b3ee36878d632f0217aa3f70349a8f2c1b81d37cf"],
+  "cloud-alm-defect-triage": ["0c88054b43e9e50d4120aef3f9e3a44ec84d65f767cda195fd67a2f6a7ed3adc", "c1ad593fef6aa46f2d711188b84a76c3bdc501e342414b90c7308d904e4c3d99", "41d7bc9e8a4034156fa302cee42cc07d95d71368e73415012b3728eabafba522"],
+  "cloud-alm-explore": ["14ae1d369e74fbb3ce83ad62623ec0d20a9fd789d5a3fef925b4b0c9a48b65c7", "a5646f3f14064be2ba8ed461bed5a022b58021b004a55f8e842e89359a8fc7f5", "5bcea310482b52dc853defab27ab5a02dcbf42fa1acac0bc1f34a3195b847664"],
+  "cloud-alm-fit-gap": ["c096b75176650b8f831b4b8a43f0276fa6fee369c3eb200eaf8069e5e4b97429", "045588dad6099ac9e7b8c78fcd24a5f205ec6c5625c6ba96404e885b4e57af31", "a5dbc604ced0bfaca3fe1dfa39efc9d011c72f6c4f2de553488f1d3157335721"],
+  "cloud-alm-status-report": ["c9a524b65379aad4fffd97475f55dbb28ea41e3bfdb88ba4c7890296a7ab6f48", "69c34430e88b42c0d4ac581de28de93dd3f2239c787375c3a8931f9b9b6dea7d", "1272a976943cdb5493cafd573415fca46b9035ec14262a065dea2891f4111a33"],
+  "cloud-alm-test-design": ["eb1978beb8cf766eecd14ef3d2d6857701265854e4ca2ddfc8853fff236ce03e", "ab25fedb34453b8cd9ee371d8fc166d8eb732edda24d3839a25708a76f66f626", "cadfb02fe4c9da93d6f8271669887bb647f478cbc3e0e391c543f4a7f01416b9"],
+  "cloud-alm-test-readiness": ["6bf13dd31a9d0b3f8a613de0a490cc270c7e82abdb4e4c0e80fb118ba1fb9df2", "d9aae249aa30659d151b7636ebf47f626397d7f950a451a4a0a2848c3128ae05", "be7d128a277acee037e1502f46fe927db7fc5c07f77d99d62cd95d94d4558f3d"],
+  "cloud-alm-workshop-prep": ["03b4969260ebb061c76d08fd5acf1d092d285e3d16e6c2cbea57f7b0d96c63f9", "7d5abcc3f843bd5bde5ff3880df159704d73c8e076407ef67f0cade53686cefb", "ec9b554f3126b34f57029ae43ad7867a635fe3069adacaf5ede53ed37bb81425"],
+};
+
+const skillDigest = (dir: string) => createHash("sha256").update(readFileSync(join(dir, "SKILL.md"))).digest("hex");
+const oldMarker = "Installed by cloud-alm-mcp-server setup; replaced on the next setup and removed by uninstall.\n";
+
+/** Only an intact package copy can be replaced. Extra files and symlinks belong to the user. */
+export function ownSkill(target: string, source: string = SKILLS_SOURCE): boolean {
   try {
-    const text = readFileSync(join(target, "SKILL.md"), "utf8");
-    return new RegExp(`^name: ${basename(target)}$`, "m").test(text) && /\bcalm_(overview|list|get|gaps)\b/.test(text);
+    if (!lstatSync(target).isDirectory()) return false;
+    const files = readdirSync(target, { withFileTypes: true });
+    if (!files.every(file => file.isFile() && (file.name === "SKILL.md" || file.name === SKILL_MARKER))) return false;
+    const digest = skillDigest(target);
+    if (files.some(file => file.name === SKILL_MARKER)) {
+      const marker = readFileSync(join(target, SKILL_MARKER), "utf8");
+      if (marker !== oldMarker) return marker === `cloud-alm-mcp-server sha256 ${digest}\n`;
+    }
+    const name = basename(target);
+    if (historicalSkills[name]?.includes(digest)) return true;
+    const bundled = join(source, name);
+    const entries = readdirSync(bundled, { withFileTypes: true });
+    return entries.length === 1 && entries[0]?.name === "SKILL.md" && entries[0].isFile() && skillDigest(bundled) === digest;
   } catch {
     return false;
   }
@@ -385,11 +409,10 @@ export function installSkills(dir: string, source: string = SKILLS_SOURCE): numb
   let installed = 0;
   for (const name of skillNames(source)) {
     const target = join(dir, name);
-    if (existsSync(target) && !ownSkill(target)) continue;
-    rmSync(target, { recursive: true, force: true });
+    if (lstatSync(target, { throwIfNoEntry: false }) && !ownSkill(target, source)) continue;
     mkdirSync(dir, { recursive: true });
     cpSync(join(source, name), target, { recursive: true });
-    writeFileSync(join(target, SKILL_MARKER), "Installed by cloud-alm-mcp-server setup; replaced on the next setup and removed by uninstall.\n");
+    writeFileSync(join(target, SKILL_MARKER), `cloud-alm-mcp-server sha256 ${skillDigest(target)}\n`);
     installed++;
   }
   return installed;
@@ -400,8 +423,15 @@ export function removeSkills(dir: string, source: string = SKILLS_SOURCE): numbe
   let removed = 0;
   for (const name of skillNames(source)) {
     const target = join(dir, name);
-    if (!existsSync(target) || !ownSkill(target)) continue;
-    rmSync(target, { recursive: true, force: true });
+    if (!existsSync(target) || !ownSkill(target, source)) continue;
+    rmSync(join(target, "SKILL.md"), { force: true });
+    rmSync(join(target, SKILL_MARKER), { force: true });
+    // A concurrently added user file must survive removal.
+    try {
+      rmdirSync(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOTEMPTY") throw error;
+    }
     removed++;
   }
   return removed;

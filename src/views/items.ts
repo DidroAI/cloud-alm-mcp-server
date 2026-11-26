@@ -5,6 +5,7 @@
  */
 import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js";
 import { type Row, rowOf } from "../calm/values.js";
+import { writeFailure, writeResult, type WriteItemOutcome } from "../write-outcome.js";
 import { escapeHtml } from "./html.js";
 import { resolveProject, type SnapDocument, type SnapFeature, Snapshot, type SnapTestCase } from "./snapshot.js";
 import { idFromUrl } from "./links.js";
@@ -173,6 +174,30 @@ export async function afterWrite<T>(what: string, step: () => Promise<T>): Promi
   } catch (error) {
     return `${what} failed (${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error"})`;
   }
+}
+
+/** A successful create without an id cannot safely be retried or used for follow-up writes. */
+export function missingCreatedId(item: string) {
+  const text = `Cloud ALM accepted the ${item} but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
+  return writeResult(text, [{ item, status: "unconfirmed", detail: text }]);
+}
+
+/** Feature and test case creation both add links in separate writes after SAP creates the record. */
+export async function linkCreatedRecord(tasks: TaskSummary[], send: (task: TaskSummary) => Promise<unknown>) {
+  const linked: string[] = [];
+  const outcomes: WriteItemOutcome[] = [];
+  for (const task of tasks) {
+    const id = task.displayId ?? task.id;
+    const item = `Link to ${id}`;
+    try {
+      await send(task);
+      linked.push(id);
+      outcomes.push({ item, status: "written", detail: "Link created." });
+    } catch (error) {
+      outcomes.push(writeFailure(item, error));
+    }
+  }
+  return { linked, outcomes };
 }
 
 /** Words of a title, without codes, brackets and short words. */

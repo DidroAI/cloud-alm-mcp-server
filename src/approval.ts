@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { sapLogo } from "./sap-logo.js";
 import { metricsCss, metricsScript } from "./project-metrics.js";
+import type { WriteOutcome } from "./write-outcome.js";
 import { CARD_TEMPLATE } from "./approval-card.js";
 import { OVERVIEW_TEMPLATE } from "./overview-card.js";
 
@@ -45,8 +46,8 @@ export function approvalFromEnv(env: Record<string, string | undefined>): Exclud
  * the list of earlier addresses, which still answer with the current card: an
  * app that listed the tools before an update asks for the address it knows.
  */
-export const CARD_URI = "ui://cloud-alm/approve-v5.html";
-export const CARD_URIS_BEFORE = ["ui://cloud-alm/approve-v4.html", "ui://cloud-alm/approve-v3.html"];
+export const CARD_URI = "ui://cloud-alm/approve-v6.html";
+export const CARD_URIS_BEFORE = ["ui://cloud-alm/approve-v5.html", "ui://cloud-alm/approve-v4.html", "ui://cloud-alm/approve-v3.html"];
 export const META_KEY = "cloud-alm/approval";
 /** Long enough for a user who answers a turn later; still single-use and bound to one change. */
 export const TTL_MS = 60 * 60_000;
@@ -80,7 +81,7 @@ type Pending = {
 const pending = new Map<string, Pending>();
 
 /** How a proposal ended. `working` while its write runs; `failed` when the write was refused. */
-export type Outcome = { status: "working" | "approved" | "rejected" | "failed"; summary?: string };
+export type Outcome = { status: "working" | "approved" | "rejected" | "failed" | WriteOutcome["status"]; summary?: string; outcome?: WriteOutcome };
 /** A decided proposal keeps this much of the write's answer. */
 const MAX_SUMMARY = 2000;
 /**
@@ -142,6 +143,8 @@ export function take(
 ): Pending {
   const p = pending.get(id);
   const d = decided.get(id);
+  if (d?.outcome && d.subject === subject && d.expiresAt > now)
+    throw new ApprovalError(`This approval was already used. ${d.status === "partial" ? "The change was partly applied." : "The write could not be confirmed."} Check the items in Cloud ALM before trying any remaining changes.${d.summary ? ` Previous answer: ${d.summary}` : ""}`);
   if (d && d.subject === subject && d.expiresAt > now)
     throw new ApprovalError(
       d.status === "rejected"
@@ -190,17 +193,18 @@ export function cardShown(id: string, subject: string, nonce: string, now = Date
 }
 
 /** What came of a taken proposal. */
-export function settle(id: string, status: Exclude<Outcome["status"], "working">, summary?: string) {
+export function settle(id: string, status: Exclude<Outcome["status"], "working">, summary?: string, outcome?: WriteOutcome) {
   const d = decided.get(id);
   if (!d) return;
   d.status = status;
+  if (outcome) d.outcome = outcome;
   if (summary) d.summary = summary.length > MAX_SUMMARY ? `${summary.slice(0, MAX_SUMMARY)} …` : summary;
 }
 
 /** Where a proposal stands, for its approver only; anyone else's is unknown. */
 export function statusOf(id: string, subject: string, now = Date.now()): Outcome | { status: "pending" | "unknown" } {
   const d = decided.get(id);
-  if (d && d.subject === subject && d.expiresAt > now) return { status: d.status, ...(d.summary ? { summary: d.summary } : {}) };
+  if (d && d.subject === subject && d.expiresAt > now) return { status: d.status, ...(d.outcome ? { outcome: d.outcome } : {}), ...(d.summary ? { summary: d.summary } : {}) };
   const p = pending.get(id);
   return { status: p && p.subject === subject && p.expiresAt > now ? "pending" : "unknown" };
 }

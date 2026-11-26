@@ -73,6 +73,7 @@ export const GET_OUT = z.object({
 
 export const GAPS_OUT = z.object({
   project,
+  testPlan: z.object({ id: str, uuid: z.string(), title: str, assignmentsComplete: z.boolean() }).optional(),
   scope: z.enum(["open", "all"]),
   offset: z.number().int(),
   sections: z.array(
@@ -91,7 +92,7 @@ export const GAPS_OUT = z.object({
           covers: z.array(str).optional(),
           defects: z.array(str).optional(),
           testCases: z
-            .array(z.looseObject({ id: str, title: str.optional(), result: z.string(), prepared: z.boolean().nullable(), defects: z.array(str).optional() }))
+            .array(z.looseObject({ id: str, title: str.optional(), result: z.string(), assigned: z.boolean().nullable().optional().describe("Membership in the selected test plan; null when unknown"), prepared: z.boolean().nullable(), defects: z.array(str).optional() }))
             .optional(),
           children: z.array(z.object({ id: str, verdict: z.string() })).optional().describe("Coverage: the user stories under a requirement"),
           rollup: z.string().optional().describe("Coverage: the requirement with its user stories, worst verdict first"),

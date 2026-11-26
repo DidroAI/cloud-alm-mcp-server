@@ -55,7 +55,7 @@ describe("tools", () => {
 
   test("content cards follow the selected presentation and read allow list", async () => {
     const { client } = await connect();
-    const uri = "ui://cloud-alm/content-v4.html";
+    const uri = "ui://cloud-alm/content-v5.html";
     for (const tool of (await client.listTools()).tools.filter(t => ["calm_projects", "calm_list", "calm_get"].includes(t.name)))
       expect(tool._meta?.ui).toMatchObject({ resourceUri: uri });
     const resource = await client.readResource({ uri });
@@ -68,7 +68,6 @@ describe("tools", () => {
     const { tools } = await explicit.client.listTools();
     expect(tools.find(tool => tool.name === "calm_get")?._meta?.ui).toBeUndefined();
     const selection = { tool: "calm_get", arguments: { ids: ["3-1"] } };
-    expect((await explicit.call("calm_show", selection)).structured).toEqual({ display: selection });
     expect((await explicit.call("calm_show", { tool: "calm_get", arguments: {} })).error).toBe(true);
     expect((await explicit.call("calm_show", { tool: "calm_list", arguments: {} })).error).toBe(true);
     expect(explicit.fake.seen).toHaveLength(0);
@@ -76,7 +75,27 @@ describe("tools", () => {
     const read = await explicit.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } });
     const blocks = (read.content as { text: string }[]).map(block => block.text);
     expect(blocks).toHaveLength(2);
-    expect(blocks[1]).toContain(`call calm_show with ${JSON.stringify(selection)}`);
+    const { readId, ...readPage } = read.structuredContent as Record<string, unknown>;
+    expect(typeof readId).toBe("string");
+    expect(blocks[1]).toContain(JSON.stringify({ ...selection, readId }));
+    const requests = explicit.fake.seen.length;
+    const shown = await explicit.client.callTool({ name: "calm_show", arguments: { ...selection, readId } });
+    expect(shown.structuredContent).toEqual({ display: selection });
+    expect(shown._meta?.["cloud-alm/page"]).toMatchObject({ structuredContent: readPage });
+    expect(explicit.fake.seen).toHaveLength(requests);
+    // Omitting the handle remains valid and reads the selected records.
+    const direct = await explicit.client.callTool({ name: "calm_show", arguments: selection });
+    expect(direct._meta?.["cloud-alm/page"]).toMatchObject({ structuredContent: readPage });
+    expect(explicit.fake.seen.length).toBeGreaterThan(requests);
+
+    const other = await connect({ ...TENANT, [`calm-tasks/v1/tasks/${REQ}`]: {
+      ...TENANT[`calm-tasks/v1/tasks/${REQ}`] as object, description: "Other tenant",
+    } }, { contentPresentation: "explicit" });
+    const isolated = await other.client.callTool({ name: "calm_show", arguments: { ...selection, readId } });
+    expect(JSON.stringify(isolated._meta)).toContain("Other tenant");
+    expect(other.fake.seen.length).toBeGreaterThan(0);
+    const different = await explicit.client.callTool({ name: "calm_show", arguments: { tool: "calm_get", arguments: { ids: ["3-4"] }, readId } });
+    expect(different._meta?.["cloud-alm/page"]).toMatchObject({ structuredContent: { items: [{ id: "3-4" }] } });
     expect(explicit.client.getInstructions()).toContain("call calm_show once");
     const plain = await connect(TENANT, { cards: false, contentPresentation: "explicit" });
     expect(((await plain.client.callTool({ name: "calm_get", arguments: { ids: ["3-1"] } })).content as unknown[])).toHaveLength(1);
@@ -301,6 +320,32 @@ describe("mode (b): streamable HTTP with a bearer per request", () => {
     expect(result.content[0]?.text).toContain("Rollout Example");
     expect(fake.seen.at(-1)?.authorization).toBe("Bearer modern-token");
     await client.close();
+  });
+
+  test("a selection survives separate HTTP requests and expires within its caller's scope", async () => {
+    const path = `calm-tasks/v1/tasks/${REQ}`;
+    let description = "First version", now = 1000;
+    const tenant = fakeCloudAlm({ ...TENANT, [path]: () => ({ ...TENANT[path] as object, description }) });
+    const handler = createHttpHandler({ baseUrl: BASE_URL, reader: { fetch: tenant.fetch }, server: { contentPresentation: "explicit", now: () => now } });
+    const rpc = async (token: string, name: string, args: Record<string, unknown>) => {
+      const response = await handler(new Request(endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+      }));
+      expect(response.status).toBe(200);
+      return (await response.json() as { result: { structuredContent: { readId?: string }; _meta?: Record<string, unknown> } }).result;
+    };
+    const args = { ids: ["3-1"] };
+    const original = await rpc("caller-a", "calm_get", args);
+    const selection = { tool: "calm_get", arguments: args, readId: original.structuredContent.readId };
+    description = "Second version";
+    const requests = tenant.seen.length;
+    expect(JSON.stringify((await rpc("caller-a", "calm_show", selection))._meta)).toContain("First version");
+    expect(tenant.seen).toHaveLength(requests);
+    expect(JSON.stringify((await rpc("caller-b", "calm_show", selection))._meta)).toContain("Second version");
+    now += 45_000;
+    expect(JSON.stringify((await rpc("caller-a", "calm_show", selection))._meta)).toContain("Second version");
   });
 
   test("no bearer, wrong method or a foreign API address is refused", async () => {

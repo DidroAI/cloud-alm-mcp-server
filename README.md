@@ -56,11 +56,11 @@ as cards. Use the Cloud ALM links to open the source record or its SAP app. **Vi
 a compact list in hosts with fullscreen support. **Load more** fetches the
 next page with the same filters. Clients that use text receive the read result.
 
-For a host that supports MCP Apps and tool calls from a card, set
+For a host that supports MCP Apps, set
 `CALM_CONTENT_PRESENTATION=explicit` in the server environment to show only
 the final selection. The assistant reads the data, then calls `calm_show`
-with selected IDs or list filters. The card fetches those records when it
-opens. For a text answer or an export, the assistant can skip that last call.
+with the selected read. The first page travels with the card, even in a host
+that cannot fetch more pages. For a text answer or an export, the assistant can skip that last call.
 
 ### Agent feedback
 
@@ -155,9 +155,9 @@ The tools behind these answers: [docs/tools.md](docs/tools.md).
 
 ## Skills: whole workflows
 
-`skills/` holds agent skills for the work of a functional consultant; the
-server also offers each one as an MCP prompt (pick it from your client's
-prompt or slash-command menu):
+The server publishes its SAP workflows through Skills over MCP. Compatible
+clients can discover them with `skills/list` and read a selected guide on
+demand. Each workflow is also available in the client's MCP prompt menu.
 
 | Skill | For |
 | --- | --- |
@@ -170,6 +170,7 @@ prompt or slash-command menu):
 | `cloud-alm-test-readiness` | SIT/UAT entry and exit, go-live readiness, go / no-go |
 | `cloud-alm-defect-triage` | duplicates, priority, owner and due date of open defects |
 | `cloud-alm-test-design` | test cases for what is untested |
+| `cloud-alm-retest` | which tests to rerun after a change, with the evidence for each case in the selected cycle |
 
 `setup` copies them to where Claude Code (`~/.claude/skills`, or
 `$CLAUDE_CONFIG_DIR/skills`), Codex (`~/.agents/skills`) and Cursor read

@@ -92,7 +92,11 @@ this key"); the rest still answers. Errors are short text with a code
   test plan*.
 - **Requirements** show their fit/gap classification and approval state.
 - **Coverage** (`calm_gaps` with `checks: ["coverage"]`) rolls a
-  requirement up with its user stories, worst verdict first.
+  requirement up with its user stories, worst verdict first. Pass
+  `testPlanId` to assess a single cycle. For a gate, use
+  `includeClosed: true` to include completed requirements. The plan selector
+  accepts a display ID or GUID and defaults to `coverage`. It also supports
+  `failed_tests`, `unprepared_tests` and `orphan_tests`.
 - **Cards.** In apps with MCP Apps (Claude, ChatGPT, the Codex app, VS
   Code…), `calm_overview` shows a project card, lists and item details open
   as cards, and every write proposal shows an approval card with the change
@@ -100,14 +104,16 @@ this key"); the rest still answers. Errors are short text with a code
   `CALM_CONTENT_PRESENTATION=explicit` the read tools open no card; the
   assistant calls one more tool, `calm_show`, with its final selection
   (`calm_projects`, `calm_overview`, `calm_list` or `calm_get` and their
-  arguments), and that card loads the records.
+  arguments). The card receives the first page with the tool result.
 - **Reports.** A local install also offers `calm_report_feedback`: the
   assistant can send Didro a short report about a tool problem (tool name,
   outcome, an observation, optionally a suggestion). It writes nothing to
   Cloud ALM. On by default; `cloud-alm-mcp-server feedback off` or
   `CALM_FEEDBACK=off` removes the tool
   ([install.md](install.md#reports-about-tool-problems)).
-- **Prompts.** Each skill of `skills/` is also an MCP prompt.
+- **Skills and prompts.** Clients with Skills over MCP can discover workflows
+  with `skills/list`, inspect a manifest with `skills/get`, and read its
+  files with `resources/read`. The same workflows are available as MCP prompts.
 
 ### Writes: the key decides
 
@@ -182,6 +188,10 @@ marked destructive, so apps ask before running it. Keep that prompt on for
 `calm_confirm` (do not "always allow" it), or set `CALM_APPROVAL=card`. Before writing, the server runs the change as a dry run again
 and refuses if it no longer matches the preview the user saw. Text from
 Cloud ALM reaches the agent fenced as data.
+
+If SAP applies only part of an approved change, the card lists the outcome
+for each affected record. Reopening the card shows the saved result while
+the approval is valid. Check any unconfirmed item in SAP before retrying it.
 
 The server sends no confirm dialog (MCP elicitation): some clients declare
 one and answer "decline" without showing it, which would cancel a change

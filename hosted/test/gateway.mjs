@@ -2,6 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { SkillsClient } from "@modelcontextprotocol/client/ext/skills";
 import { createGateway } from "../api/connect.mjs";
 
 process.env.CONNECT_KEY = randomBytes(32).toString("hex");
@@ -101,7 +103,7 @@ for (const base of ["", "/cloud-alm/connect"])
     }
 
     // Without a session nothing answers, the handshake included, so an app that probes the address sees a sign-in.
-    for (const method of ["initialize", "tools/list", "tools/call"]) {
+    for (const method of ["initialize", "tools/list", "tools/call", "skills/list", "resources/read"]) {
       const refused = await rpc({ method, params: method === "initialize" ? { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "probe", version: "0" } } : {} });
       assert.equal(refused.status, 401, method);
       assert.match(refused.headers.get("www-authenticate"), /resource_metadata=/);
@@ -168,6 +170,19 @@ for (const base of ["", "/cloud-alm/connect"])
     assert.ok(!JSON.stringify(rows).includes(token.access_token), "the connector token is stored as a digest");
 
     const auth = { authorization: "Bearer " + token.access_token };
+    const sdk = new Client({ name: "hosted-skills-test", version: "1" }, { versionNegotiation: { mode: "auto" } });
+    try {
+      await sdk.connect(new StreamableHTTPClientTransport(new URL(origin + base + "/mcp"), {
+        requestInit: { headers: auth },
+        fetch: (url, init) => handle(new Request(url, init)),
+      }));
+      const catalog = new SkillsClient(sdk);
+      const retest = (await catalog.list()).skills.find(skill => skill.frontmatter.name === "cloud-alm-retest");
+      assert.ok(retest, "the hosted catalog includes the retest workflow");
+      assert.equal((await catalog.read(retest)).verified, true);
+    } finally {
+      await sdk.close();
+    }
     // Signed in, the tool list carries the report tool and the OAuth scheme on every tool.
     const signedInTools = (await (await rpc({ method: "tools/list" }, auth)).json()).result.tools;
     assert.ok(signedInTools.some((tool) => tool.name === "calm_report_feedback"));

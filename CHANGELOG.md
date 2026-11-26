@@ -6,6 +6,12 @@ All notable changes to this package. The format follows
 
 ## [Unreleased]
 
+- All bundled workflows are available through Skills over MCP and through the prompt menu. The new `cloud-alm-retest` workflow traces a change to the test cases worth rerunning in a selected cycle.
+- `calm_gaps` accepts a test plan for cycle-specific coverage. Blocked executions and unprepared tests are visible in the readiness assessment.
+- Approval cards show partial writes and the affected records, including when a card is reopened.
+- In explicit presentation mode the records card receives its first page with the tool result, including on hosts that cannot fetch more rows from a card.
+- Setup and uninstall preserve team-authored skill folders that share a bundled skill’s name.
+
 ## [0.3.8] - 2026-11-26
 
 - Record card: the description has its own section, under the key fields as in Cloud ALM, with paragraphs and lists as they were written instead of one block of text. The card has a new address; the earlier ones keep answering.

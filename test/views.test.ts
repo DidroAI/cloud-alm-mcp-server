@@ -473,3 +473,85 @@ describe("test-plan sign-off evidence", () => {
     expect(data?.items[0].fields.progress).toBeUndefined();
   });
 });
+
+describe("cycle-scoped coverage", () => {
+  const plans = "calm-testmanagement-testplans/v1/TestPlans";
+  const detail = Object.keys(TENANT).find(path => path.startsWith(plans + "/"))!;
+  const plan = TENANT[detail] as { uuid: string; title: string; toTestCaseAssignments: { testCaseId: string; testCaseDisplayId: string }[] };
+  const analytics = ANALYTICS + "/Tests";
+  const manual = "calm-testmanagement/v1/ManualTestCases";
+  const cases = (TENANT[manual] as { value: { uuid: string; isPrepared: boolean }[] }).value;
+  const runs = (TENANT[analytics] as { value: { testcaseId: string; status: string; testPlan: string }[] }).value;
+
+  test("preserves blocked execution, and an earlier pass cannot make an unprepared case ready", async () => {
+    const { call } = await connect({
+      ...TENANT,
+      [analytics]: { value: runs.map(row => row.status === "Failed" ? { ...row, status: "Blocked" } : row) },
+      [manual]: { value: cases.map(tc => ({ ...tc, isPrepared: false })) },
+    });
+    for (const args of [{}, { testPlanId: "8-3-1" }]) {
+      const { text, data } = await call("calm_gaps", { checks: ["coverage"], ...args });
+      const items = data?.sections[0].items;
+      expect(items[0]).toMatchObject({ note: "blocked", rollup: "blocked", testCases: [{ result: "blocked", prepared: false }] });
+      expect(items[1]).toMatchObject({ note: "not prepared", testCases: [{ result: "passed", prepared: false }] });
+      expect(text).toContain("8-1-2 passed (not prepared)");
+    }
+  });
+
+  test("joins only current plan members with this cycle's results, regardless of other cycles", async () => {
+    // TC1 failed in this plan in the past but is no longer assigned; TC2 passed only in SIT.
+    const { call } = await connect({
+      ...TENANT,
+      [detail]: { ...plan, toTestCaseAssignments: plan.toTestCaseAssignments.filter(tc => tc.testCaseDisplayId !== "8-1-1") },
+      [analytics]: { value: runs.map(row => row.status === "Passed" ? { ...row, testPlan: "SIT" } : row) },
+    });
+    const { data, text } = await call("calm_gaps", { testPlanId: plan.uuid });
+    expect(data?.testPlan).toMatchObject({ id: "8-3-1", uuid: plan.uuid, assignmentsComplete: true });
+    expect(data?.sections[0].items[0]).toMatchObject({ note: "not assigned to this plan", testCases: [{ assigned: false, prepared: true, result: "not assigned to this plan" }] });
+    expect(data?.sections[0].items[1]).toMatchObject({ note: "not run", testCases: [{ assigned: true, prepared: true, result: "not run" }] });
+    expect(data?.sections[0].items[2]).toMatchObject({ note: "no test", testCases: [] });
+    expect(text).toContain('Test plan: 8-3-1 "UAT cycle 1"');
+    const scopedChecks = await call("calm_gaps", { testPlanId: "8-3-1", checks: ["failed_tests", "orphan_tests", "unprepared_tests"] });
+    expect(scopedChecks.data?.sections.map((s: { total: number }) => s.total)).toEqual([0, 1, 1]);
+    expect((await call("calm_gaps", { checks: ["failed_tests"] })).data?.sections[0].total).toBe(1);
+  });
+
+  test("an unassigned alternative keeps its evidence without overriding an assigned case", async () => {
+    const first = cases[0] as typeof cases[number] & { toTaskAssignments: unknown[] };
+    const { call } = await connect({
+      ...TENANT,
+      [manual]: { value: cases.map(tc => tc.uuid === cases[1]?.uuid ? { ...tc, toTaskAssignments: first.toTaskAssignments } : tc) },
+      [detail]: { ...plan, toTestCaseAssignments: plan.toTestCaseAssignments.filter(tc => tc.testCaseDisplayId !== "8-1-1") },
+    });
+    const { data } = await call("calm_gaps", { testPlanId: "8-3-1" });
+    expect(data?.sections[0].items[0]).toMatchObject({
+      note: "passed",
+      testCases: [{ assigned: false, result: "not assigned to this plan" }, { assigned: true, result: "passed" }],
+    });
+  });
+
+  test("partial assignments never establish absence, and duplicate plan names cannot establish execution", async () => {
+    const byPlan = (TENANT[plans] as { value: { uuid: string; title: string }[] }).value[0]!;
+    const { call } = await connect({
+      ...TENANT,
+      [detail]: { ...plan, toTestCaseAssignments: plan.toTestCaseAssignments.filter(tc => tc.testCaseDisplayId !== "8-1-1"), "toTestCaseAssignments@odata.nextLink": "more" },
+      [plans]: { value: [byPlan, { ...byPlan, uuid: "eeeeeeee-0000-4000-8000-000000000022", displayId: "8-3-2" }] },
+    });
+    const { data } = await call("calm_gaps", { testPlanId: "8-3-1", checks: ["failed_tests", "coverage"] });
+    expect(data?.sections.map((s: { check: string }) => s.check)).toEqual(["coverage"]);
+    expect(data?.testPlan.assignmentsComplete).toBe(false);
+    expect(data?.sections[0].items[0].testCases[0]).toMatchObject({ assigned: null, result: "unknown" });
+    expect(data?.sections[0].items[1].testCases[0]).toMatchObject({ assigned: true, result: "unknown" });
+    expect(data?.notes.join(" ")).toContain("cannot uniquely match");
+    expect(data?.notes.join(" ")).toContain("assignments are incomplete");
+  });
+
+  test("retains known assignments without analytics and rejects unsuitable plan references and checks", async () => {
+    const { call } = await connect({ ...TENANT, [analytics]: new Response(null, { status: 403 }) });
+    const { data } = await call("calm_gaps", { testPlanId: "8-3-1" });
+    expect(data?.sections[0].items[0].testCases[0]).toMatchObject({ assigned: true, prepared: true, result: "unknown" });
+    expect(data?.notes.join(" ")).toContain("testResults");
+    expect((await call("calm_gaps", { testPlanId: "8-1-1" })).error).toBe(true);
+    expect((await call("calm_gaps", { testPlanId: "8-3-1", checks: ["no_process"] })).error).toBe(true);
+  });
+});

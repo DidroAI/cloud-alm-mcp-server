@@ -6,13 +6,16 @@
  * test cases cannot be tagged through the API.
  */
 import { type CloudAlm, CloudAlmError, type TaskSummary } from "../calm/index.js";
+import { writeResult, type WriteItemOutcome, writeFailure } from "../write-outcome.js";
 import { PATHS } from "../calm/client.js";
 import { type Row, rowOf, rowsOf, str } from "../calm/values.js";
 import type { CloudAlmWriter } from "../calm/writer.js";
 import {
-  afterWrite as afterCreate,
+  afterWrite,
   dry,
   dryNote,
+  missingCreatedId,
+  linkCreatedRecord,
   NOTHING_TO_DO,
   similarTitles,
   type Item,
@@ -160,30 +163,25 @@ export async function createTestCase(
     displayId?: string;
   } | null;
   const id = created?.uuid;
-  if (!id)
-    return `Cloud ALM accepted the test case "${body.title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
-  const linked: string[] = [];
-  const failed: string[] = [];
-  for (const t of covered) {
-    try {
-      await writer.post("calm-testmanagement/v1/TaskAssignments", { parentTestCase_ID: id, taskId: t.id });
-      linked.push(t.displayId ?? t.id);
-    } catch (error) {
-      failed.push(`${t.displayId}: ${error instanceof CloudAlmError ? error.reason : "failed"}`);
-    }
-  }
-  const back = await afterCreate("reading it back", () => calm.getTestCase(id));
+  if (!id) return missingCreatedId(`test case "${body.title}"`);
+  const { linked, outcomes } = await linkCreatedRecord(covered, task =>
+    writer.post("calm-testmanagement/v1/TaskAssignments", { parentTestCase_ID: id, taskId: task.id }));
+  const back = await afterWrite("reading it back", () => calm.getTestCase(id));
   const stored =
     typeof back === "string"
       ? back
       : `${back.activities.length} activities, ${back.activities.reduce((n, a) => n + a.actions.length, 0)} steps stored`;
-  return [
+  const issues = outcomes.filter(row => row.status !== "written");
+  const text = [
     `Created ${created?.displayId ?? (typeof back === "string" ? "" : back.displayId)} "${body.title}" [${id}]: ${stored}${linked.length ? `; linked to ${linked.join(", ")}` : ""}.`,
-    failed.length ? `Links that failed: ${failed.join("; ")}` : "",
+    ...issues.map(row => `${row.item}: ${row.status} (${row.detail})`),
     "Test cases cannot be tagged through the API. Change it with calm_update; deleting it needs calm-api.testcases.delete.",
   ]
     .filter(Boolean)
     .join("\n");
+  outcomes.unshift({ item: created?.displayId ?? id, status: "written", detail: "Created." });
+  if (typeof back === "string") outcomes.push({ item: "Read back", status: "unconfirmed", detail: back });
+  return writeResult(text, outcomes);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,19 +247,23 @@ export async function link(
     };
     return { text: `${dryNote(o)} Would ${verb} ${plan.name} "${short(plan.title, 70)}" ${prep} ${plan.todo.map(label).join("; ")}.${skippedNote}${notes}`, data: { change } };
   }
-  const done: string[] = [];
-  const failed: string[] = [];
+  const outcomes: WriteItemOutcome[] = [];
   for (const t of plan.todo) {
+    const item = t.displayId ?? t.id;
     try {
       await needing(plan.scope, () => plan.run(t));
-      done.push(t.displayId ?? t.id);
+      outcomes.push({ item, status: "written", detail: unlink ? "Link removed." : "Link created." });
     } catch (error) {
-      if (!done.length && !failed.length && plan.todo.length === 1) throw error;
-      failed.push(`${t.displayId}: ${error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "failed"}`);
+      const failure = writeFailure(item, error);
+      if (plan.todo.length === 1 && failure.status === "failed") throw error;
+      outcomes.push(failure);
     }
   }
-  if (!done.length) throw new CloudAlmError("bad_request", `nothing ${verb}ed: ${failed.join("; ")}`);
-  return `${unlink ? "Unlinked" : "Linked"} ${plan.name} ${prep} ${done.join(", ")}.${skippedNote}${notes}${failed.length ? ` Failed: ${failed.join("; ")}.` : ""}`;
+  const done = outcomes.filter(row => row.status === "written").map(row => row.item);
+  const issues = outcomes.filter(row => row.status !== "written").map(row => `${row.item}: ${row.status} (${row.detail})`);
+  if (outcomes.every(row => row.status === "failed")) throw new CloudAlmError("bad_request", `nothing ${verb}ed: ${issues.join("; ")}`);
+  const text = done.length ? `${unlink ? "Unlinked" : "Linked"} ${plan.name} ${prep} ${done.join(", ")}.` : "No link changes confirmed.";
+  return writeResult([text + skippedNote + notes, ...issues].join(" "), outcomes);
 }
 
 async function linkPlan(
@@ -446,8 +448,11 @@ export async function tag(
     plans.push({ task: t, before, target, same });
   }
   o.reviewPlan?.({ project: snap.project.id, items: plans.map(p => ({ id: p.task.id, before: p.before, after: p.target })) });
-  for (const { task: t, before, target, same } of plans) {
+  const outcomes: WriteItemOutcome[] = [];
+  for (const [index, { task: t, before, target, same }] of plans.entries()) {
+    const item = t.displayId ?? t.id;
     if (same) {
+      outcomes.push({ item, status: "unchanged", detail: "Tags already match." });
       lines.push(`${t.displayId}: no change (${before.join(", ") || "no tags"})`);
       continue;
     }
@@ -463,20 +468,31 @@ export async function tag(
       }
       await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: t.id, tags: target });
     } catch (error) {
-      // Report the tasks already tagged, then this one's failure.
-      if (!lines.some((l) => l.includes(" → "))) throw error;
-      const why = error instanceof CloudAlmError ? `${error.code}: ${error.reason}` : "unexpected error";
-      lines.push(`${t.displayId}: not changed (${why}); the rest was not tried`);
+      const failure = writeFailure(item, error);
+      if (!outcomes.some(row => ["written", "partial", "unconfirmed"].includes(row.status)) && failure.status === "failed") throw error;
+      outcomes.push(failure);
+      lines.push(`${item}: ${failure.status} (${failure.detail}); the rest was not tried`);
+      for (const { task } of plans.slice(index + 1))
+        outcomes.push({ item: task.displayId ?? task.id, status: "skipped", detail: "Stopped after an earlier tag change failed." });
       break;
     }
-    const after = await allTags(calm, t.id).catch(() => target);
-    const stored = new Set(after.map((x) => x.toLowerCase()));
-    const dropped = target.filter((x) => !stored.has(x.toLowerCase()));
-    lines.push(
-      `${t.displayId}: [${before.join(", ")}] → [${after.join(", ")}]${dropped.length ? `; Cloud ALM did not store ${dropped.join(", ")} (a tag differing only in capitals from an existing one is dropped)` : ""}`,
-    );
+    const after = await afterWrite("checking the stored tags", () => allTags(calm, t.id));
+    if (typeof after === "string") {
+      outcomes.push({ item, status: "unconfirmed", detail: after });
+      lines.push(`${item}: tag update accepted. ${after}`);
+      continue;
+    }
+    const stored = new Set(after.map(x => x.toLowerCase()));
+    const dropped = target.filter(x => !stored.has(x.toLowerCase()));
+    const extra = after.filter(x => !target.some(wanted => wanted.toLowerCase() === x.toLowerCase()));
+    const difference = [
+      ...(dropped.length ? [`Cloud ALM did not store ${dropped.join(", ")}`] : []),
+      ...(extra.length ? [`also stored: ${extra.join(", ")}`] : []),
+    ].join("; ");
+    outcomes.push({ item, status: difference ? "partial" : "written", detail: difference || "Tags updated." });
+    lines.push(`${t.displayId}: [${before.join(", ")}] → [${after.join(", ")}]${difference ? `; ${difference}` : ""}`);
   }
-  if (lines.every((l) => / no change \(/.test(l))) return `${NOTHING_TO_DO} ${lines.join("; ")}.`;
+  if (plans.every(p => p.same)) return `${NOTHING_TO_DO} ${lines.join("; ")}.`;
   if (dry(o, input.dryRun)) {
     const change: Change = {
       kind: "update",
@@ -488,7 +504,7 @@ export async function tag(
     };
     return { text: lines.join("\n"), data: { change } };
   }
-  return lines.join("\n");
+  return writeResult(lines.join("\n"), outcomes);
 }
 
 // ---------------------------------------------------------------------------
@@ -594,16 +610,24 @@ export async function createTask(
     return { text: `${dryNote(o)} Would create ${plan}.${extra}`, data: { change } };
   }
   const created = (await writer.post("calm-tasks/v1/tasks", body)) as { id?: string; displayId?: string } | null;
-  if (!created?.id)
-    return `Cloud ALM accepted the ${input.type.replace("_", " ")} "${title}" but did not return its id. Check with calm_list before trying again: a retry would create a duplicate.`;
-  let tags = "";
-  if (input.tags?.length) {
-    const id = created.id;
-    const stored = await afterCreate("setting its tags", async () => {
-      await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: id, tags: input.tags });
-      return (await allTags(calm, id)).join(", ") || "none stored";
-    });
-    tags = ` Tags: ${stored}.`;
+  if (!created?.id) return missingCreatedId(`${input.type.replace("_", " ")} "${title}"`);
+  const text = `Created ${created.displayId ?? ""} ${plan} [${created.id}].`;
+  if (!input.tags?.length) return text;
+  const id = created.id;
+  const item = created.displayId ?? id;
+  const outcomes: WriteItemOutcome[] = [{ item, status: "written", detail: "Task created." }];
+  try {
+    await writer.post("calm-tasks/v1/tasks/updateTags", { taskId: id, tags: input.tags });
+  } catch (error) {
+    const failure = writeFailure(`Tags on ${item}`, error);
+    return writeResult(`${text} Tags: ${failure.status} (${failure.detail}).`, [...outcomes, failure]);
   }
-  return `Created ${created.displayId ?? ""} ${plan} [${created.id}].${tags}`;
+  const stored = await afterWrite("checking the stored tags", () => allTags(calm, id));
+  if (typeof stored === "string") {
+    outcomes.push({ item: `Tags on ${item}`, status: "unconfirmed", detail: stored });
+    return writeResult(`${text} Tags: ${stored}.`, outcomes);
+  }
+  const missing = input.tags.filter(tag => !stored.includes(tag));
+  if (missing.length) outcomes.push({ item: `Tags on ${item}`, status: "partial", detail: `Missing: ${missing.join(", ")}` });
+  return writeResult(`${text} Tags: ${stored.join(", ") || "none stored"}.`, outcomes);
 }

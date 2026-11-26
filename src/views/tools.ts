@@ -1244,15 +1244,62 @@ type GapItem = {
   testCases?: { id: string | null; result: string; prepared: boolean | null }[];
 };
 
+const PLAN_GAP_CHECKS: GapCheck[] = ["coverage", "failed_tests", "orphan_tests", "unprepared_tests"];
+const OUTSIDE_PLAN = "not assigned to this plan";
+const COVERAGE_RANK = ["failed", "blocked", "unknown", "no test", "not prepared", OUTSIDE_PLAN, NOT_IN_PLAN, "not run", "in progress", "passed"] as const;
+
+type CoverageVerdict = (typeof COVERAGE_RANK)[number];
+
+function worstCoverage(verdicts: CoverageVerdict[]): CoverageVerdict {
+  return verdicts.reduce((worst, next) => COVERAGE_RANK.indexOf(next) < COVERAGE_RANK.indexOf(worst) ? next : worst, "passed");
+}
+
+function executionVerdict(result: TestResult): CoverageVerdict {
+  switch (result.status.toLowerCase()) {
+    case "initial": case "not run": return "not run";
+    case "passed": return "passed";
+    case "failed": return "failed";
+    case "blocked": return "blocked";
+    case "in progress": return "in progress";
+    default: return "unknown";
+  }
+}
+
+async function coveragePlan(calm: CloudAlm, snap: Snapshot, raw: string) {
+  const plans = await snap.testPlans();
+  const key = idFromUrl(raw).trim().toLowerCase();
+  const found = plans.find(plan => plan.id.toLowerCase() === key || plan.displayId?.toLowerCase() === key);
+  if (!found) {
+    if (!snap.complete("testPlans")) throw new CloudAlmError("bad_request", "Cannot resolve this test plan because the project plan list is incomplete. " + footer(snap, ["testPlans"]).join(" "));
+    throw new CloudAlmError("not_found", `Test plan ${raw} not found in project ${snap.project.name ?? snap.project.id}. Use its display id or GUID.`);
+  }
+  const plan = await calm.getTestPlan(found.id);
+  const memberIds = new Set(plan.testCases.flatMap(tc => tc.testCaseId ? [tc.testCaseId.toLowerCase()] : []));
+  const assignmentsComplete = plan.assignmentsComplete && plan.testCases.every(tc => tc.testCaseId);
+  const matchingPlans = plans.filter(p => p.title === plan.title);
+  const resultsMatch = snap.complete("testPlans") && !!plan.title && matchingPlans.length === 1 && matchingPlans[0]?.id === plan.id;
+  const notes: string[] = [];
+  if (!assignmentsComplete) notes.push("Plan assignments are incomplete. Membership of omitted cases is unknown.");
+  if (!resultsMatch) notes.push("Execution is unknown because analytics cannot uniquely match the selected plan by title.");
+  return {
+    data: { id: plan.displayId, uuid: plan.id, title: plan.title, assignmentsComplete },
+    assignment: (id: string) => memberIds.has(id.toLowerCase()) ? true : assignmentsComplete ? false : null,
+    resultsMatch, notes,
+  };
+}
+
 export async function gaps(
   calm: CloudAlm,
-  input: { projectId?: string; checks?: GapCheck[]; max?: number; offset?: number; includeClosed?: boolean },
+  input: { projectId?: string; testPlanId?: string; checks?: GapCheck[]; max?: number; offset?: number; includeClosed?: boolean },
   o: ViewOptions = {},
 ) {
-  const checks = new Set(input.checks?.length ? input.checks : DEFAULT_CHECKS);
+  const checks = new Set<GapCheck>(input.checks?.length ? input.checks : input.testPlanId ? ["coverage"] : DEFAULT_CHECKS);
+  if (input.testPlanId && [...checks].some(check => !PLAN_GAP_CHECKS.includes(check)))
+    throw new CloudAlmError("bad_request", `With testPlanId, choose checks from ${PLAN_GAP_CHECKS.join(", ")}. Omit testPlanId for project-wide checks.`);
   const max = Math.min(Math.max(input.max ?? 20, 1), 200);
   const offset = Math.max(input.offset ?? 0, 0);
   const snap = await snapshotFor(calm, input.projectId, o);
+  const plan = input.testPlanId ? await coveragePlan(calm, snap, input.testPlanId) : null;
   const n = await namer(snap, [
     "tasks",
     "features",
@@ -1260,21 +1307,34 @@ export async function gaps(
     "processLinks",
     ...(["failed_tests", "coverage", "orphan_tests", "unprepared_tests"].some((c) => checks.has(c as GapCheck)) ? (["testResults", "defects"] as const) : []),
   ]);
-  const { tasks, features, testCases, processLinks, results } = n;
-  const resultsKnown = snap.complete("testResults", "testPlans");
+  const { tasks, features, testCases, processLinks } = n;
+  const resultsKnown = n.resultsKnown && (!plan || plan.resultsMatch);
+  const results = new Map([...n.results].map(([id, rows]) => [id.toLowerCase(), rows]));
+  const latestFor = (id: string) => {
+    const rows = results.get(id.toLowerCase()) ?? [];
+    if (!plan) return rows;
+    if (plan.assignment(id) !== true) return [];
+    const matching = rows.filter(r => r.plan === plan.data.title);
+    if (matching.length || !resultsKnown) return matching;
+    // The plan detail lists this assignment, even if the plan list omitted its expansion.
+    return [{ source: "assignment" as const, plan: plan.data.title ?? "", status: "Initial", date: "", passed: 0, failed: 0, steps: 0 }];
+  };
+  const planCases = plan ? testCases.filter(t => plan.assignment(t.id) === true) : testCases;
   // Missing source rows cannot establish that a relationship or test result is absent.
   const required: Record<GapCheck, Part[]> = {
     untested: ["tasks", "testCases"], no_process: ["tasks", "processLinks"], no_feature: ["tasks", "features"],
     features: ["features", "testCases"], failed_tests: ["testCases", "testResults", "testPlans"],
     orphan_tests: ["testCases"], unprepared_tests: ["testCases"], coverage: ["tasks", "testCases"],
   };
-  const unknownChecks = [...checks].filter(check => !snap.complete(...required[check]));
+  const unknownChecks = [...checks].filter(check => !snap.complete(...required[check])
+    || (plan && check !== "coverage" && (!plan.data.assignmentsComplete || (check === "failed_tests" && !resultsKnown))));
   for (const check of unknownChecks) checks.delete(check);
   const scope = input.includeClosed ? tasks : tasks.filter((t) => isOpen(t.status));
   const reqs = scope.filter((t) => t.type === "CALMREQU" || t.type === "CALMUS");
   const tested = new Set(testCases.flatMap((t) => t.taskIds));
   const featured = new Set(features.flatMap((f) => f.taskIds));
   const lines = [`Gaps in ${snap.project.name ?? "the project"} (${input.includeClosed ? "all" : "open"} requirements and user stories${input.includeClosed ? "" : "; includeClosed: true for all"}):`];
+  if (plan) lines.push(`Test plan: ${plan.data.id ?? plan.data.uuid} "${plan.data.title ?? "untitled"}". Requirements and stories come from the project. Assignment and execution refer to the selected plan. Linked defects may originate in any cycle.`);
   const sections: { check: GapCheck; title: string; total: number; items: GapItem[] }[] = [];
   const taskItem = (t: TaskSummary, note?: string): GapItem & { line: string } => ({
     id: t.displayId,
@@ -1293,14 +1353,16 @@ export async function gaps(
     if (offset + page.length < all.length) lines.push(`- … ${all.length - offset - page.length} more (offset ${offset + page.length})`);
     sections.push({ check, title, total: all.length, items: page.map(({ line: _, ...x }) => x) });
   };
-  const latestWord = (id: string) => {
-    const r = results.get(id) ?? [];
+  const latestWord = (id: string): CoverageVerdict => {
+    if (plan) {
+      const assigned = plan.assignment(id);
+      if (assigned === false) return OUTSIDE_PLAN;
+      if (assigned === null) return "unknown";
+    }
     if (!resultsKnown) return "unknown";
-    if (!r.length) return NOT_IN_PLAN;
-    if (r.some((x) => /fail/i.test(x.status))) return "failed";
-    if (r.every((x) => /pass/i.test(x.status))) return "passed";
-    if (r.some((x) => /progress/i.test(x.status))) return "in progress";
-    return "not run";
+    const rows = latestFor(id);
+    if (!rows.length) return plan ? "not run" : NOT_IN_PLAN;
+    return worstCoverage(rows.map(executionVerdict));
   };
   if (checks.has("untested")) {
     const missing = reqs.filter((t) => !tested.has(t.id));
@@ -1320,7 +1382,7 @@ export async function gaps(
     );
   }
   if (checks.has("failed_tests")) {
-    const failed = testCases.filter((t) => results.get(t.id)?.some((r) => /fail/i.test(r.status)));
+    const failed = planCases.filter((t) => latestFor(t.id).some(r => executionVerdict(r) === "failed"));
     section(
       "failed_tests",
       "Test cases whose latest run failed",
@@ -1334,11 +1396,11 @@ export async function gaps(
           type: `${t.kind} test case`,
           title: t.title,
           status: "failed",
-          ...testResultData(results.get(t.id)),
+          ...testResultData(latestFor(t.id)),
           note,
           covers: t.taskIds.map((id) => n.taskOf(id)?.displayId ?? id),
           ...(n.defectsKnown ? { defects: raised.map((d) => d.displayId) } : {}),
-          line: `${testCaseLine(t, results.get(t.id))} — ${note}`,
+          line: `${testCaseLine(t, latestFor(t.id))} — ${note}`,
         };
       }),
     );
@@ -1368,38 +1430,33 @@ export async function gaps(
     type: `${t.kind} test case`,
     title: t.title,
     prepared: t.prepared !== false,
-    ...(resultsKnown ? testResultData(results.get(t.id)) : { result: "unknown" }),
-    line: testCaseLine(t, resultsKnown ? results.get(t.id) : null),
+    ...(resultsKnown ? testResultData(latestFor(t.id)) : { result: "unknown" }),
+    line: testCaseLine(t, resultsKnown ? latestFor(t.id) : null),
   });
   if (checks.has("orphan_tests"))
-    section("orphan_tests", "Test cases linked to no task", testCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testItem));
+    section("orphan_tests", "Test cases linked to no task", planCases.filter((t) => !t.taskIds.length).sort(byDisplayId).map(testItem));
   if (checks.has("unprepared_tests"))
-    section("unprepared_tests", "Test cases not prepared", testCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map(testItem));
+    section("unprepared_tests", "Test cases not prepared", planCases.filter((t) => t.kind === "manual" && t.prepared === false).sort(byDisplayId).map(testItem));
   if (checks.has("coverage")) {
     // Every requirement and user story, its test cases and their latest results.
     const verdictOf = (taskId: string) => {
       const cases = testCases.filter((c) => c.taskIds.includes(taskId)).sort(byDisplayId);
-      const words = cases.map((c) => latestWord(c.id));
-      // A test that is not prepared does not count as ready, whatever it shows.
-      const verdict = !cases.length
-        ? "no test"
-        : !resultsKnown ? "unknown"
-        : words.every((w) => w === NOT_IN_PLAN)
-          ? NOT_IN_PLAN
-          : words.includes("failed")
-          ? "failed"
-          : words.every((w) => w === "passed")
-            ? "passed"
-            : words.includes("in progress")
-              ? "in progress"
-              : cases.some((c) => c.prepared === false)
-                ? "not prepared"
-                : "not run";
-      return { cases, words, verdict };
+      const evidence = cases.map(c => {
+        const result = latestWord(c.id);
+        const assigned = plan?.assignment(c.id);
+        let readiness = result;
+        if (result !== NOT_IN_PLAN && result !== OUTSIDE_PLAN) {
+          if (c.prepared === false) readiness = worstCoverage([result, "not prepared"]);
+          if (c.prepared === null) readiness = worstCoverage([result, "unknown"]);
+        }
+        return { result, assigned, readiness };
+      });
+      // Other cycles' cases stay visible, without counting against a known assignment.
+      const relevant = evidence.filter(e => e.assigned !== false);
+      let verdict: CoverageVerdict = "no test";
+      if (cases.length) verdict = relevant.length ? worstCoverage(relevant.map(e => e.readiness)) : OUTSIDE_PLAN;
+      return { cases, evidence, verdict };
     };
-    // Worst first: a requirement is only as ready as its weakest part.
-    const RANK = ["failed", "unknown", "no test", "not prepared", NOT_IN_PLAN, "not run", "in progress", "passed"];
-    const worst = (vs: string[]) => vs.reduce((a, b) => (RANK.indexOf(b) < RANK.indexOf(a) ? b : a), "passed");
     const sorted = reqs.sort(byDisplayId);
     // User stories under each requirement (one call each, capped).
     const parents = sorted.filter((t) => t.type === "CALMREQU").slice(0, 60);
@@ -1407,21 +1464,22 @@ export async function gaps(
       await pool(parents, PARALLEL, async (t) => [t.id, (await snap.relations(t.id)).filter((r) => r.type === "0").map((r) => r.taskId)] as const),
     );
     const rows = sorted.map((t) => {
-      const { cases, words, verdict } = verdictOf(t.id);
+      const { cases, evidence, verdict } = verdictOf(t.id);
       const children = (kids.get(t.id) ?? []).map((id) => ({ id: n.taskOf(id)?.displayId ?? id, verdict: verdictOf(id).verdict }));
       // Tested only through its user stories: the stories decide.
-      const rollup = children.length ? worst([...(cases.length ? [verdict] : []), ...children.map((c) => c.verdict)]) : verdict;
+      const rollup = children.length ? worstCoverage([...(cases.length ? [verdict] : []), ...children.map((c) => c.verdict)]) : verdict;
       return {
         ...taskItem(t, verdict),
         testCases: cases.map((c, i) => ({
           id: c.displayId,
           title: c.title,
-          result: words[i] ?? "not run",
+          result: evidence[i]!.result,
+          ...(plan ? { assigned: evidence[i]!.assigned } : {}),
           prepared: c.prepared,
           ...(n.defectsKnown ? { defects: n.defectsOf(c.id).map((d) => d.displayId) } : {}),
         })),
         ...(children.length ? { children, rollup } : {}),
-        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${words[i]}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}${children.length ? `; with its user stories (${children.map((c) => `${c.id} ${c.verdict}`).join(", ")}): ${rollup}` : ""}`,
+        line: `${t.displayId} ${typeLabel(t.type)} "${short(t.title, 60)}" (${taskStatus(t)}) — ${verdict}${cases.length ? `: ${cases.map((c, i) => `${c.displayId} ${evidence[i]!.result}${c.prepared === false ? " (not prepared)" : ""}`).join(", ")}` : ""}${children.length ? `; with its user stories (${children.map((c) => `${c.id} ${c.verdict}`).join(", ")}): ${rollup}` : ""}`,
       };
     });
     const tally = counts(rows.map((r) => r.note ?? ""));
@@ -1431,11 +1489,12 @@ export async function gaps(
   }
   lines.push("", "Links counted: test case → task (Test Management), feature → task, task → solution process. Direct links only.");
   const footnotes = footer(snap, ["tasks", "features", "testCases", "processLinks", "testResults", "testPlans", "defects"]);
+  if (plan) footnotes.push(...plan.notes);
   if (unknownChecks.length) footnotes.push(`Checks with unknown results because source data is incomplete: ${unknownChecks.join(", ")}.`);
   lines.push(...footnotes);
   return {
     text: lines.join("\n"),
-    data: { project: { id: snap.project.id, name: snap.project.name }, scope: input.includeClosed ? "all" : "open", offset, sections, notes: footnotes },
+    data: { project: { id: snap.project.id, name: snap.project.name }, scope: input.includeClosed ? "all" : "open", ...(plan ? { testPlan: plan.data } : {}), offset, sections, notes: footnotes },
   };
 }
 
