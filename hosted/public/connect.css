@@ -36,7 +36,8 @@ summary { cursor:pointer; }
 details p { margin:8px 0; }
 code { overflow-wrap:anywhere; }
 
-.upload-field { border:0; padding:0; margin:0; min-width:0; }
+.upload-field { border:0; padding:0; margin:0 0 14px; min-width:0; }
+details p { margin:8px 0 0; }
 .upload-field legend { font-weight:600; padding:0; }
 #key-upload label { font-weight:400; overflow-wrap:anywhere; }
 #key-upload label > span:first-child { border-style:solid; }

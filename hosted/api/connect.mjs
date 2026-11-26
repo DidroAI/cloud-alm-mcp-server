@@ -8,16 +8,6 @@ import { metadata, oauth, platform } from "../lib/oauth.mjs";
 
 const TOOL = /^calm_[a-z_]{1,50}$/;
 const REPORT_TOOL = "calm_report_feedback";
-const publicMethods = new Set([
-  "initialize",
-  "ping",
-  "notifications/initialized",
-  "tools/list",
-  "resources/list",
-  "resources/read",
-  "resources/templates/list",
-  "prompts/list",
-]);
 const schemes = [{ type: "oauth2", scopes: ["calm.read"] }];
 
 /**
@@ -127,46 +117,26 @@ export function createGateway({ origin, base = "", sql, exchange, reader, record
       session = row.id;
       app = platform(row.redirect_uri);
     }
-    if (!grant && !publicMethods.has(msg.method)) {
-      if (msg.method === "tools/call")
-        return json({
-          jsonrpc: "2.0",
-          id: msg.id,
-          result: {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: "Connect your SAP Cloud ALM tenant to continue.",
-              },
-            ],
-            _meta: { "mcp/www_authenticate": [challenge] },
-          },
-        });
+    // Nothing without a session, the handshake included: an app that probes the address then sees that it
+    // needs a sign-in (Claude otherwise offers "No sign-in" and connects a connector that can read nothing).
+    if (!grant)
       return json({ error: "unauthorized" }, 401, {
         "WWW-Authenticate": challenge,
       });
-    }
-    if (grant && msg.method === "tools/call" && msg.params?.name === REPORT_TOOL && !reportsPerSession(session)) {
+    if (msg.method === "tools/call" && msg.params?.name === REPORT_TOOL && !reportsPerSession(session)) {
       note?.({ kind: "rate_limited", outcome: "feedback" });
       return refusal(msg.id, "Enough reports from this session for now. Continue the task without reporting.");
     }
     const headers = new Headers(req.headers);
     headers.delete("cookie");
     headers.delete("x-calm-web-url");
-    headers.set(
-      "authorization",
-      "Bearer " + (grant?.accessToken ?? "metadata-only"),
-    );
-    headers.set(
-      "x-calm-api-url",
-      grant?.baseUrl ?? "https://discovery.alm.cloud.sap/api",
-    );
-    if (grant) headers.set("x-calm-web-url", grant.webUrl);
-    const res = await (grant ? live : discovery)(
+    headers.set("authorization", "Bearer " + grant.accessToken);
+    headers.set("x-calm-api-url", grant.baseUrl);
+    headers.set("x-calm-web-url", grant.webUrl);
+    const res = await live(
       new Request(inner, { method: "POST", headers, body }),
     );
-    if (grant && note && msg.method === "tools/call") {
+    if (note && msg.method === "tools/call") {
       // Counted before the answer leaves, so the count is not lost when the platform suspends the function.
       const name = msg.params?.name;
       const names = await toolNames();

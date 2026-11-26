@@ -42,6 +42,23 @@ const key = {
 };
 const s256 = (value) => createHash("sha256").update(value).digest("base64url");
 
+/** The whole sign-in as an app and a browser go through it; resolves the connector's bearer header. */
+async function signIn(handle, origin, base = "") {
+  const req = (path, opts) => handle(new Request(origin + path, opts));
+  const redirect = "https://claude.ai/api/mcp/auth_callback";
+  const client = await (await req(base + "/oauth/register", { method: "POST", body: JSON.stringify({ redirect_uris: [redirect], token_endpoint_auth_method: "none" }) })).json();
+  const verifier = randomBytes(32).toString("base64url");
+  const query = new URLSearchParams({ client_id: client.client_id, redirect_uri: redirect, response_type: "code", code_challenge: s256(verifier), code_challenge_method: "S256" });
+  const page = await req(base + "/oauth/authorize?" + query);
+  const cookie = page.headers.get("set-cookie").split(";")[0];
+  const data = new FormData();
+  data.set("csrf", /name="csrf" value="([^"]+)"/.exec(await page.text())[1]);
+  data.set("key", new File([JSON.stringify(key)], "key.json", { type: "application/json" }));
+  const back = new URL((await req(base + "/oauth/authorize", { method: "POST", headers: { origin, cookie }, body: data })).headers.get("location"));
+  const token = await (await req(base + "/oauth/token", { method: "POST", body: new URLSearchParams({ grant_type: "authorization_code", code: back.searchParams.get("code"), code_verifier: verifier, client_id: client.client_id, redirect_uri: redirect }) })).json();
+  return { authorization: "Bearer " + token.access_token };
+}
+
 for (const base of ["", "/cloud-alm/connect"])
   test(`sign-in, a tool call and disconnect under "${base || "/"}"`, async () => {
     const origin = "https://docs.test";
@@ -83,11 +100,12 @@ for (const base of ["", "/cloud-alm/connect"])
       assert.equal((await req("/cloud-alm/connectx/mcp")).status, 404);
     }
 
-    // Without a session: the catalogue is public, a tool call asks for sign-in.
-    const tools = await (await rpc({ method: "tools/list" })).json();
-    assert.ok(tools.result.tools.some((tool) => tool.name === "calm_report_feedback"));
-    const refused = await (await rpc({ method: "tools/call", params: { name: "calm_projects", arguments: {} } })).json();
-    assert.equal(refused.result.isError, true);
+    // Without a session nothing answers, the handshake included, so an app that probes the address sees a sign-in.
+    for (const method of ["initialize", "tools/list", "tools/call"]) {
+      const refused = await rpc({ method, params: method === "initialize" ? { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "probe", version: "0" } } : {} });
+      assert.equal(refused.status, 401, method);
+      assert.match(refused.headers.get("www-authenticate"), /resource_metadata=/);
+    }
 
     const redirect = "https://claude.ai/api/mcp/auth_callback";
     const client = await (await req(base + "/oauth/register", {
@@ -150,6 +168,10 @@ for (const base of ["", "/cloud-alm/connect"])
     assert.ok(!JSON.stringify(rows).includes(token.access_token), "the connector token is stored as a digest");
 
     const auth = { authorization: "Bearer " + token.access_token };
+    // Signed in, the tool list carries the report tool and the OAuth scheme on every tool.
+    const signedInTools = (await (await rpc({ method: "tools/list" }, auth)).json()).result.tools;
+    assert.ok(signedInTools.some((tool) => tool.name === "calm_report_feedback"));
+    assert.ok(signedInTools.every((tool) => tool.securitySchemes?.[0]?.type === "oauth2"));
     const answer = await rpc({ method: "tools/call", params: { name: "calm_projects", arguments: {} } }, auth);
     // Counted by the time the answer is handed back, and never to be stored on the way.
     assert.ok(events.some((e) => e.kind === "tool_call" && e.tool === "calm_projects" && e.outcome === "ok"));
@@ -230,9 +252,10 @@ test("a failing counter never fails a request", async () => {
 test("without a place to keep reports there is no report tool, no inbox and no notice", async () => {
   const origin = "https://connector.test";
   const { sql } = sessions();
-  const handle = createGateway({ origin, sql });
+  const handle = createGateway({ origin, sql, exchange: async () => ({ accessToken: "synthetic-sap-token", baseUrl: key.endpoints.Api, expiresAt: Date.now() + 600_000 }) });
+  const auth = await signIn(handle, origin);
   const list = await (await handle(new Request(origin + "/mcp", {
-    method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...auth },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   }))).json();
   assert.ok(list.result.tools.length > 5 && !list.result.tools.some((tool) => tool.name === "calm_report_feedback"));

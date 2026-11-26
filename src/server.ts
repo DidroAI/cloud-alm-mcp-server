@@ -69,7 +69,7 @@ import {
 const icon = readFileSync(new URL("../assets/icon.png", import.meta.url)).toString("base64");
 
 export const SERVER_NAME = "cloud-alm";
-export const SERVER_VERSION = "0.3.7";
+export const SERVER_VERSION = "0.3.8";
 
 const projectId = z.string().min(1).max(200).optional().describe("Project id or name (calm_projects lists them); omit when the tenant has one project or a default is set");
 
